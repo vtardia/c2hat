@@ -7,8 +7,8 @@ all: prereq client server
 prereq:
 	mkdir -p obj/server obj/client bin
 
-server: prereq obj/server/main.o obj/server/server.o obj/logger.o obj/socket.o
-	$(CC) obj/server/main.o obj/logger.o obj/socket.o obj/server/server.o -o bin/server
+server: prereq obj/server/main.o obj/server/server.o obj/logger.o obj/socket.o obj/server/pid.o
+	$(CC) obj/server/main.o obj/logger.o obj/socket.o obj/server/server.o obj/server/pid.o -o bin/server
 
 
 obj/server/main.o: server/main.c
@@ -16,6 +16,9 @@ obj/server/main.o: server/main.c
 
 obj/server/server.o: server/server.c
 	$(CC) -c server/server.c -I socket -I logger -o obj/server/server.o
+
+obj/server/pid.o: server/pid.c
+	$(CC) -c server/pid.c -I logger -o obj/server/pid.o
 
 obj/socket.o: socket/socket.c socket/socket.h
 	$(CC) -c socket/socket.c -I logger -o obj/socket.o

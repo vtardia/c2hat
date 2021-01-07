@@ -1,6 +1,7 @@
 #include "server.h"
 
 #include <ctype.h>
+#include <getopt.h>
 
 const int kMaxClients = 5;
 const int kServerPort = 10000;
@@ -24,6 +25,10 @@ const char *kCommandStatus = "status";
   #endif
 #endif
 
+typedef char * const * ARGV;
+
+void usage(const char *program);
+
 // Close open resources and deletes PID file
 void clean() {
   Info("Cleaning up...");
@@ -38,11 +43,35 @@ void parseCommand(char *dest, const char *arg) {
   dest[kMaxCommandSize - 1] = '\0';
 }
 
-int CMD_runStart() {
+int parseOptions(int argc, ARGV argv, char **host, int *port) {
+  struct option options[] = {
+    {"host", required_argument, NULL, 'h'},
+    {"port", required_argument, NULL, 'p'},
+    { NULL, 0, NULL, 0}
+  };
+
+  int valid = true;
+
+  char ch;
+  while (true) {
+    ch = getopt_long(argc, argv, "h:p:", options, NULL);
+    if( ch == -1 ) break; // no more options
+    switch (ch) {
+      case 'h': *host = optarg; break;
+      case 'p': *port = atoi(optarg); break;
+      default:
+        valid = false;
+        break;
+    }
+  }
+  return valid;
+}
+
+int CMD_runStart(const char *host, const int port) {
   pid_t child = fork();
   if (child > 0) {
     // I'm in parent process
-    fprintf(stdout, "Starting server process with PID %d\n", child);
+    fprintf(stdout, "Starting server on %s:%d with PID %d\n", host, port, child);
     return EXIT_SUCCESS;
   }
 
@@ -51,16 +80,12 @@ int CMD_runStart() {
   // Register shutdown function to close resource handlers
   atexit(clean);
 
-  // Init PID file
-  pid_t pid = PID_init(kPIDFile);
-
   // Init log facility
   if (LogInit(L_INFO, stderr, kLogFile) < 0) {
     fprintf(stderr, "Unable to initialise the logger: %s\n", strerror(errno));
     fprintf(stdout, "Unable to initialise the logger: %s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
-  Info("Starting PID %u...", pid);
 
   // Windows socket init
 #if defined(_WIN32)
@@ -72,7 +97,11 @@ int CMD_runStart() {
 #endif
 
   // Create a listening socket
-  SOCKET server = Server_new(kServerHost, kServerPort, kMaxClients);
+  SOCKET server = Server_new(host, port, kMaxClients);
+
+  // Init PID file (after server creation so we don't create on failure)
+  pid_t pid = PID_init(kPIDFile);
+  Info("Starting on %s:%d with PID %u...", host, port, pid);
 
   // Start the chat server on that socket
   Server_start(server);
@@ -91,7 +120,7 @@ int CMD_runStop() {
   pid_t pid = PID_load(kPIDFile);
   printf("The server is running with PID %d\n", pid);
   if (kill(pid, SIGTERM) == -1) {
-    printf("Unable to kill process %d", pid);
+    printf("Unable to kill process %d\n", pid);
     exit(EXIT_FAILURE);
   }
   printf("The server with PID %d has been successfully stopped\n", pid);
@@ -107,10 +136,10 @@ int CMD_runStatus() {
 }
 
 void usage(const char *program) {
-  fprintf(stderr, "Usage: %s [start|stop|status]\n", program);
+  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>]|stop|status]\n", program);
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, ARGV argv) {
   if (argc < 2) {
     usage(argv[0]);
     exit(EXIT_FAILURE);
@@ -119,11 +148,19 @@ int main(int argc, char const *argv[]) {
   char command[10];
   parseCommand(command, argv[1]);
 
-  if (strcmp(kCommandStart, command) == 0) return CMD_runStart();
+  if (strcmp(kCommandStart, command) == 0 && argc <= 6) {
+    int serverPort = kServerPort;
+    char *serverHost = (char*)kServerHost;
+    if (parseOptions(argc, argv, &serverHost, &serverPort)) {
+      return CMD_runStart(serverHost, serverPort);
+    }
+    usage(argv[0]);
+    return EXIT_FAILURE;
+  }
 
-  if (strcmp(kCommandStatus, command) == 0) return CMD_runStatus();
+  if (strcmp(kCommandStatus, command) == 0 && argc == 2) return CMD_runStatus();
 
-  if (strcmp(kCommandStop, command) == 0) return CMD_runStop();
+  if (strcmp(kCommandStop, command) == 0 && argc == 2) return CMD_runStop();
 
   fprintf(stderr, "Unknown command: '%s'\n", command);
   usage(argv[0]);

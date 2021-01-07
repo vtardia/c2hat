@@ -1,8 +1,6 @@
 #ifndef PID_H
 #define PID_H
 
-  #include <stdlib.h>
-
   // Initialise a PID file with the PID from the current process
   pid_t PID_init(const char *pidFilePath);
 

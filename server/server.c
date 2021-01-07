@@ -14,19 +14,25 @@ SOCKET Server_new(const char *host, int portNumber, int maxConnections) {
   char serverPort[6] = {0};
   sprintf(serverPort, "%d", portNumber);
 
-  // IPv6, connect to http://[::1]:8080
-  options.ai_family = AF_INET6;
+  // AF_INET = accepts only IPv4 host values
+  // AF_INET6 = accepts only IPv6 host values
+  // PF_UNSPEC = accepts any IP types depending on system configuration
+  options.ai_family = PF_UNSPEC;
   options.ai_socktype = SOCK_STREAM; // TCP connections
-  options.ai_flags = AI_PASSIVE; // Bind to the wildcard address
+  // AI_PASSIVE = socket used for listening
+  // AI_ADDRCONFIG = if receives IPv4 returns IPv4, if receives IPv6 returns IPv6
+  options.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
 
   // Returns a binary IP address representation for bind()
-  getaddrinfo(host, serverPort, &options, &bindAddress);
+  if (getaddrinfo(host, serverPort, &options, &bindAddress)) {
+    Fatal("Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
+  }
 
-  SOCKET server = Socket_new(bindAddress);
+  SOCKET server = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
   Socket_unsetIPV6Only(server);
   Socket_setReusableAddress(server);
 
-  Socket_bind(server, bindAddress);
+  Socket_bind(server, bindAddress->ai_addr, bindAddress->ai_addrlen);
 
   // We don't need bindAddress anymore
   freeaddrinfo(bindAddress);

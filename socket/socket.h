@@ -44,10 +44,10 @@
   #include "logger.h"
 
   // Create a new socket with the provided options (family, type, protocol)
-  SOCKET Socket_new(struct addrinfo *address);
+  SOCKET Socket_new(int domain, int type, int protocol);
 
   // Bind the given socket to an IP address/port combination
-  void Socket_bind(SOCKET server, struct addrinfo *bindAddress);
+  void Socket_bind(SOCKET server, const struct sockaddr *addr, socklen_t addrlen);
 
   // Start listening on a given socket
   void Socket_listen(SOCKET server, int maxConnections);

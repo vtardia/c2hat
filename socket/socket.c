@@ -1,11 +1,7 @@
 #include "socket.h"
 
-SOCKET Socket_new(struct addrinfo *address) {
-  SOCKET this = socket(
-    address->ai_family,
-    address->ai_socktype,
-    address->ai_protocol
-  );
+SOCKET Socket_new(int domain, int type, int protocol) {
+  SOCKET this = socket(domain, type, protocol);
   if (!SOCKET_isValid(this)) {
     Fatal("socket() failed. (%d)\n", SOCKET_getErrorNumber());
   }
@@ -31,15 +27,15 @@ void Socket_setReusableAddress(SOCKET this) {
   }
 }
 
-void Socket_bind(SOCKET this, struct addrinfo *bindAddress) {
+void Socket_bind(SOCKET this, const struct sockaddr *addr, socklen_t addrlen) {
   // bind() returns 0 on success, non-zero on failure
-  if (bind(this, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
-    Fatal("bind() failed. (%d)\n", SOCKET_getErrorNumber());
+  if (bind(this, addr, addrlen)) {
+    Fatal("bind() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
   }
   char addressBuffer[100];
   char serviceBuffer[100];
   getnameinfo(
-    bindAddress->ai_addr, bindAddress->ai_addrlen,
+    addr, addrlen,
     addressBuffer, sizeof(addressBuffer),
     serviceBuffer, sizeof(serviceBuffer),
     NI_NUMERICHOST | NI_NUMERICSERV
@@ -50,7 +46,7 @@ void Socket_bind(SOCKET this, struct addrinfo *bindAddress) {
 void Socket_listen(SOCKET this, int maxConnections) {
   // listen() returns a negative value on error
   if (listen(this, maxConnections) < 0) {
-    Fatal("Unable to listen for connections");
+    Fatal("Unable to listen for connections (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
   }
   Info("Waiting for incoming connections...");
 }

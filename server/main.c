@@ -3,9 +3,9 @@
 #include <ctype.h>
 #include <getopt.h>
 
-const int kMaxClients = 5;
-const int kServerPort = 10000;
-const char *kServerHost = "localhost";
+const int kDefaultMaxClients = 5;
+const int kDefaultServerPort = 10000;
+const char *kDefaultServerHost = "localhost";
 
 const int kMaxCommandSize = 10;
 const char *kCommandStart = "start";
@@ -13,15 +13,15 @@ const char *kCommandStop = "stop";
 const char *kCommandStatus = "status";
 
 #ifdef __linux__
-  const char *kPIDFile = "/var/run/demo.pid";
-  const char *kLogFile = "/var/log/demo.log";
+  const char *kDefaultPIDFile = "/var/run/c2hat.pid";
+  const char *kDefaultLogFile = "/var/log/c2hat.log";
 #else
   #ifdef __APPLE__
-    const char *kPIDFile = "/usr/local/var/run/demo.pid";
-    const char *kLogFile = "/usr/local/var/log/demo.log";
+    const char *kDefaultPIDFile = "/usr/local/var/run/c2hat.pid";
+    const char *kDefaultLogFile = "/usr/local/var/log/c2hat.log";
   #else
-    const char *kPIDFile = "/tmp/demo.pid";
-    const char *kLogFile = "/tmp/demo.log";
+    const char *kDefaultPIDFile = "/tmp/c2hat.pid";
+    const char *kDefaultLogFile = "/tmp/c2hat.log";
   #endif
 #endif
 
@@ -32,7 +32,7 @@ void usage(const char *program);
 // Close open resources and deletes PID file
 void clean() {
   Info("Cleaning up...");
-  remove(kPIDFile);
+  remove(kDefaultPIDFile);
 }
 
 void parseCommand(char *dest, const char *arg) {
@@ -81,7 +81,7 @@ int CMD_runStart(const char *host, const int port) {
   atexit(clean);
 
   // Init log facility
-  if (LogInit(L_INFO, stderr, kLogFile) < 0) {
+  if (LogInit(L_INFO, stderr, kDefaultLogFile) < 0) {
     fprintf(stderr, "Unable to initialise the logger: %s\n", strerror(errno));
     fprintf(stdout, "Unable to initialise the logger: %s\n", strerror(errno));
     exit(EXIT_FAILURE);
@@ -97,10 +97,10 @@ int CMD_runStart(const char *host, const int port) {
 #endif
 
   // Create a listening socket
-  SOCKET server = Server_new(host, port, kMaxClients);
+  SOCKET server = Server_new(host, port, kDefaultMaxClients);
 
   // Init PID file (after server creation so we don't create on failure)
-  pid_t pid = PID_init(kPIDFile);
+  pid_t pid = PID_init(kDefaultPIDFile);
   Info("Starting on %s:%d with PID %u...", host, port, pid);
 
   // Start the chat server on that socket
@@ -116,8 +116,8 @@ int CMD_runStart(const char *host, const int port) {
 
 // Stop the running server
 int CMD_runStop() {
-  PID_check(kPIDFile);
-  pid_t pid = PID_load(kPIDFile);
+  PID_check(kDefaultPIDFile);
+  pid_t pid = PID_load(kDefaultPIDFile);
   printf("The server is running with PID %d\n", pid);
   if (kill(pid, SIGTERM) == -1) {
     printf("Unable to kill process %d\n", pid);
@@ -129,9 +129,9 @@ int CMD_runStop() {
 
 // Check the status of the server daemon
 int CMD_runStatus() {
-  PID_check(kPIDFile);
-  pid_t pid = PID_load(kPIDFile);
-  printf("The server is running with PID %d, check '%s' for details\n", pid, kLogFile);
+  PID_check(kDefaultPIDFile);
+  pid_t pid = PID_load(kDefaultPIDFile);
+  printf("The server is running with PID %d, check '%s' for details\n", pid, kDefaultLogFile);
   return EXIT_SUCCESS;
 }
 
@@ -149,8 +149,8 @@ int main(int argc, ARGV argv) {
   parseCommand(command, argv[1]);
 
   if (strcmp(kCommandStart, command) == 0 && argc <= 6) {
-    int serverPort = kServerPort;
-    char *serverHost = (char*)kServerHost;
+    int serverPort = kDefaultServerPort;
+    char *serverHost = (char*)kDefaultServerHost;
     if (parseOptions(argc, argv, &serverHost, &serverPort)) {
       return CMD_runStart(serverHost, serverPort);
     }

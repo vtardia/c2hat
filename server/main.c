@@ -60,10 +60,11 @@ void parseCommand(char *dest, const char *arg) {
   dest[kMaxCommandSize - 1] = '\0';
 }
 
-int parseOptions(int argc, ARGV argv, char **host, int *port) {
+int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
   struct option options[] = {
     {"host", required_argument, NULL, 'h'},
     {"port", required_argument, NULL, 'p'},
+    {"max-clients", required_argument, NULL, 'm'},
     { NULL, 0, NULL, 0}
   };
 
@@ -71,11 +72,12 @@ int parseOptions(int argc, ARGV argv, char **host, int *port) {
 
   char ch;
   while (true) {
-    ch = getopt_long(argc, argv, "h:p:", options, NULL);
+    ch = getopt_long(argc, argv, "h:p:m:", options, NULL);
     if( ch == -1 ) break; // no more options
     switch (ch) {
       case 'h': *host = optarg; break;
       case 'p': *port = atoi(optarg); break;
+      case 'm': *clients = atoi(optarg); break;
       default:
         valid = false;
         break;
@@ -84,7 +86,7 @@ int parseOptions(int argc, ARGV argv, char **host, int *port) {
   return valid;
 }
 
-int CMD_runStart(const char *host, const int port) {
+int CMD_runStart(const char *host, const int port, const int maxClients) {
   pid_t child = fork();
   if (child > 0) {
     // I'm in parent process
@@ -114,11 +116,11 @@ int CMD_runStart(const char *host, const int port) {
 #endif
 
   // Create a listening socket
-  SOCKET server = Server_new(host, port, kDefaultMaxClients);
+  SOCKET server = Server_new(host, port, maxClients);
 
   // Init PID file (after server creation so we don't create on failure)
   pid_t pid = PID_init(kDefaultPIDFile);
-  Info("Starting on %s:%d with PID %u...", host, port, pid);
+  Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
 
   // Start the chat server on that socket
   Server_start(server);
@@ -153,7 +155,7 @@ int CMD_runStatus() {
 }
 
 void usage(const char *program) {
-  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>]|stop|status]\n", program);
+  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>] [-m <max-clients>]|stop|status]\n", program);
 }
 
 int main(int argc, ARGV argv) {
@@ -166,10 +168,11 @@ int main(int argc, ARGV argv) {
   parseCommand(command, argv[1]);
 
   if (strcmp(kCommandStart, command) == 0 && argc <= 6) {
+    int maxClients = kDefaultMaxClients;
     int serverPort = kDefaultServerPort;
     char *serverHost = (char*)kDefaultServerHost;
-    if (parseOptions(argc, argv, &serverHost, &serverPort)) {
-      return CMD_runStart(serverHost, serverPort);
+    if (parseOptions(argc, argv, &serverHost, &serverPort, &maxClients)) {
+      return CMD_runStart(serverHost, serverPort, maxClients);
     }
     usage(argv[0]);
     return EXIT_FAILURE;

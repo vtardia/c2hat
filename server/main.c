@@ -12,17 +12,34 @@ const char *kCommandStart = "start";
 const char *kCommandStop = "stop";
 const char *kCommandStatus = "status";
 
-#ifdef __linux__
-  const char *kDefaultPIDFile = "/var/run/c2hat.pid";
-  const char *kDefaultLogFile = "/var/log/c2hat.log";
+/**
+ * PID File
+ * On macOS and Linux it should be under /var/run or,
+ * if not writable, the current user home directory.
+ *
+ * Not sure what to do in Windows
+ *
+ * Keeping it temporarily under /tmp
+ */
+#if defined(_WIN32)
+  const char *kDefaultPIDFile = "C:\\Temp\\c2hat.pid";
 #else
-  #ifdef __APPLE__
-    const char *kDefaultPIDFile = "/usr/local/var/run/c2hat.pid";
-    const char *kDefaultLogFile = "/usr/local/var/log/c2hat.log";
-  #else
-    const char *kDefaultPIDFile = "/tmp/c2hat.pid";
-    const char *kDefaultLogFile = "/tmp/c2hat.log";
-  #endif
+  const char *kDefaultPIDFile = "/tmp/c2hat.pid";
+#endif
+
+/**
+ * Log File
+ * On macOS can be under /var/log, /Library/Logs or ~/Library/Logs
+ * On Linux can be under /var/log or ~/ (if not root)
+ *
+ * Not sure what to do in Windows
+ *
+ * Keeping it temporarily under /tmp
+ */
+#if defined(_WIN32)
+  const char *kDefaultLogFile = "C:\\Temp\\c2hat.log";
+#else
+  const char *kDefaultLogFile = "/tmp/c2hat.log";
 #endif
 
 typedef char * const * ARGV;
@@ -82,8 +99,8 @@ int CMD_runStart(const char *host, const int port) {
 
   // Init log facility
   if (LogInit(L_INFO, stderr, kDefaultLogFile) < 0) {
-    fprintf(stderr, "Unable to initialise the logger: %s\n", strerror(errno));
-    fprintf(stdout, "Unable to initialise the logger: %s\n", strerror(errno));
+    fprintf(stderr, "Unable to initialise the logger (%s): %s\n", kDefaultLogFile, strerror(errno));
+    fprintf(stdout, "Unable to initialise the logger (%s): %s\n", kDefaultLogFile, strerror(errno));
     exit(EXIT_FAILURE);
   }
 

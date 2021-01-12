@@ -81,7 +81,7 @@ void Server_start(SOCKET server) {
     socklen_t clientLen = sizeof(clientAddress);
     SOCKET client = accept(server, (struct sockaddr*) &clientAddress, &clientLen);
     if (!SOCKET_isValid(client)) {
-      Error("accept() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       continue;
     }
 

@@ -65,7 +65,7 @@ void LogMessage(int level, const char *format, va_list args) {
     logStream = stderr;
   }
 
-  fprintf(logStream, "%s | %d | %-7s | %s\n", time_buffer, getpid(), level_name, buffer);
+  fprintf(logStream, "%s | %6d | %-7s | %s\n", time_buffer, getpid(), level_name, buffer);
   fflush(logStream);
   free(time_buffer);
 }

@@ -1,4 +1,5 @@
 #include "socket.h"
+#include "logger.h"
 
 SOCKET Socket_new(int domain, int type, int protocol) {
   SOCKET this = socket(domain, type, protocol);

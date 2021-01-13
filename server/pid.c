@@ -38,7 +38,7 @@ pid_t PID_load(const char *pidFilePath) {
 void PID_check(const char *pidFilePath) {
   if(access(pidFilePath, F_OK ) == -1) {
     // There is no PID file
-    printf("Unable to find PID file (%s): the server may not be running\n", pidFilePath);
+    printf("Unable to find PID file (%s): the process may not be running\n", pidFilePath);
     exit(EXIT_FAILURE);
   }
 }

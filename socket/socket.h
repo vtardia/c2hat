@@ -41,8 +41,6 @@
     #define AI_ALL 0x0100
   #endif
 
-  #include "logger.h"
-
   // Create a new socket with the provided options (family, type, protocol)
   SOCKET Socket_new(int domain, int type, int protocol);
 

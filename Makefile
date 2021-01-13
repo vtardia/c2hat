@@ -1,6 +1,8 @@
 # Compiler base command and options
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c17
+AR = ar rcs
+LDFLAGS = -Lbin
 
 # OS detection
 OSFLAG :=
@@ -22,8 +24,8 @@ prereq:
 	mkdir -p obj/server obj/client bin
 
 # Server final binary
-server: prereq obj/server/main.o obj/server/server.o obj/logger.o obj/socket.o obj/server/pid.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/logger.o obj/socket.o obj/server/server.o obj/server/pid.o -o bin/server
+server: prereq liblogger libsocket libpid obj/server/main.o obj/server/server.o
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -llogger -lsocket -lpid -o bin/server
 
 
 # Server dependencies
@@ -34,15 +36,30 @@ obj/server/main.o: server/main.c
 obj/server/server.o: server/server.c
 	$(CC) $(CFLAGS) -c server/server.c -I socket -I logger -o obj/server/server.o $(OSFLAG)
 
+
+# PID static library
 obj/server/pid.o: server/pid.c
 	$(CC) $(CFLAGS) -c server/pid.c -I logger -o obj/server/pid.o $(OSFLAG)
 
+libpid: obj/server/pid.o
+	$(AR) bin/libpid.a obj/server/pid.o
+
+# Socket static library
 obj/socket.o: socket/socket.c socket/socket.h
 	$(CC) $(CFLAGS) -c socket/socket.c -I logger -o obj/socket.o $(OSFLAG)
 
+libsocket: obj/socket.o
+	$(AR) bin/libsocket.a obj/socket.o
+
+
+# Logger static library
 obj/logger.o: logger/logger.c logger/logger.h
 	$(CC) $(CFLAGS) -c logger/logger.c -o obj/logger.o $(OSFLAG)
 
+liblogger: obj/logger.o
+	$(AR) bin/liblogger.a obj/logger.o
+
+# INI parser
 # obj/ini.o: ini/ini.c ini/ini.h
 # 	$(CC) $(CFLAGS) -c ini/ini.c -o obj/ini.o $(OSFLAG) -DINI_ALLOW_MULTILINE=0
 

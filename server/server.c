@@ -1,6 +1,16 @@
 #include "server.h"
 
+#include <pthread.h>
+
+typedef struct {
+  struct sockaddr_storage address;
+  socklen_t length;
+  SOCKET socket;
+} Client;
+
 static bool terminate = false;
+
+void* Server_handleClient(void* data);
 
 SOCKET Server_new(const char *host, int portNumber, int maxConnections) {
   // Hold socket settings
@@ -77,31 +87,70 @@ void Server_start(SOCKET server) {
   while (!terminate) {
 
     // Wait for a client to connect
-    struct sockaddr_storage clientAddress;
-    socklen_t clientLen = sizeof(clientAddress);
-    SOCKET client = accept(server, (struct sockaddr*) &clientAddress, &clientLen);
-    if (!SOCKET_isValid(client)) {
+    Client client;
+    client.length = sizeof(client.address);
+    client.socket = accept(server, (struct sockaddr*) &(client).address, &(client).length);
+    if (!SOCKET_isValid(client.socket)) {
       Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       continue;
     }
 
-    // A client has connected, log the client info
-    char addressBuffer[100];
-    getnameinfo(
-      (struct sockaddr*)&clientAddress,
-      clientLen, addressBuffer, sizeof(addressBuffer),
-      0, 0,
-      NI_NUMERICHOST
-    );
-    Info("New connection from %s\n", addressBuffer);
-
-    // Placeholder code: send a message and close the connection
-    char *message = "Hello! Sorry, there's nothing to see here, bye!\n";
-    send(client, message, strlen(message), 0);
-    SOCKET_close(client);
-
-    // Real code: start a new thread to handle the client here
+    // Start client thread
+    pthread_t clientThreadID;
+    pthread_create(&clientThreadID, NULL, Server_handleClient, &client);
   }
   Info("Terminating...");
   SOCKET_close(server);
+}
+
+void* Server_handleClient(void* data) {
+  Client *client = (Client *)data;
+
+  const int kBufferSize = 1024;
+  char clientMessage[kBufferSize];
+
+  // A client has connected, log the client info
+  // TODO: encapsulate it within a function Client_getIPAddress(Client *)
+  char addressBuffer[100] = {0};
+  getnameinfo(
+    (struct sockaddr*)&(client->address),
+    client->length, addressBuffer, sizeof(addressBuffer),
+    0, 0,
+    NI_NUMERICHOST
+  );
+  Info("New connection from %s\n", addressBuffer);
+
+  while(!terminate) {
+    // Initialise buffer for client data
+    memset(clientMessage, '\0', kBufferSize);
+
+    // Listen for data
+    int received = recv(client->socket, clientMessage, kBufferSize, 0);
+    if (received < 0) {
+      if (SOCKET_getErrorNumber() == 0) {
+        Info("Connection closed by remote client %d", ECONNRESET);
+      } else {
+        Error("recv() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      }
+      break;
+    }
+    Info("Received: %.*s", received, clientMessage);
+
+    // Sending back data to the client
+    int sentTotal = 0;
+    char *data = clientMessage;
+    do {
+      int sent = send(client->socket, data, received, 0);
+      if (sent < 0) {
+        Error("send() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        break;
+      }
+      data += sent;
+      sentTotal += sent;
+    } while (sentTotal < received);
+  }
+  SOCKET_close(client->socket);
+  Info("Closing thread %d", pthread_self());
+  pthread_exit(pthread_self());
+  return NULL;
 }

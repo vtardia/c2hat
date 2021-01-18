@@ -1,13 +1,16 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-  #include "socket.h"
+  typedef struct Server Server;
 
   // Create a server for the given host/port combination
-  SOCKET Server_new(const char *host, const int port, const int maxConnections);
+  Server *Server_init(const char *host, const int port, const int maxConnections);
 
   // Start the server on the given socket
-  void Server_start(SOCKET);
+  void Server_start(Server *);
+
+  // Cleanup server memory
+  void Server_free(Server **);
 
 #endif
 
@@ -18,3 +21,4 @@
 
 #include "logger.h"
 #include "pid.h"
+#include "socket.h"

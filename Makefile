@@ -25,7 +25,7 @@ prereq:
 
 # Server final binary
 server: prereq liblogger libsocket libpid obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -llogger -lsocket -lpid -o bin/server
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -o bin/server
 
 
 # Server dependencies

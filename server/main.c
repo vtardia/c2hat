@@ -115,15 +115,18 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   }
 #endif
 
-  // Create a listening socket
-  SOCKET server = Server_new(host, port, maxClients);
+  // Initialise the chat server
+  Server *server = Server_init(host, port, maxClients);
 
   // Init PID file (after server creation so we don't create on failure)
   pid_t pid = PID_init(kDefaultPIDFile);
   Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
 
-  // Start the chat server on that socket
+  // Start the chat server (infinite loop until SIGTERM)
   Server_start(server);
+
+  // Cleanup
+  Server_free(&server);
 
   // Windows socket cleanup
 #if defined(_WIN32)

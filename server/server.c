@@ -8,11 +8,25 @@ typedef struct {
   SOCKET socket;
 } Client;
 
+struct Server {
+  char *host;
+  int port;
+  int maxConnections;
+  SOCKET socket;
+};
+
+// This is the singleton instance for our server
+static Server *server = NULL;
+
 static bool terminate = false;
 
 void* Server_handleClient(void* data);
 
-SOCKET Server_new(const char *host, int portNumber, int maxConnections) {
+Server *Server_init(const char *host, int portNumber, int maxConnections) {
+  if (server != NULL) {
+    Fatal("The server process is already running");
+  }
+
   // Hold socket settings
   struct addrinfo options;
   memset(&options, 0, sizeof(options));
@@ -38,18 +52,32 @@ SOCKET Server_new(const char *host, int portNumber, int maxConnections) {
     Fatal("Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
   }
 
-  SOCKET server = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
-  Socket_unsetIPV6Only(server);
-  Socket_setReusableAddress(server);
+  server = (Server *)calloc(sizeof(Server), 1);
 
-  Socket_bind(server, bindAddress->ai_addr, bindAddress->ai_addrlen);
+  server->socket = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
+  Socket_unsetIPV6Only(server->socket);
+  Socket_setReusableAddress(server->socket);
+
+  Socket_bind(server->socket, bindAddress->ai_addr, bindAddress->ai_addrlen);
 
   // We don't need bindAddress anymore
   freeaddrinfo(bindAddress);
 
-  Socket_listen(server, maxConnections);
+  Socket_listen(server->socket, maxConnections);
+  server->host = strdup(host);
+  server->port = portNumber;
+  server->maxConnections = maxConnections;
 
   return server;
+}
+
+void Server_free(Server **this) {
+  if (this != NULL) {
+    free((*this)->host);
+    memset(*this, 0, sizeof(Server));
+    free(*this);
+    *this = NULL;
+  }
 }
 
 // Set the server termination flag
@@ -73,7 +101,7 @@ int Server_catch(int sig, void (*handler)(int)) {
 }
 
 // Start a server on the given socket
-void Server_start(SOCKET server) {
+void Server_start(Server *server) {
 
   // Stop from Ctrl+C
   Server_catch(SIGINT, Server_stop);
@@ -89,7 +117,7 @@ void Server_start(SOCKET server) {
     // Wait for a client to connect
     Client client;
     client.length = sizeof(client.address);
-    client.socket = accept(server, (struct sockaddr*) &(client).address, &(client).length);
+    client.socket = accept(server->socket, (struct sockaddr*) &(client).address, &(client).length);
     if (!SOCKET_isValid(client.socket)) {
       Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       continue;
@@ -100,7 +128,7 @@ void Server_start(SOCKET server) {
     pthread_create(&clientThreadID, NULL, Server_handleClient, &client);
   }
   Info("Terminating...");
-  SOCKET_close(server);
+  SOCKET_close(server->socket);
 }
 
 void* Server_handleClient(void* data) {
@@ -134,23 +162,26 @@ void* Server_handleClient(void* data) {
       }
       break;
     }
-    Info("Received: %.*s", received, clientMessage);
 
-    // Sending back data to the client
-    int sentTotal = 0;
-    char *data = clientMessage;
-    do {
-      int sent = send(client->socket, data, received, 0);
-      if (sent < 0) {
-        Error("send() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-        break;
-      }
-      data += sent;
-      sentTotal += sent;
-    } while (sentTotal < received);
+    if (received > 0) {
+      Info("Received: %.*s", received, clientMessage);
+
+      // Sending back data to the client
+      int sentTotal = 0;
+      char *data = clientMessage;
+      do {
+        int sent = send(client->socket, data, received, 0);
+        if (sent < 0) {
+          Error("send() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+          break;
+        }
+        data += sent;
+        sentTotal += sent;
+      } while (sentTotal < received);
+    }
   }
   SOCKET_close(client->socket);
   Info("Closing thread %d", pthread_self());
-  pthread_exit(pthread_self());
+  pthread_exit(NULL);
   return NULL;
 }

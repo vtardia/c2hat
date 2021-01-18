@@ -15,14 +15,12 @@ int LogInit(int level, FILE *restrict stream, const char* filepath) {
 }
 
 // Get the local time and convert it to a string
-char *DateTimeNow() {
-  char time_buffer[100] = {0};
+void DateTimeNow(char *time_buffer) {
   time_t now = time(NULL);
   int result = strftime(time_buffer, sizeof time_buffer, "%c %z", localtime(&now));
-  if (result > 0) {
-    return strdup(time_buffer);
+  if (result <= 0) {
+    time_buffer = "";
   }
-  return "";
 }
 
 // Translate numeric log levels into strings
@@ -43,7 +41,8 @@ void LogMessage(int level, const char *format, va_list args) {
 
   if (level < logLevel) return;
 
-  char *time_buffer = DateTimeNow();
+  char time_buffer[100] = {0};
+  DateTimeNow(time_buffer);
 
   // Create a copy of the argument list,
   // because vsnprintf() will clean the original one
@@ -67,7 +66,6 @@ void LogMessage(int level, const char *format, va_list args) {
 
   fprintf(logStream, "%s | %6d | %-7s | %s\n", time_buffer, getpid(), level_name, buffer);
   fflush(logStream);
-  free(time_buffer);
 }
 
 void Fatal(const char *format, ...) {

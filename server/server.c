@@ -101,7 +101,7 @@ int Server_catch(int sig, void (*handler)(int)) {
 }
 
 // Start a server on the given socket
-void Server_start(Server *server) {
+void Server_start(Server *this) {
 
   // Stop from Ctrl+C
   Server_catch(SIGINT, Server_stop);
@@ -117,22 +117,26 @@ void Server_start(Server *server) {
     // Wait for a client to connect
     Client client;
     client.length = sizeof(client.address);
-    client.socket = accept(server->socket, (struct sockaddr*) &(client).address, &(client).length);
+    client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
     if (!SOCKET_isValid(client.socket)) {
       Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       continue;
     }
 
     // Start client thread
-    pthread_t clientThreadID;
+    pthread_t clientThreadID = 0;
     pthread_create(&clientThreadID, NULL, Server_handleClient, &client);
+    pthread_detach(clientThreadID);
   }
   Info("Terminating...");
-  SOCKET_close(server->socket);
+  SOCKET_close(this->socket);
+  Server_free(&server);
 }
 
 void* Server_handleClient(void* data) {
   Client *client = (Client *)data;
+  Server_catch(SIGTERM, Server_stop);
+  pthread_detach(pthread_self());
 
   const int kBufferSize = 1024;
   char clientMessage[kBufferSize];

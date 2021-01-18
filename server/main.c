@@ -125,9 +125,6 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   // Start the chat server (infinite loop until SIGTERM)
   Server_start(server);
 
-  // Cleanup
-  Server_free(&server);
-
   // Windows socket cleanup
 #if defined(_WIN32)
   WSACleanup();
@@ -167,7 +164,7 @@ int main(int argc, ARGV argv) {
     exit(EXIT_FAILURE);
   }
 
-  char command[10];
+  char command[10] = {0};
   parseCommand(command, argv[1]);
 
   if (strcmp(kCommandStart, command) == 0 && argc <= 6) {

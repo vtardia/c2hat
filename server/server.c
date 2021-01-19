@@ -123,9 +123,19 @@ void Server_start(Server *this) {
       continue;
     }
 
+    // A client has connected, log the client info
+    char addressBuffer[100] = {0};
+    getnameinfo(
+      (struct sockaddr*)&(client).address,
+      client.length, addressBuffer, sizeof(addressBuffer),
+      0, 0,
+      NI_NUMERICHOST
+    );
+    Info("New connection from %s\n", addressBuffer);
+
     // Start client thread
     pthread_t clientThreadID = 0;
-    pthread_create(&clientThreadID, NULL, Server_handleClient, &client);
+    pthread_create(&clientThreadID, NULL, Server_handleClient, &client.socket);
     pthread_detach(clientThreadID);
   }
   Info("Terminating...");
@@ -133,31 +143,38 @@ void Server_start(Server *this) {
   Server_free(&server);
 }
 
-void* Server_handleClient(void* data) {
-  Client *client = (Client *)data;
+// Send data to a socket ensuring all data is sent
+void Server_send(SOCKET client, const char* message, size_t length) {
+  size_t sentTotal = 0;
+  char *data = (char*)message; // points to the beginning of the message
+  do {
+    int sent = send(client, data, length - sentTotal, 0);
+    if (sent < 0) {
+      Error(
+        "send() failed: (%d): %s",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
+      break;
+    }
+    data += sent; // points to the remaining data to be sent
+    sentTotal += sent;
+  } while (sentTotal < length);
+}
+
+void* Server_handleClient(void* socket) {
+  SOCKET *client = (SOCKET *)socket;
   Server_catch(SIGTERM, Server_stop);
   pthread_detach(pthread_self());
 
   const int kBufferSize = 1024;
   char clientMessage[kBufferSize];
 
-  // A client has connected, log the client info
-  // TODO: encapsulate it within a function Client_getIPAddress(Client *)
-  char addressBuffer[100] = {0};
-  getnameinfo(
-    (struct sockaddr*)&(client->address),
-    client->length, addressBuffer, sizeof(addressBuffer),
-    0, 0,
-    NI_NUMERICHOST
-  );
-  Info("New connection from %s\n", addressBuffer);
-
   while(!terminate) {
     // Initialise buffer for client data
     memset(clientMessage, '\0', kBufferSize);
 
     // Listen for data
-    int received = recv(client->socket, clientMessage, kBufferSize, 0);
+    int received = recv(*client, clientMessage, kBufferSize, 0);
     if (received < 0) {
       if (SOCKET_getErrorNumber() == 0) {
         Info("Connection closed by remote client %d", ECONNRESET);
@@ -171,20 +188,10 @@ void* Server_handleClient(void* data) {
       Info("Received: %.*s", received, clientMessage);
 
       // Sending back data to the client
-      int sentTotal = 0;
-      char *data = clientMessage;
-      do {
-        int sent = send(client->socket, data, received, 0);
-        if (sent < 0) {
-          Error("send() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-          break;
-        }
-        data += sent;
-        sentTotal += sent;
-      } while (sentTotal < received);
+      Server_send(*client, clientMessage, received);
     }
   }
-  SOCKET_close(client->socket);
+  SOCKET_close(*client);
   Info("Closing thread %d", pthread_self());
   pthread_exit(NULL);
   return NULL;

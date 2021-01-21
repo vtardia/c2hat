@@ -131,7 +131,7 @@ void Server_start(Server *this) {
       0, 0,
       NI_NUMERICHOST
     );
-    Info("New connection from %s\n", addressBuffer);
+    Info("New connection from %s", addressBuffer);
 
     // Start client thread
     pthread_t clientThreadID = 0;
@@ -181,6 +181,11 @@ void* Server_handleClient(void* socket) {
       } else {
         Error("recv() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       }
+      break;
+    }
+
+    if (received == 0) {
+      Info("Connection closed by remote client %d", ECONNRESET);
       break;
     }
 

@@ -1,7 +1,8 @@
 #include "logger.h"
 
-int logLevel = LOG_DEFAULT_LEVEL;
-FILE *logStream = NULL;
+static int logLevel = LOG_DEFAULT_LEVEL;
+static FILE *logStream = NULL;
+static const int kDateTimeBufferSize = 100;
 
 int LogInit(int level, FILE *restrict stream, const char* filepath) {
   logLevel = level;
@@ -17,7 +18,7 @@ int LogInit(int level, FILE *restrict stream, const char* filepath) {
 // Get the local time and convert it to a string
 void DateTimeNow(char *time_buffer) {
   time_t now = time(NULL);
-  int result = strftime(time_buffer, sizeof time_buffer, "%c %z", localtime(&now));
+  int result = strftime(time_buffer, kDateTimeBufferSize, "%c %z", localtime(&now));
   if (result <= 0) {
     time_buffer = "";
   }
@@ -41,7 +42,8 @@ void LogMessage(int level, const char *format, va_list args) {
 
   if (level < logLevel) return;
 
-  char time_buffer[100] = {0};
+  char time_buffer[kDateTimeBufferSize];
+  memset(time_buffer, 0, kDateTimeBufferSize);
   DateTimeNow(time_buffer);
 
   // Create a copy of the argument list,

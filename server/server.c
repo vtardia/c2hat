@@ -2,20 +2,34 @@
 
 #include <pthread.h>
 
+static const int kMaxNicknameLength = 20;
+static const int kMaxClientHostLength = 100;
+static const int kBufferSize = 1024; // Includes NULL term
+
+// Holds data for queued messages
 typedef struct {
-  struct sockaddr_storage address;
-  socklen_t length;
+  char sender[kMaxNicknameLength + 1];
+  char content[kBufferSize];
+  int  contentLength;
+} Message;
+
+// Hold details for connected clients
+typedef struct {
+  pthread_t threadID;
+  char nickname[kMaxNicknameLength + 1]; // CLient name + NULL terminator
   SOCKET socket;
+  struct sockaddr_storage address; // Binary IP address
+  socklen_t length;
+  char host[kMaxClientHostLength]; // Pretty string IP address
 } Client;
 
+// This is the singleton instance for our server
 struct Server {
   char *host;
   int port;
   int maxConnections;
   SOCKET socket;
 };
-
-// This is the singleton instance for our server
 static Server *server = NULL;
 
 static bool terminate = false;
@@ -116,6 +130,7 @@ void Server_start(Server *this) {
 
     // Wait for a client to connect
     Client client;
+    memset(&client, 0, sizeof(Client));
     client.length = sizeof(client.address);
     client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
     if (!SOCKET_isValid(client.socket)) {
@@ -124,14 +139,13 @@ void Server_start(Server *this) {
     }
 
     // A client has connected, log the client info
-    char addressBuffer[100] = {0};
     getnameinfo(
       (struct sockaddr*)&(client).address,
-      client.length, addressBuffer, sizeof(addressBuffer),
+      client.length, client.host, kMaxClientHostLength,
       0, 0,
       NI_NUMERICHOST
     );
-    Info("New connection from %s", addressBuffer);
+    Info("New connection from %s", client.host);
 
     // Start client thread
     pthread_t clientThreadID = 0;
@@ -166,7 +180,6 @@ void* Server_handleClient(void* socket) {
   Server_catch(SIGTERM, Server_stop);
   pthread_detach(pthread_self());
 
-  const int kBufferSize = 1024;
   char clientMessage[kBufferSize];
 
   while(!terminate) {

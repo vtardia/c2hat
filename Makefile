@@ -65,14 +65,17 @@ liblogger: obj/logger.o
 
 
 # Client final binary
-client: obj/client/main.o
-	$(CC) $(CFLAGS) obj/client/main.o -o bin/client
+client: prereq libsocket obj/client/main.o obj/client/client.o
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -o bin/client
 
 
 # Client dependencies
 
 obj/client/main.o: client/main.c
-	$(CC) $(CFLAGS) -c client/main.c -o obj/client/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c client/main.c -I socket -o obj/client/main.o $(OSFLAG)
+
+obj/client/client.o: client/client.c
+	$(CC) $(CFLAGS) -c client/client.c -I socket -o obj/client/client.o $(OSFLAG)
 
 
 clean:

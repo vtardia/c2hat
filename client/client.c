@@ -98,8 +98,12 @@ void Client_listen(SOCKET server) {
       // We have data in a socket
       char read[4096];
       int bytes_received = recv(server, read, 4096, 0);
-      if (bytes_received < 1) {
+      if (bytes_received == 0) {
         printf("Connection closed by remote server\n");
+        break; // exit the whole loop
+      }
+      if (bytes_received < 0) {
+        fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
         break; // exit the whole loop
       }
       // Print up to byte_received from the server
@@ -118,6 +122,10 @@ void Client_listen(SOCKET server) {
       printf("Sending: %s", read);
       // Ignore socket closed on send, will be caught by recv()
       int bytes_sent = send(server, read, strlen(read), 0);
+      if (bytes_sent < 0) {
+        fprintf(stderr, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+        continue;
+      }
       printf("Sent %d bytes.\n", bytes_sent);
     }
   }

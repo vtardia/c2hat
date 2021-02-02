@@ -2,7 +2,8 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c17
 AR = ar rcs
-LDFLAGS = -Lbin
+LDFLAGS = -L lib
+INCFLAGS = -I src/lib
 
 # OS detection
 OSFLAG :=
@@ -21,7 +22,7 @@ endif
 all: prereq client server
 
 prereq:
-	mkdir -p obj/server obj/client bin
+	mkdir -p obj/server obj/client obj/lib lib bin
 
 # Server final binary
 server: prereq liblogger libsocket libpid obj/server/main.o obj/server/server.o
@@ -30,34 +31,34 @@ server: prereq liblogger libsocket libpid obj/server/main.o obj/server/server.o
 
 # Server dependencies
 
-obj/server/main.o: server/main.c
-	$(CC) $(CFLAGS) -c server/main.c -I socket -I logger -o obj/server/main.o $(OSFLAG)
+obj/server/main.o: src/server/main.c
+	$(CC) $(CFLAGS) -c src/server/main.c $(INCFLAGS) -o obj/server/main.o $(OSFLAG)
 
-obj/server/server.o: server/server.c
-	$(CC) $(CFLAGS) -c server/server.c -I socket -I logger -o obj/server/server.o $(OSFLAG)
+obj/server/server.o: src/server/server.c
+	$(CC) $(CFLAGS) -c src/server/server.c $(INCFLAGS) -o obj/server/server.o $(OSFLAG)
 
 
 # PID static library
-obj/server/pid.o: server/pid.c
-	$(CC) $(CFLAGS) -c server/pid.c -I logger -o obj/server/pid.o $(OSFLAG)
+obj/server/pid.o: src/server/pid.c
+	$(CC) $(CFLAGS) -c src/server/pid.c $(INCFLAGS) -o obj/server/pid.o $(OSFLAG)
 
-libpid: obj/server/pid.o
-	$(AR) bin/libpid.a obj/server/pid.o
+libpid: prereq obj/server/pid.o
+	$(AR) lib/libpid.a obj/server/pid.o
 
 # Socket static library
-obj/socket.o: socket/socket.c socket/socket.h
-	$(CC) $(CFLAGS) -c socket/socket.c -I logger -o obj/socket.o $(OSFLAG)
+obj/lib/socket.o: src/lib/socket/socket.c
+	$(CC) $(CFLAGS) -c src/lib/socket/socket.c $(INCFLAGS) -o obj/lib/socket.o $(OSFLAG)
 
-libsocket: obj/socket.o
-	$(AR) bin/libsocket.a obj/socket.o
+libsocket: prereq obj/lib/socket.o
+	$(AR) lib/libsocket.a obj/lib/socket.o
 
 
 # Logger static library
-obj/logger.o: logger/logger.c logger/logger.h
-	$(CC) $(CFLAGS) -c logger/logger.c -o obj/logger.o $(OSFLAG)
+obj/lib/logger.o: src/lib/logger/logger.c
+	$(CC) $(CFLAGS) -c src/lib/logger/logger.c -o obj/lib/logger.o $(OSFLAG)
 
-liblogger: obj/logger.o
-	$(AR) bin/liblogger.a obj/logger.o
+liblogger: prereq obj/lib/logger.o
+	$(AR) lib/liblogger.a obj/lib/logger.o
 
 # INI parser
 # obj/ini.o: ini/ini.c ini/ini.h
@@ -71,11 +72,11 @@ client: prereq libsocket obj/client/main.o obj/client/client.o
 
 # Client dependencies
 
-obj/client/main.o: client/main.c
-	$(CC) $(CFLAGS) -c client/main.c -I socket -o obj/client/main.o $(OSFLAG)
+obj/client/main.o: src/client/main.c
+	$(CC) $(CFLAGS) -c src/client/main.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
 
-obj/client/client.o: client/client.c
-	$(CC) $(CFLAGS) -c client/client.c -I socket -o obj/client/client.o $(OSFLAG)
+obj/client/client.o: src/client/client.c
+	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
 
 clean:

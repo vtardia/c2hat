@@ -19,6 +19,6 @@
 #include <stdbool.h>
 #include <signal.h>
 
-#include "logger.h"
+#include "logger/logger.h"
 #include "pid.h"
-#include "socket.h"
+#include "socket/socket.h"

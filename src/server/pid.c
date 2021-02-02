@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "logger.h"
+#include "logger/logger.h"
 
 static FILE *pidFile = NULL;
 

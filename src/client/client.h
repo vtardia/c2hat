@@ -1,6 +1,6 @@
 #ifndef CLIENT_H
 #define CLIENT_H
-  #include "socket.h"
+  #include "socket/socket.h"
 
   SOCKET Client_connect(const char *host, const char *port);
 

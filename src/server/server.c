@@ -2,9 +2,11 @@
 
 #include <pthread.h>
 
-static const int kMaxNicknameLength = 20;
-static const int kMaxClientHostLength = 100;
-static const int kBufferSize = 1024; // Includes NULL term
+enum {
+  kMaxClientHostLength = 100,
+  kMaxNicknameLength = 20,
+  kBufferSize = 1024 // Includes NULL term
+};
 
 // Holds data for queued messages
 typedef struct {
@@ -16,7 +18,7 @@ typedef struct {
 // Hold details for connected clients
 typedef struct {
   pthread_t threadID;
-  char nickname[kMaxNicknameLength + 1]; // CLient name + NULL terminator
+  char nickname[kMaxNicknameLength + 1]; // Client name + NULL terminator
   SOCKET socket;
   struct sockaddr_storage address; // Binary IP address
   socklen_t length;

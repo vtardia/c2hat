@@ -82,3 +82,4 @@ obj/client/client.o: src/client/client.c
 clean:
 	rm -rfv bin/**
 	rm -rfv obj/**
+	rm -rfv lib/**

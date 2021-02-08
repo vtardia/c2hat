@@ -24,7 +24,6 @@ int main(int argc, char const *argv[]) {
     WSACleanup();
   #endif
   }
-  printf("To send data, enter text followed by enter.\n");
 
   Client_listen(server);
 

@@ -8,6 +8,10 @@
 #include <stdbool.h>
 #include <signal.h>
 
+enum {
+  kBufferSize = 1024 // Includes NULL term
+};
+
 static bool terminate = false;
 
 void Client_stop(int signal) {
@@ -69,7 +73,61 @@ SOCKET Client_connect(const char *host, const char *port) {
   return server;
 }
 
+int Client_receive(SOCKET server, char *buffer, size_t length) {
+  char *data = buffer; // points at the start of buffer
+  size_t total = 0;
+  do {
+    int bytesReceived = recv(server, buffer, length - total, 0);
+    if (bytesReceived == 0) {
+      printf("Connection closed by remote server\n");
+      break; // exit the whole loop
+    }
+    if (bytesReceived < 0) {
+      fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      break; // exit the whole loop
+    }
+    data += bytesReceived;
+    total += bytesReceived;
+  } while(*data != 0 && total < (length - 1));
+
+  // Adding safe terminator in case of loop break
+  if (*data != 0) *(data + 1) = 0;
+
+  return total;
+}
+
+int Client_send(SOCKET server, const char *buffer, size_t length) {
+  // Ignore socket closed on send, will be caught by recv()
+  size_t total = 0;
+  char *data = (char*)buffer; // points to the beginning of the message
+  do {
+    int bytesSent = send(server, data, length - total, 0);
+    if (bytesSent < 0) {
+      fprintf(stderr, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      break;
+    }
+    data += bytesSent; // points to the remaining data to be sent
+    total += bytesSent;
+  } while (total < length);
+  return total;
+}
+
 void Client_listen(SOCKET server) {
+  char read[kBufferSize] = {0};
+
+  // Wait for the OK signal from the server
+  int received = Client_receive(server, read, kBufferSize);
+  if (received > 0) {
+    if (strncmp(read, "/ok", 3) != 0) {
+      printf("The server refused the connection\n");
+      terminate = true;
+    }
+    printf("[server]: %s\n", (read + 4));
+    printf("To send data, enter text followed by enter.\n");
+  } else {
+    terminate = true;
+  }
+
   while(!terminate) {
     // Initialise the socket set
     fd_set reads;
@@ -96,18 +154,13 @@ void Client_listen(SOCKET server) {
 
     if (FD_ISSET(server, &reads)) {
       // We have data in a socket
-      char read[4096];
-      int bytes_received = recv(server, read, 4096, 0);
-      if (bytes_received == 0) {
-        printf("Connection closed by remote server\n");
-        break; // exit the whole loop
-      }
-      if (bytes_received < 0) {
-        fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-        break; // exit the whole loop
+      char read[kBufferSize] = {0};
+      int received = Client_receive(server, read, kBufferSize);
+      if (received <= 0) {
+        terminate = true;
       }
       // Print up to byte_received from the server
-      printf("Received (%d bytes): %.*s", bytes_received, bytes_received, read);
+      printf("Received (%d bytes): %.*s\n", received, received, read);
     }
 
     // Check for terminal input
@@ -116,17 +169,17 @@ void Client_listen(SOCKET server) {
   #else
     if(FD_ISSET(fileno(stdin), &reads)) {
   #endif
-      char read[4096];
-      // fgets() always includes a newline
-      if (!fgets(read, 4096, stdin)) break;
-      printf("Sending: %s", read);
-      // Ignore socket closed on send, will be caught by recv()
-      int bytes_sent = send(server, read, strlen(read), 0);
-      if (bytes_sent < 0) {
-        fprintf(stderr, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-        continue;
+      char read[kBufferSize] = {0};
+      // fgets() always includes a newline...
+      if (!fgets(read, kBufferSize, stdin)) break;
+      // ...so we are replacing it with a null terminator
+      char *end = read + strlen(read) -1;
+      *end = 0;
+      printf("Sending: %s\n", read);
+      int sent = Client_send(server, read, (end - read));
+      if (sent > 0) {
+        printf("Sent %d bytes.\n", sent);
       }
-      printf("Sent %d bytes.\n", bytes_sent);
     }
   }
   printf("Closing connection...");

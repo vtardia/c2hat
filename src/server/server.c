@@ -3,7 +3,8 @@
 #include <pthread.h>
 
 enum {
-  kMaxClientHostLength = 100,
+  kMaxClientConnections = 5,
+  kMaxClientHostLength = NI_MAXHOST,
   kMaxNicknameLength = 20,
   kBufferSize = 1024 // Includes NULL term
 };
@@ -36,8 +37,15 @@ static Server *server = NULL;
 
 static bool terminate = false;
 
-void* Server_handleClient(void* data);
+static List *clients = NULL;
+// static Queue *messages = NULL;
 
+void* Server_handleClient(void* data);
+void* Server_handleBroadcast(void* data);
+// void Server_broadcast(void* data);
+void Server_send(SOCKET client, const char* message, size_t length);
+
+// Initialise the server object
 Server *Server_init(const char *host, int portNumber, int maxConnections) {
   if (server != NULL) {
     Fatal("The server process is already running");
@@ -87,6 +95,7 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   return server;
 }
 
+// Free memory for the server object
 void Server_free(Server **this) {
   if (this != NULL) {
     free((*this)->host);
@@ -128,9 +137,23 @@ void Server_start(Server *this) {
   // Ignoring SIGPIPE (= sending data to a closed socket)
   Server_catch(SIGPIPE, SIG_IGN);
 
+  // Create a thread for broadcast messages
+  pthread_t broadcastThreadID = 0;
+  pthread_create(&broadcastThreadID, NULL, Server_handleBroadcast, NULL);
+
+  clients = List_new();
+  if (clients == NULL) {
+    Fatal("Unable to initialise clients list");
+  }
+
+  // messages = Queue_new();
+  // if (messages == NULL) {
+  //   Fatal("Unable to initialise message queue");
+  // }
+
   while (!terminate) {
 
-    // Wait for a client to connect
+    // Initialise a temporary client variable
     Client client;
     memset(&client, 0, sizeof(Client));
     client.length = sizeof(client.address);
@@ -149,12 +172,40 @@ void Server_start(Server *this) {
     );
     Info("New connection from %s", client.host);
 
-    // Start client thread
     pthread_t clientThreadID = 0;
-    pthread_create(&clientThreadID, NULL, Server_handleClient, &client.socket);
-    pthread_detach(clientThreadID);
+    if (clients->length < kMaxClientConnections) {
+
+      // Add client to the list (the client is cloned)
+      List_append(clients, &client, sizeof(Client));
+
+      // Get pointer to a copy of the inserted client,
+      // because the temporary client var will be overridden
+      // at the beginning of the next cycle
+      Client *last = (Client *)List_last(clients);
+
+      // Start client thread
+      pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
+      last->threadID = clientThreadID; // Update client list item
+    } else {
+      Info("Connection limits reached");
+    }
   }
+
   Info("Terminating...");
+
+  // Wait for all client threads to exit
+  Client *client;
+  while ((client = (Client *)List_next(clients)) != NULL) {
+    pthread_join(client->threadID, NULL);
+  }
+  // Destroy client list
+  List_free(&clients);
+
+  // Close broadcast thread
+  pthread_join(broadcastThreadID, NULL);
+  // Queue_free(&messages);
+
+  // Cleanup socket and server
   SOCKET_close(this->socket);
   Server_free(&server);
 }
@@ -177,12 +228,37 @@ void Server_send(SOCKET client, const char* message, size_t length) {
   } while (sentTotal < length);
 }
 
+// Comparison function to lookup a client by its ThreadID
+// A is a Client object, b is a thread ID
+// The (0*size) statement is there to avoid errors for unused parameter
+int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
+  Client *client = (Client *)a;
+  pthread_t threadB = *((pthread_t *)b) + (0 * size);
+  return client->threadID - threadB;
+}
+
+// Removes a client object from the list of connected clients
+void Server_dropClient(pthread_t clientThreadID) {
+  // We need to pass sizeof(Client) as size or the item will not be compared
+  int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
+  if (index >= 0) {
+    if (!List_delete(clients, index)) {
+      Warn("Unable to drop client %d with thread ID %lu", index, clientThreadID);
+    }
+    return;
+  }
+  Warn("Unable to find client with thread ID %lu", clientThreadID);
+}
+
+// Main Client thread, handle communications with a single client
 void* Server_handleClient(void* socket) {
+  pthread_t me = pthread_self();
   SOCKET *client = (SOCKET *)socket;
-  Server_catch(SIGTERM, Server_stop);
-  pthread_detach(pthread_self());
 
   char clientMessage[kBufferSize];
+
+  char *welcomeMessage = "/ok Welcome to C2hat!";
+  Server_send(*client, welcomeMessage, strlen(welcomeMessage));
 
   while(!terminate) {
     // Initialise buffer for client data
@@ -212,7 +288,40 @@ void* Server_handleClient(void* socket) {
     }
   }
   SOCKET_close(*client);
-  Info("Closing thread %d", pthread_self());
+  // Drop client from the clients list
+  Server_dropClient(me);
+  Info("Closing client thread %lu", me);
   pthread_exit(NULL);
   return NULL;
 }
+
+void* Server_handleBroadcast(void* data) {
+  pthread_t me = pthread_self();
+  while (!terminate) {
+    // Info("Broadcasting messages %s...", foo);
+    sleep(5);
+    /*
+    do {
+      // Lock Message Queue
+      message = Queue_pop(messages);
+      // Unlock queue
+
+      // Lock clients
+      Client *client;
+      while ((client = (Client *)List_next(clients)) != NULL) {
+        if !Server_send(client, message) Clients_drop(client->threadID);
+      }
+      // Unlock clients
+    } while(message != NULL);
+    */
+  }
+  Info("Closing broadcast thread %lu", me);
+  pthread_exit(data);
+  return NULL;
+}
+
+// void Server_broadcast(void* data) {
+//   // Lock queue
+//   Queue_enqueue(messages, data);
+//   // Unlock queue
+// }

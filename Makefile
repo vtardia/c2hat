@@ -1,6 +1,6 @@
 # Compiler base command and options
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c17
+CFLAGS = -g -Wall -Wextra -Werror -std=c17
 AR = ar rcs
 LDFLAGS = -L lib
 INCFLAGS = -I src/lib
@@ -25,8 +25,8 @@ prereq:
 	mkdir -p obj/server obj/client obj/lib lib bin
 
 # Server final binary
-server: prereq liblogger libsocket libpid obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -o bin/server
+server: prereq liblogger libsocket libpid liblist libqueue obj/server/main.o obj/server/server.o
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -lqueue -llist -o bin/server
 
 
 # Server dependencies
@@ -52,13 +52,26 @@ obj/lib/socket.o: src/lib/socket/socket.c
 libsocket: prereq obj/lib/socket.o
 	$(AR) lib/libsocket.a obj/lib/socket.o
 
-
 # Logger static library
 obj/lib/logger.o: src/lib/logger/logger.c
 	$(CC) $(CFLAGS) -c src/lib/logger/logger.c -o obj/lib/logger.o $(OSFLAG)
 
 liblogger: prereq obj/lib/logger.o
 	$(AR) lib/liblogger.a obj/lib/logger.o
+
+# List static library
+obj/lib/list.o: src/lib/list/list.c
+	$(CC) $(CFLAGS) -c src/lib/list/list.c -o obj/lib/list.o $(OSFLAG)
+
+liblist: prereq obj/lib/list.o
+	$(AR) lib/liblist.a obj/lib/list.o
+
+# Queue static library
+obj/lib/queue.o: src/lib/queue/queue.c
+	$(CC) $(CFLAGS) -c src/lib/queue/queue.c -o obj/lib/queue.o $(OSFLAG)
+
+libqueue: prereq obj/lib/queue.o
+	$(AR) lib/libqueue.a obj/lib/queue.o
 
 # INI parser
 # obj/ini.o: ini/ini.c ini/ini.h

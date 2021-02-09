@@ -237,29 +237,150 @@ int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
   return client->threadID - threadB;
 }
 
+// Comparison function to lookup a client by its Nickname
+// A is a Client object, b is a char pointer
+// The (0*size) statement is there to avoid errors for unused parameter
+int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
+  Client *client = (Client *)a;
+  char *nickname = (char *)b;
+  return strncmp(client->nickname, nickname, kMaxNicknameLength + (0 * size));
+}
+
 // Removes a client object from the list of connected clients
-void Server_dropClient(pthread_t clientThreadID) {
+// and close the connection
+void Server_dropClient(SOCKET client) {
+  pthread_t clientThreadID = pthread_self();
+
+  // Close client socket
+  SOCKET_close(client);
+
+  // Drop client from the clients list
   // We need to pass sizeof(Client) as size or the item will not be compared
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
     if (!List_delete(clients, index)) {
       Warn("Unable to drop client %d with thread ID %lu", index, clientThreadID);
     }
-    return;
+  } else {
+    Warn("Unable to find client with thread ID %lu", clientThreadID);
   }
-  Warn("Unable to find client with thread ID %lu", clientThreadID);
+  Info("Closing client thread %lu", clientThreadID);
+  pthread_exit(NULL);
+}
+
+// Lookup a Client in the list by its thread ID
+Client *Server_getClientInfoForThread(pthread_t clientThreadID) {
+  int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
+  if (index >= 0) {
+    return (Client *)List_item(clients, index);
+  }
+  return NULL;
+}
+
+// Lookup a Client in the list by its nickname
+Client *Server_getClientInfoForNickname(char *clientNickname) {
+  int index = List_search(clients, clientNickname, sizeof(Client), Client_findByNickname);
+  if (index >= 0) {
+    return (Client *)List_item(clients, index);
+  }
+  return NULL;
+}
+
+// Receive a message from the Client until a null terminator is found
+// or the buffer is full
+int Server_receive(SOCKET client, char *buffer, size_t length) {
+  char *data = buffer; // points at the start of buffer
+  size_t total = 0;
+  do {
+    int bytesReceived = recv(client, buffer, length - total, 0);
+    if (bytesReceived == 0) {
+      printf("Connection closed by remote client\n");
+      break; // exit the whole loop
+    }
+    if (bytesReceived < 0) {
+      fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      break; // exit the whole loop
+    }
+    data += bytesReceived;
+    total += bytesReceived;
+  } while(*data != 0 && total < (length - 1));
+
+  // Adding safe terminator in case of loop break
+  if (*data != 0) *(data + 1) = 0;
+
+  return total;
+}
+
+// Authenticate a client connection
+// Currently it only ensures that another client is not already connected
+// using the same nickname, and the client entry is in the clients list
+bool Server_authenticate(SOCKET client) {
+  char request[kBufferSize] = {0};
+  char response[kBufferSize] = {0};
+
+  snprintf(request, kBufferSize, "/nick Please enter a nickname:");
+  Server_send(client, request, strlen(request));
+
+  int received = Server_receive(client, response, kBufferSize);
+  if (received > 0) {
+    if (strncmp(response, "/nick", 5) == 0) {
+      // The client has sent a nick
+      char *nick = response + 6; // Nickname starts after the tag
+      *(nick + kMaxNicknameLength) = 0; // Truncating nickname to its max
+      Client *clientInfo = NULL;
+      // Lookup if a client is already logged with the provided nickname
+      clientInfo = Server_getClientInfoForNickname(nick);
+      if (clientInfo == NULL) {
+        // The user's nickname is unique
+        // Lookup client by thread
+        clientInfo = Server_getClientInfoForThread(pthread_self());
+        if (clientInfo != NULL) {
+          // Update client entry
+          snprintf(clientInfo->nickname, kMaxNicknameLength, "%s", nick);
+          Info("User %s (%d) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
+          return true;
+        }
+        Error("Authentication: client info not found for client %lu", pthread_self());
+      }
+      Info("Client with nick '%s' is already logged in", nick);
+    }
+  }
+  return false;
 }
 
 // Main Client thread, handle communications with a single client
 void* Server_handleClient(void* socket) {
   pthread_t me = pthread_self();
   SOCKET *client = (SOCKET *)socket;
+  char clientMessage[kBufferSize] = {0};
 
-  char clientMessage[kBufferSize];
+  Info("Starting new client thread %lu", me);
 
+  // Send a welcome message
   char *welcomeMessage = "/ok Welcome to C2hat!";
   Server_send(*client, welcomeMessage, strlen(welcomeMessage));
 
+  // Ask for a nickname
+  if (!Server_authenticate(*client)) {
+    Info("Authentication failed for client thread %lu", me);
+    char *errorMessage = "/err Authentication failed";
+    Server_send(*client, errorMessage, strlen(errorMessage));
+    Server_dropClient(*client);
+  }
+
+  // Say Hello to the new user
+  Client *clientInfo = Server_getClientInfoForThread(me);
+  if (clientInfo == NULL) {
+    Error("Client info not found for client %lu", me);
+    Server_dropClient(me);
+  }
+  char greetings[kBufferSize] = {0};
+  snprintf(greetings, kBufferSize, "Hello %s!", clientInfo->nickname);
+  Server_send(*client, greetings, strlen(greetings));
+
+  // TODO: broadcast that a new client has joined
+
+  // Start the chat
   while(!terminate) {
     // Initialise buffer for client data
     memset(clientMessage, '\0', kBufferSize);
@@ -287,11 +408,7 @@ void* Server_handleClient(void* socket) {
       Server_send(*client, clientMessage, received);
     }
   }
-  SOCKET_close(*client);
-  // Drop client from the clients list
-  Server_dropClient(me);
-  Info("Closing client thread %lu", me);
-  pthread_exit(NULL);
+  Server_dropClient(*client);
   return NULL;
 }
 

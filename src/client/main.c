@@ -23,6 +23,7 @@ int main(int argc, char const *argv[]) {
   #if defined(_WIN32)
     WSACleanup();
   #endif
+    return 1;
   }
 
   Client_listen(server);

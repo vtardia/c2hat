@@ -6,7 +6,9 @@ enum {
   kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
   kMaxNicknameLength = 20,
-  kBufferSize = 1024 // Includes NULL term
+  kBufferSize = 1024, // Includes NULL term
+  // Format is: /msg [<20charUsername>]:\s
+  kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize
 };
 
 // Holds data for queued messages
@@ -38,12 +40,12 @@ static Server *server = NULL;
 static bool terminate = false;
 
 static List *clients = NULL;
-// static Queue *messages = NULL;
+static Queue *messages = NULL;
 
 void* Server_handleClient(void* data);
 void* Server_handleBroadcast(void* data);
-// void Server_broadcast(void* data);
-void Server_send(SOCKET client, const char* message, size_t length);
+void Server_broadcast(char *message, size_t length);
+int Server_send(SOCKET client, const char* message, size_t length);
 
 // Initialise the server object
 Server *Server_init(const char *host, int portNumber, int maxConnections) {
@@ -146,10 +148,10 @@ void Server_start(Server *this) {
     Fatal("Unable to initialise clients list");
   }
 
-  // messages = Queue_new();
-  // if (messages == NULL) {
-  //   Fatal("Unable to initialise message queue");
-  // }
+  messages = Queue_new();
+  if (messages == NULL) {
+    Fatal("Unable to initialise message queue");
+  }
 
   while (!terminate) {
 
@@ -203,7 +205,7 @@ void Server_start(Server *this) {
 
   // Close broadcast thread
   pthread_join(broadcastThreadID, NULL);
-  // Queue_free(&messages);
+  Queue_free(&messages);
 
   // Cleanup socket and server
   SOCKET_close(this->socket);
@@ -211,7 +213,7 @@ void Server_start(Server *this) {
 }
 
 // Send data to a socket ensuring all data is sent
-void Server_send(SOCKET client, const char* message, size_t length) {
+int Server_send(SOCKET client, const char* message, size_t length) {
   size_t sentTotal = 0;
   char *data = (char*)message; // points to the beginning of the message
   do {
@@ -226,6 +228,7 @@ void Server_send(SOCKET client, const char* message, size_t length) {
     data += sent; // points to the remaining data to be sent
     sentTotal += sent;
   } while (sentTotal < length);
+  return sentTotal;
 }
 
 // Comparison function to lookup a client by its ThreadID
@@ -378,7 +381,10 @@ void* Server_handleClient(void* socket) {
   snprintf(greetings, kBufferSize, "Hello %s!", clientInfo->nickname);
   Server_send(*client, greetings, strlen(greetings));
 
-  // TODO: broadcast that a new client has joined
+  // Broadcast that a new client has joined
+  char joinMessage[kBufferSize] = {0};
+  snprintf(joinMessage, kBufferSize, "/log %s just joined the chat", clientInfo->nickname);
+  Server_broadcast(joinMessage, strlen(joinMessage));
 
   // Start the chat
   while(!terminate) {
@@ -405,40 +411,51 @@ void* Server_handleClient(void* socket) {
       Info("Received: %.*s", received, clientMessage);
 
       // Sending back data to the client
-      Server_send(*client, clientMessage, received);
+      // /msg [<20charUsername>]:
+      char broadcast[kBroadcastBufferSize] = {0};
+      snprintf(broadcast, kBroadcastBufferSize, "/msg [%s]: %s", clientInfo->nickname, clientMessage);
+      Server_broadcast(broadcast, strlen(broadcast));
     }
   }
+  char nickname[kMaxNicknameLength + 1] = {0};
+  memcpy(nickname, clientInfo->nickname, kMaxNicknameLength);
   Server_dropClient(*client);
+
+  // Broadcast that client has left
+  char leftMessage[kBufferSize] = {0};
+  snprintf(leftMessage, kBufferSize, "/log %s just left the chat", nickname);
+  Server_broadcast(leftMessage, strlen(leftMessage));
+
   return NULL;
 }
 
 void* Server_handleBroadcast(void* data) {
   pthread_t me = pthread_self();
+  QueueData *item = NULL;
   while (!terminate) {
-    // Info("Broadcasting messages %s...", foo);
-    sleep(5);
-    /*
     do {
       // Lock Message Queue
-      message = Queue_pop(messages);
+      item = Queue_dequeue(messages);
       // Unlock queue
+      if (item == NULL) break; // Queue is empty
 
       // Lock clients
       Client *client;
+      List_rewind(clients);
       while ((client = (Client *)List_next(clients)) != NULL) {
-        if !Server_send(client, message) Clients_drop(client->threadID);
+        int sent = Server_send(client->socket, (char*)item->content, item->length);
+        if (sent <= 0) Server_dropClient(client->socket);
       }
       // Unlock clients
-    } while(message != NULL);
-    */
+    } while(!Queue_empty(messages));
   }
   Info("Closing broadcast thread %lu", me);
   pthread_exit(data);
   return NULL;
 }
 
-// void Server_broadcast(void* data) {
-//   // Lock queue
-//   Queue_enqueue(messages, data);
-//   // Unlock queue
-// }
+void Server_broadcast(char *message, size_t length) {
+  // Lock queue
+  Queue_enqueue(messages, message, length);
+  // Unlock queue
+}

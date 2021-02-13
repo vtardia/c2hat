@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #ifndef CLIENT_H
 #define CLIENT_H
   #include "socket/socket.h"

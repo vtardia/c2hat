@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #ifndef QUEUES_H
 #define QUEUES_H
 

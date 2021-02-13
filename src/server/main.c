@@ -1,11 +1,16 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
+/// @file main.c
 #include "server.h"
 
 #include <ctype.h>
 #include <getopt.h>
 
-const int kDefaultMaxClients = 5;
-const int kDefaultServerPort = 10000;
-const char *kDefaultServerHost = "localhost";
+const int kDefaultMaxClients = 5; /// Default connection limit
+const int kDefaultServerPort = 10000; /// Default server port
+const char *kDefaultServerHost = "localhost"; /// Default server host
 
 const int kMaxCommandSize = 10;
 const char *kCommandStart = "start";
@@ -46,12 +51,20 @@ typedef char * const * ARGV;
 
 void usage(const char *program);
 
-// Close open resources and deletes PID file
+/**
+ * Closes any open resource and deletes PID file
+ */
 void clean() {
   Info("Cleaning up...");
   remove(kDefaultPIDFile);
 }
 
+/**
+ * Parses the server command
+ * Available commands are: start, stop, status
+ * @param[out] dest Contains the parsed command
+ * @param[in] arg The first argument from the ARGV array
+ */
 void parseCommand(char *dest, const char *arg) {
   strncpy(dest, arg, kMaxCommandSize -1);
   for (int i = 0; i < kMaxCommandSize; ++i) {
@@ -60,6 +73,15 @@ void parseCommand(char *dest, const char *arg) {
   dest[kMaxCommandSize - 1] = '\0';
 }
 
+/**
+ * Parses the command line options for the Start command
+ * Returns true on success, false on failure
+ * @param[in] argc The number of arguments
+ * @param[in] argv The array of arguments
+ * @param[out] host The listening IP address
+ * @param[out] port The listening TCP port
+ * @param[out] clients The maximum number of clients connected
+ */
 int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
   struct option options[] = {
     {"host", required_argument, NULL, 'h'},
@@ -86,6 +108,12 @@ int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
   return valid;
 }
 
+/**
+ * Starts the server
+ * @param[in] host Listening IP address
+ * @param[in] port Listening TCP port
+ * @param[in] maxClients Maximum number of client connections
+ */
 int CMD_runStart(const char *host, const int port, const int maxClients) {
   pid_t child = fork();
   if (child > 0) {
@@ -133,7 +161,9 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   return EXIT_SUCCESS;
 }
 
-// Stop the running server
+/**
+ * Stop the running server
+ */
 int CMD_runStop() {
   PID_check(kDefaultPIDFile);
   pid_t pid = PID_load(kDefaultPIDFile);
@@ -146,7 +176,9 @@ int CMD_runStop() {
   return EXIT_SUCCESS;
 }
 
-// Check the status of the server daemon
+/**
+ * Check the status of the server daemon
+ */
 int CMD_runStatus() {
   PID_check(kDefaultPIDFile);
   pid_t pid = PID_load(kDefaultPIDFile);
@@ -154,10 +186,16 @@ int CMD_runStatus() {
   return EXIT_SUCCESS;
 }
 
+/**
+ * Displays program usage
+ */
 void usage(const char *program) {
   fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>] [-m <max-clients>]|stop|status]\n", program);
 }
 
+/**
+ * Main server entry point
+ */
 int main(int argc, ARGV argv) {
   if (argc < 2) {
     usage(argv[0]);

@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #include "logger.h"
 
 static int logLevel = LOG_DEFAULT_LEVEL;

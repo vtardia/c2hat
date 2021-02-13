@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #ifndef SOCKET_H
 #define SOCKET_H
 

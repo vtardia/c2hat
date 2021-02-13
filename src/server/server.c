@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #include "server.h"
 
 #include <pthread.h>
@@ -42,10 +46,39 @@ static bool terminate = false;
 static List *clients = NULL;
 static Queue *messages = NULL;
 
+// Initialise, start and destroy the server object
+Server *Server_init(const char *host, int portNumber, int maxConnections);
+void Server_start(Server *);
+void Server_free(Server **);
+
+// Signal handling
+int Server_catch(int sig, void (*handler)(int));
+void Server_stop(int signal);
+
+// Send and receive data from client sockets
+int Server_send(SOCKET client, const char* message, size_t length);
+int Server_receive(SOCKET client, char *buffer, size_t length);
+
+// Manages a client's thread
 void* Server_handleClient(void* data);
+
+// Broadcast messages to all connected clients
 void* Server_handleBroadcast(void* data);
 void Server_broadcast(char *message, size_t length);
-int Server_send(SOCKET client, const char* message, size_t length);
+
+// Closes a client connection and related thread
+void Server_dropClient(SOCKET client);
+
+// Find a Client object in the list given a nickname or a thread id
+Client *Server_getClientInfoForThread(pthread_t clientThreadID);
+Client *Server_getClientInfoForNickname(char *clientNickname);
+
+// Comparison functions for List_search
+int Client_findByThreadID(const ListData *a, const ListData *b, size_t size);
+int Client_findByNickname(const ListData *a, const ListData *b, size_t size);
+
+// Authenticate a client connection using a nickname
+bool Server_authenticate(SOCKET client);
 
 // Initialise the server object
 Server *Server_init(const char *host, int portNumber, int maxConnections) {
@@ -376,7 +409,7 @@ void* Server_handleClient(void* socket) {
   Client *clientInfo = Server_getClientInfoForThread(me);
   if (clientInfo == NULL) {
     Error("Client info not found for client %lu", me);
-    Server_dropClient(me);
+    Server_dropClient(*client);
   }
   char greetings[kBufferSize] = {0};
   snprintf(greetings, kBufferSize, "Hello %s!", clientInfo->nickname);

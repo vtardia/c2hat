@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #include "socket.h"
 #include "logger/logger.h"
 

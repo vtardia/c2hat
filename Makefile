@@ -96,3 +96,9 @@ clean:
 	rm -rfv bin/**
 	rm -rfv obj/**
 	rm -rfv lib/**
+	rm -rfv docs/**
+
+.PHONY: docs
+docs: docs Doxyfile
+	mkdir -p docs
+	doxygen Doxyfile

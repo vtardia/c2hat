@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #include "client.h"
 
 #if defined(_WIN32)

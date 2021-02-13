@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #ifndef LOGGER_H
 #define LOGGER_H
 

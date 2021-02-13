@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 

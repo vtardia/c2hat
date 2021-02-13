@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Vito Tardia
+ */
+
 #ifndef LISTS_H
 #define LISTS_H
 

@@ -188,6 +188,7 @@ void Server_start(Server *this) {
       // Start client thread
       pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
       last->threadID = clientThreadID; // Update client list item
+      pthread_detach(clientThreadID);
     } else {
       Info("Connection limits reached");
     }
@@ -446,6 +447,7 @@ void* Server_handleBroadcast(void* data) {
         int sent = Server_send(client->socket, (char*)item->content, item->length);
         if (sent <= 0) Server_dropClient(client->socket);
       }
+      QueueData_free(&item);
       // Unlock clients
     } while(!Queue_empty(messages));
   }

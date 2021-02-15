@@ -12,7 +12,17 @@ enum {
   kMaxNicknameLength = 20,
   kBufferSize = 1024, // Includes NULL term
   // Format is: /msg [<20charUsername>]:\s
-  kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize
+  kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize,
+  kMessageTypeNick = 100,
+  kMessageTypeAuth = 110,
+  kMessageTypeHelp = 120,
+  kMessageTypeMsg = 130,
+  kMessageTypeList = 140,
+  kMessageTypeQuit = 150,
+  kMessageTypeOk = 160,
+  kMessageTypeErr = 170,
+  kMessageTypeLog = 180,
+  kMessageTypeAdmin = 300
 };
 
 /// Holds data for queued messages
@@ -79,6 +89,12 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size);
 
 // Authenticate a client connection using a nickname
 bool Server_authenticate(SOCKET client);
+
+// Returns the type of a given message
+int Message_getType(const char *message);
+
+// Returns the content part of a message
+char *Message_getContent(const char *message, unsigned int type);
 
 /**
  * Creates and initialises the server object
@@ -421,10 +437,9 @@ bool Server_authenticate(SOCKET client) {
 
   int received = Server_receive(client, response, kBufferSize);
   if (received > 0) {
-    if (strncmp(response, "/nick", 5) == 0) {
-      // The client has sent a nick
-      char *nick = response + 6; // Nickname starts after the tag
-      *(nick + kMaxNicknameLength) = 0; // Truncating nickname to its max
+    if (kMessageTypeNick == Message_getType(response)) {
+      // The client has sent a nick in the format '/nick Name'
+      char *nick = Message_getContent(response, kMessageTypeNick);
       Client *clientInfo = NULL;
       // Lookup if a client is already logged with the provided nickname
       clientInfo = Server_getClientInfoForNickname(nick);
@@ -445,6 +460,88 @@ bool Server_authenticate(SOCKET client) {
   }
   // We leave error management or client disconnection to the calling function
   return false;
+}
+
+/**
+ * Finds the type of a given message
+ * @param[in] message The server or client message content
+ * @param[out] The message type code or 0 on failure
+ */
+int Message_getType(const char *message) {
+  if (strncmp(message, "/nick ", 6) == 0) {
+    return kMessageTypeNick;
+  }
+  if (strncmp(message, "/msg ", 5) == 0) {
+    return kMessageTypeMsg;
+  }
+  if (strncmp(message, "/quit", 5) == 0) {
+    return kMessageTypeQuit;
+  }
+  if (strncmp(message, "/log ", 5) == 0) {
+    return kMessageTypeLog;
+  }
+  if (strncmp(message, "/err ", 5) == 0) {
+    return kMessageTypeErr;
+  }
+  if (strncmp(message, "/ok", 3) == 0) {
+    // Trailing space and additional content is optional on OK
+    return kMessageTypeOk;
+  }
+  return 0;
+}
+
+/**
+ * Returns the content part of a given message
+ * The return value is a pointer to part of the input string and
+ * doesn't need to be freed separately
+ * @param[in] message The message to parse
+ * @param[in] type The type of message we are extracting
+ * @param[out] The trimmed content of the string
+ */
+char *Message_getContent(const char *message, unsigned int type) {
+  unsigned int prefixLength = 0;
+  unsigned int maxLength = kBufferSize;
+  switch (type) {
+    case kMessageTypeMsg:
+      prefixLength = strlen("/msg");
+    break;
+    case kMessageTypeNick:
+      prefixLength = strlen("/nick");
+      maxLength = kMaxNicknameLength;
+    break;
+    case kMessageTypeQuit:
+      prefixLength = strlen("/quit");
+    break;
+    case kMessageTypeOk:
+      prefixLength = strlen("/ok");
+    break;
+    case kMessageTypeErr:
+      prefixLength = strlen("/err");
+    break;
+    case kMessageTypeLog:
+      prefixLength = strlen("/log");
+    break;
+  }
+  maxLength -= prefixLength;
+
+  // Points to start of the parse
+  char *pStart = ((char *)message + prefixLength);
+
+  // Points to the max length of the string
+  char *pEnd = pStart + maxLength;
+
+  // Trimming spaces at the beginning of the string
+  const char *spaces = "\t\n\v\f\r ";
+  pStart += strspn(pStart, spaces);
+
+  // Ensure we have at least a null terminator at the end
+  // and trim all trailing spaces
+  do {
+    *pEnd = 0;
+    pEnd--;
+  } while (pEnd >= pStart && strchr(spaces, *pEnd) != NULL);
+
+  return pStart;
 }
 
 /**
@@ -510,21 +607,32 @@ void* Server_handleClient(void* socket) {
     if (received > 0) {
       Info("Received: %.*s", received, clientMessage);
 
-      // Sending back data to the client
-      // /msg [<20charUsername>]:
+      int messageType = Message_getType(clientMessage);
+      if (kMessageTypeQuit == messageType) break;
+
+      char *messageContent = Message_getContent(clientMessage, kMessageTypeMsg);
       char broadcast[kBroadcastBufferSize] = {0};
-      snprintf(broadcast, kBroadcastBufferSize, "/msg [%s]: %s", clientInfo->nickname, clientMessage);
-      Server_broadcast(broadcast, strlen(broadcast));
+      switch (messageType) {
+        case kMessageTypeMsg:
+          if (strlen(messageContent) > 0) {
+            // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
+            snprintf(broadcast, kBroadcastBufferSize, "/msg [%s]: %s", clientInfo->nickname, messageContent);
+            Server_broadcast(broadcast, strlen(broadcast));
+          }
+        break;
+        default:
+          ; // Ignore for now...
+      }
     }
   }
-  char nickname[kMaxNicknameLength + 1] = {0};
-  memcpy(nickname, clientInfo->nickname, kMaxNicknameLength);
-  Server_dropClient(*client);
 
   // Broadcast that client has left
   char leftMessage[kBufferSize] = {0};
-  snprintf(leftMessage, kBufferSize, "/log %s just left the chat", nickname);
+  snprintf(leftMessage, kBufferSize, "/log %s just left the chat", clientInfo->nickname);
   Server_broadcast(leftMessage, strlen(leftMessage));
+
+  // Close the connection
+  Server_dropClient(*client);
 
   return NULL;
 }

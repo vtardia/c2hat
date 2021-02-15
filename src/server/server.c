@@ -96,6 +96,9 @@ int Message_getType(const char *message);
 // Returns the content part of a message
 char *Message_getContent(const char *message, unsigned int type);
 
+// Wraps an outgoing message into the given command type
+void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
+
 /**
  * Creates and initialises the server object
  * @param[in] host The listening IP address
@@ -432,7 +435,7 @@ bool Server_authenticate(SOCKET client) {
   char request[kBufferSize] = {0};
   char response[kBufferSize] = {0};
 
-  snprintf(request, kBufferSize, "/nick Please enter a nickname:");
+  Message_format(kMessageTypeNick, request, kBufferSize, "Please enter a nickname:");
   Server_send(client, request, strlen(request));
 
   int received = Server_receive(client, response, kBufferSize);
@@ -545,6 +548,48 @@ char *Message_getContent(const char *message, unsigned int type) {
 }
 
 /**
+ * Wraps an outgoing message into the given command type
+ * @param[in] type Type of command to generate
+ * @param[in] dest Destination char array
+ * @param[in] size Maximum size of the message to generate
+ * @param[in] format printf-compatible formatted string
+ * @param[in] ...
+ */
+void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...) {
+  char *commandPrefix = "";
+  switch (type) {
+    case kMessageTypeNick:
+      commandPrefix = "/nick";
+    break;
+    case kMessageTypeMsg:
+      commandPrefix = "/msg";
+    break;
+    case kMessageTypeLog:
+      commandPrefix = "/log";
+    break;
+    case kMessageTypeOk:
+      commandPrefix = "/ok";
+    break;
+    case kMessageTypeErr:
+      commandPrefix = "/err";
+    break;
+  }
+
+  va_list args;
+  va_start(args, format);
+
+  // Compile the message with the provided args in a temporary buffer
+  char buffer[size];
+  memset(buffer, 0, size);
+  vsnprintf(buffer, size, format, args);
+
+  va_end(args);
+
+  // Compile the final message by adding the prefix
+  snprintf(dest, size, "%s %s", commandPrefix, buffer);
+}
+
+/**
  * Handles communications with a single client, it is spawned
  * on a new thread for every connected client
  * @param[in] socket Pointer to a client socket
@@ -557,13 +602,15 @@ void* Server_handleClient(void* socket) {
   Info("Starting new client thread %lu", me);
 
   // Send a welcome message
-  char *welcomeMessage = "/ok Welcome to C2hat!";
+  char welcomeMessage[kBufferSize] = {0};
+  Message_format(kMessageTypeOk, welcomeMessage, kBufferSize, "Welcome to C2hat!");
   Server_send(*client, welcomeMessage, strlen(welcomeMessage));
 
   // Ask for a nickname
   if (!Server_authenticate(*client)) {
     Info("Authentication failed for client thread %lu", me);
-    char *errorMessage = "/err Authentication failed";
+    char errorMessage[kBufferSize] = {0};
+    Message_format(kMessageTypeErr, errorMessage, kBufferSize, "Authentication failed");
     Server_send(*client, errorMessage, strlen(errorMessage));
     Server_dropClient(*client);
   }
@@ -575,12 +622,12 @@ void* Server_handleClient(void* socket) {
     Server_dropClient(*client);
   }
   char greetings[kBufferSize] = {0};
-  snprintf(greetings, kBufferSize, "Hello %s!", clientInfo->nickname);
+  Message_format(kMessageTypeOk, greetings, kBufferSize, "Hello %s!", clientInfo->nickname);
   Server_send(*client, greetings, strlen(greetings));
 
   // Broadcast that a new client has joined
   char joinMessage[kBufferSize] = {0};
-  snprintf(joinMessage, kBufferSize, "/log %s just joined the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, joinMessage, kBufferSize, "%s just joined the chat", clientInfo->nickname);
   Server_broadcast(joinMessage, strlen(joinMessage));
 
   // Start the chat
@@ -616,7 +663,7 @@ void* Server_handleClient(void* socket) {
         case kMessageTypeMsg:
           if (strlen(messageContent) > 0) {
             // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-            snprintf(broadcast, kBroadcastBufferSize, "/msg [%s]: %s", clientInfo->nickname, messageContent);
+            Message_format(kMessageTypeMsg, broadcast, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
             Server_broadcast(broadcast, strlen(broadcast));
           }
         break;
@@ -628,7 +675,7 @@ void* Server_handleClient(void* socket) {
 
   // Broadcast that client has left
   char leftMessage[kBufferSize] = {0};
-  snprintf(leftMessage, kBufferSize, "/log %s just left the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, leftMessage, kBufferSize, "%s just left the chat", clientInfo->nickname);
   Server_broadcast(leftMessage, strlen(leftMessage));
 
   // Close the connection

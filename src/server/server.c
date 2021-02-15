@@ -597,21 +597,21 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
 void* Server_handleClient(void* socket) {
   pthread_t me = pthread_self();
   SOCKET *client = (SOCKET *)socket;
-  char clientMessage[kBufferSize] = {0};
+  char messageBuffer[kBufferSize] = {0};
 
   Info("Starting new client thread %lu", me);
 
   // Send a welcome message
-  char welcomeMessage[kBufferSize] = {0};
-  Message_format(kMessageTypeOk, welcomeMessage, kBufferSize, "Welcome to C2hat!");
-  Server_send(*client, welcomeMessage, strlen(welcomeMessage));
+  memset(messageBuffer, '\0', kBufferSize);
+  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Welcome to C2hat!");
+  Server_send(*client, messageBuffer, strlen(messageBuffer));
 
   // Ask for a nickname
   if (!Server_authenticate(*client)) {
     Info("Authentication failed for client thread %lu", me);
-    char errorMessage[kBufferSize] = {0};
-    Message_format(kMessageTypeErr, errorMessage, kBufferSize, "Authentication failed");
-    Server_send(*client, errorMessage, strlen(errorMessage));
+    memset(messageBuffer, '\0', kBufferSize);
+    Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Authentication failed");
+    Server_send(*client, messageBuffer, strlen(messageBuffer));
     Server_dropClient(*client);
   }
 
@@ -621,22 +621,22 @@ void* Server_handleClient(void* socket) {
     Error("Client info not found for client %lu", me);
     Server_dropClient(*client);
   }
-  char greetings[kBufferSize] = {0};
-  Message_format(kMessageTypeOk, greetings, kBufferSize, "Hello %s!", clientInfo->nickname);
-  Server_send(*client, greetings, strlen(greetings));
+  memset(messageBuffer, '\0', kBufferSize);
+  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Hello %s!", clientInfo->nickname);
+  Server_send(*client, messageBuffer, strlen(messageBuffer));
 
   // Broadcast that a new client has joined
-  char joinMessage[kBufferSize] = {0};
-  Message_format(kMessageTypeLog, joinMessage, kBufferSize, "%s just joined the chat", clientInfo->nickname);
-  Server_broadcast(joinMessage, strlen(joinMessage));
+  memset(messageBuffer, '\0', kBufferSize);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just joined the chat", clientInfo->nickname);
+  Server_broadcast(messageBuffer, strlen(messageBuffer));
 
   // Start the chat
   while(!terminate) {
     // Initialise buffer for client data
-    memset(clientMessage, '\0', kBufferSize);
+    memset(messageBuffer, '\0', kBufferSize);
 
     // Listen for data
-    int received = Server_receive(*client, clientMessage, kBufferSize);
+    int received = Server_receive(*client, messageBuffer, kBufferSize);
     if (received < 0) {
       if (SOCKET_getErrorNumber() == 0) {
         Info("Connection closed by remote client %d", ECONNRESET);
@@ -652,19 +652,19 @@ void* Server_handleClient(void* socket) {
     }
 
     if (received > 0) {
-      Info("Received: %.*s", received, clientMessage);
+      Info("Received: %.*s", received, messageBuffer);
 
-      int messageType = Message_getType(clientMessage);
+      int messageType = Message_getType(messageBuffer);
       if (kMessageTypeQuit == messageType) break;
 
-      char *messageContent = Message_getContent(clientMessage, kMessageTypeMsg);
-      char broadcast[kBroadcastBufferSize] = {0};
+      char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg);
+      char broadcastBuffer[kBroadcastBufferSize] = {0};
       switch (messageType) {
         case kMessageTypeMsg:
           if (strlen(messageContent) > 0) {
             // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-            Message_format(kMessageTypeMsg, broadcast, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
-            Server_broadcast(broadcast, strlen(broadcast));
+            Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
+            Server_broadcast(broadcastBuffer, strlen(broadcastBuffer));
           }
         break;
         default:
@@ -674,9 +674,9 @@ void* Server_handleClient(void* socket) {
   }
 
   // Broadcast that client has left
-  char leftMessage[kBufferSize] = {0};
-  Message_format(kMessageTypeLog, leftMessage, kBufferSize, "%s just left the chat", clientInfo->nickname);
-  Server_broadcast(leftMessage, strlen(leftMessage));
+  memset(messageBuffer, '\0', kBufferSize);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just left the chat", clientInfo->nickname);
+  Server_broadcast(messageBuffer, strlen(messageBuffer));
 
   // Close the connection
   Server_dropClient(*client);

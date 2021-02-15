@@ -8,13 +8,25 @@
 #include <ctype.h>
 #include <getopt.h>
 
-const int kDefaultMaxClients = 5; /// Default connection limit
-const int kDefaultServerPort = 10000; /// Default server port
-const char *kDefaultServerHost = "localhost"; /// Default server host
+/// Default connection limit
+const int kDefaultMaxClients = 5;
 
+/// Default server port
+const int kDefaultServerPort = 10000;
+
+/// Default server host
+const char *kDefaultServerHost = "localhost";
+
+/// Max length of a server command
 const int kMaxCommandSize = 10;
+
+/// ID string for the START command
 const char *kCommandStart = "start";
+
+/// ID string for the STOP command
 const char *kCommandStop = "stop";
+
+/// ID string for the STATUS command
 const char *kCommandStatus = "status";
 
 /**
@@ -47,6 +59,7 @@ const char *kCommandStatus = "status";
   const char *kDefaultLogFile = "/tmp/c2hat.log";
 #endif
 
+/// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
 void usage(const char *program);

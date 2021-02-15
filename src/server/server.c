@@ -15,29 +15,29 @@ enum {
   kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize
 };
 
-// Holds data for queued messages
+/// Holds data for queued messages
 typedef struct {
-  char sender[kMaxNicknameLength + 1];
-  char content[kBufferSize];
-  int  contentLength;
+  char sender[kMaxNicknameLength + 1]; ///< Sender's nickname
+  char content[kBufferSize]; ///< Message content
+  int  contentLength; ///< Message length
 } Message;
 
-// Hold details for connected clients
+/// Holds the details of connected clients
 typedef struct {
-  pthread_t threadID;
-  char nickname[kMaxNicknameLength + 1]; // Client name + NULL terminator
-  SOCKET socket;
-  struct sockaddr_storage address; // Binary IP address
-  socklen_t length;
-  char host[kMaxClientHostLength]; // Pretty string IP address
+  pthread_t threadID; ///< Thread ID associated to the client
+  char nickname[kMaxNicknameLength + 1]; ///< Client name (+ NULL terminator)
+  SOCKET socket; ///< Client's socket
+  struct sockaddr_storage address; ///< Binary IP address
+  socklen_t length; ///< Length of the binary IP address
+  char host[kMaxClientHostLength]; ///< IP address in pretty string format
 } Client;
 
-// This is the singleton instance for our server
+/// This is the singleton instance for our server
 struct Server {
-  char *host;
-  int port;
-  int maxConnections;
-  SOCKET socket;
+  char *host; ///< Inbound IP address (string)
+  int port;   ///< Inbound TCP port
+  int maxConnections; ///< Maximum number of connections accepted
+  SOCKET socket; ///< Stores the server socket
 };
 static Server *server = NULL;
 
@@ -80,7 +80,12 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size);
 // Authenticate a client connection using a nickname
 bool Server_authenticate(SOCKET client);
 
-// Initialise the server object
+/**
+ * Creates and initialises the server object
+ * @param[in] host The listening IP address
+ * @param[in] portNumber The listening TCP port
+ * @param[in] maxConnections The maximum number of client connetions
+ */
 Server *Server_init(const char *host, int portNumber, int maxConnections) {
   if (server != NULL) {
     Fatal("The server process is already running");
@@ -130,7 +135,10 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   return server;
 }
 
-// Free memory for the server object
+/**
+ * Frees the memory allocated for the server object
+ * @param[in] this Double pointer to a server structure
+ */
 void Server_free(Server **this) {
   if (this != NULL) {
     free((*this)->host);
@@ -140,14 +148,22 @@ void Server_free(Server **this) {
   }
 }
 
-// Set the server termination flag
+/**
+ * Manages SIGINT and SIGTERM by setting the server termination flag
+ * @param[in] signal The received signal interrupt
+ */
 void Server_stop(int signal) {
   char *sig_name = strsignal(signal);
   Info("Signal '%s' received, shutting down...", sig_name);
   terminate = true;
 }
 
-// Catch interrupt signals
+/**
+ * Catch interrupt signals
+ * @param[in] sig The signal to manage
+ * @param[in] handler Pointer to the function that will manage the signal
+ * @param[out] The result of the sigaction() call
+ */
 int Server_catch(int sig, void (*handler)(int)) {
    struct sigaction action;
    action.sa_handler = handler;
@@ -160,8 +176,14 @@ int Server_catch(int sig, void (*handler)(int)) {
    return sigaction (sig, &action, NULL);
 }
 
-// Start a server on the given socket
+/**
+ * Starts the server instance with the given configuration
+ * @param[in] this The server object to start
+ */
 void Server_start(Server *this) {
+  if (server == NULL) {
+    Fatal("The server has not been created yet");
+  }
 
   // Stop from Ctrl+C
   Server_catch(SIGINT, Server_stop);
@@ -194,7 +216,11 @@ void Server_start(Server *this) {
     client.length = sizeof(client.address);
     client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
     if (!SOCKET_isValid(client.socket)) {
-      Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      if (EINTR == SOCKET_getErrorNumber()) {
+        Info("%s", strerror(SOCKET_getErrorNumber()));
+      } else {
+        Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      }
       continue;
     }
 
@@ -246,7 +272,12 @@ void Server_start(Server *this) {
   Server_free(&server);
 }
 
-// Send data to a socket ensuring all data is sent
+/**
+ * Sends data to a socket using a loop to ensure all data is sent
+ * @param[in] client The client socket
+ * @param[in] message The message to send
+ * @param[in] length The length of the message to send
+ */
 int Server_send(SOCKET client, const char* message, size_t length) {
   size_t sentTotal = 0;
   char *data = (char*)message; // points to the beginning of the message
@@ -265,26 +296,39 @@ int Server_send(SOCKET client, const char* message, size_t length) {
   return sentTotal;
 }
 
-// Comparison function to lookup a client by its ThreadID
-// A is a Client object, b is a thread ID
-// The (0*size) statement is there to avoid errors for unused parameter
+/**
+ * Comparison function to lookup a client by its ThreadID
+ * @param[in] a Pointer to a Client struct object
+ * @param[in] b Pointer to a Thread ID
+ * @param[in] size (Unused) Size of the data to compare
+ * @param[out] 0 on equal Thread IDs, non-zero otherwise
+ */
 int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
+  // The (0*size) statement avoids the 'unused parameter' error at compile time
   pthread_t threadB = *((pthread_t *)b) + (0 * size);
   return client->threadID - threadB;
 }
 
-// Comparison function to lookup a client by its Nickname
-// A is a Client object, b is a char pointer
-// The (0*size) statement is there to avoid errors for unused parameter
+/**
+ * Comparison function to lookup a client by its Nickname
+ * @param[in] a Pointer to a Client struct object
+ * @param[in] b Char pointer, with the nickname to compare
+ * @param[in] size (Unused) Size of the data to compare
+ * @param[out] 0 on equal nicknames, non-zero otherwise
+ */
 int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
   char *nickname = (char *)b;
+  // The (0*size) statement avoids the 'unused parameter' error at compile time
   return strncmp(client->nickname, nickname, kMaxNicknameLength + (0 * size));
 }
 
-// Removes a client object from the list of connected clients
-// and close the connection
+/**
+ * Removes a client object from the list of connected clients
+ * and closes the connection
+ * @param[in] client The client's socket to close
+ */
 void Server_dropClient(SOCKET client) {
   pthread_t clientThreadID = pthread_self();
 
@@ -305,7 +349,11 @@ void Server_dropClient(SOCKET client) {
   pthread_exit(NULL);
 }
 
-// Lookup a Client in the list by its thread ID
+/**
+ * Lookup a Client in the list by its thread ID
+ * @param[in] clientThreadID Thread ID to lookup
+ * @param[out] A pointer to a Client structure or NULL
+ */
 Client *Server_getClientInfoForThread(pthread_t clientThreadID) {
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
@@ -314,7 +362,11 @@ Client *Server_getClientInfoForThread(pthread_t clientThreadID) {
   return NULL;
 }
 
-// Lookup a Client in the list by its nickname
+/**
+ * Lookup a Client in the list by its nickname
+ * @param[in] clientNickname Nickname to lookup
+ * @param[out] A pointer to a Client structure or NULL
+ */
 Client *Server_getClientInfoForNickname(char *clientNickname) {
   int index = List_search(clients, clientNickname, sizeof(Client), Client_findByNickname);
   if (index >= 0) {
@@ -323,21 +375,26 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
   return NULL;
 }
 
-// Receive a message from the Client until a null terminator is found
-// or the buffer is full
+/**
+ * Receives a message from a connected client until
+ * a null terminator is found or the buffer is full
+ * @param[in] client Socket to receive from
+ * @param[in] buffer Char buffer to store the received data
+ * @param[in] length Length of the char buffer
+ * @param[out] The number of bytes received
+ */
 int Server_receive(SOCKET client, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
   do {
     int bytesReceived = recv(client, buffer, length - total, 0);
-    if (bytesReceived == 0) {
-      printf("Connection closed by remote client\n");
-      break; // exit the whole loop
-    }
-    if (bytesReceived < 0) {
-      fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-      break; // exit the whole loop
-    }
+
+    // The remote client closed the connection
+    if (bytesReceived == 0) return 0;
+
+    // There has been an error somewhere
+    if (bytesReceived < 0) return bytesReceived;
+
     data += bytesReceived;
     total += bytesReceived;
   } while(*data != 0 && total < (length - 1));
@@ -348,9 +405,13 @@ int Server_receive(SOCKET client, char *buffer, size_t length) {
   return total;
 }
 
-// Authenticate a client connection
-// Currently it only ensures that another client is not already connected
-// using the same nickname, and the client entry is in the clients list
+/**
+ * Authenticates a client connection
+ * Currently it only ensures that another client is not already connected
+ * using the same nickname, and the client entry is in the clients list
+ * @param[in] client Socket to communicate with
+ * @param[out] Success or failure
+ */
 bool Server_authenticate(SOCKET client) {
   char request[kBufferSize] = {0};
   char response[kBufferSize] = {0};
@@ -382,10 +443,15 @@ bool Server_authenticate(SOCKET client) {
       Info("Client with nick '%s' is already logged in", nick);
     }
   }
+  // We leave error management or client disconnection to the calling function
   return false;
 }
 
-// Main Client thread, handle communications with a single client
+/**
+ * Handles communications with a single client, it is spawned
+ * on a new thread for every connected client
+ * @param[in] socket Pointer to a client socket
+ */
 void* Server_handleClient(void* socket) {
   pthread_t me = pthread_self();
   SOCKET *client = (SOCKET *)socket;
@@ -426,7 +492,7 @@ void* Server_handleClient(void* socket) {
     memset(clientMessage, '\0', kBufferSize);
 
     // Listen for data
-    int received = recv(*client, clientMessage, kBufferSize, 0);
+    int received = Server_receive(*client, clientMessage, kBufferSize);
     if (received < 0) {
       if (SOCKET_getErrorNumber() == 0) {
         Info("Connection closed by remote client %d", ECONNRESET);
@@ -463,6 +529,11 @@ void* Server_handleClient(void* socket) {
   return NULL;
 }
 
+/**
+ * Retrieves a message from the broadcast queue and sends it
+ * to every client
+ * @param[in] data Unused data pointer, set it to NULL
+ */
 void* Server_handleBroadcast(void* data) {
   pthread_t me = pthread_self();
   QueueData *item = NULL;
@@ -489,6 +560,11 @@ void* Server_handleBroadcast(void* data) {
   return NULL;
 }
 
+/**
+ * Adds a message to the broadcast queue
+ * @param[in] message Message to enqueue
+ * @param[in] length Size of the data to enqueue
+ */
 void Server_broadcast(char *message, size_t length) {
   // Lock queue
   Queue_enqueue(messages, message, length);

@@ -4,11 +4,13 @@ CFLAGS = -g -Wall -Wextra -Werror -std=c17
 AR = ar rcs
 LDFLAGS = -L lib
 INCFLAGS = -I src/lib
+VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 
 # OS detection
 OSFLAG :=
 ifeq ($(OS), Windows_NT)
 	OSFLAG += -D WIN32
+	VALGRIND =
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
@@ -16,13 +18,14 @@ else
 	endif
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS
+		VALGRIND =
 	endif
 endif
 
 all: prereq client server
 
 prereq:
-	mkdir -p obj/server obj/client obj/lib lib bin
+	mkdir -p obj/server obj/client obj/lib obj/test lib bin
 
 # Server final binary
 server: prereq liblogger libsocket libpid liblist libqueue obj/server/main.o obj/server/server.o
@@ -91,6 +94,21 @@ obj/client/main.o: src/client/main.c
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
+test: test/list test/queue
+
+test/list: liblist
+	mkdir -p obj/test/list bin/test
+	$(CC) $(CFLAGS) -c test/list/list_tests.c $(INCFLAGS) -o obj/test/list/list_tests.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c test/list/main.c $(INCFLAGS) -o obj/test/list/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/list/main.o obj/test/list/list_tests.o $(LDFLAGS) -llist -o bin/test/list
+	$(VALGRIND) bin/test/list
+
+test/queue: libqueue
+	mkdir -p obj/test/queue bin/test
+	$(CC) $(CFLAGS) -c test/queue/queue_tests.c $(INCFLAGS) -o obj/test/queue/queue_tests.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c test/queue/main.c $(INCFLAGS) -o obj/test/queue/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/queue/main.o obj/test/queue/queue_tests.o $(LDFLAGS) -lqueue -o bin/test/queue
+	$(VALGRIND) bin/test/queue
 
 clean:
 	rm -rfv bin/**

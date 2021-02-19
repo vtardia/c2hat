@@ -13,16 +13,6 @@ enum {
   kBufferSize = 1024, // Includes NULL term
   // Format is: /msg [<20charUsername>]:\s
   kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize,
-  kMessageTypeNick = 100,
-  kMessageTypeAuth = 110,
-  kMessageTypeHelp = 120,
-  kMessageTypeMsg = 130,
-  kMessageTypeList = 140,
-  kMessageTypeQuit = 150,
-  kMessageTypeOk = 160,
-  kMessageTypeErr = 170,
-  kMessageTypeLog = 180,
-  kMessageTypeAdmin = 300
 };
 
 /// Holds data for queued messages
@@ -89,15 +79,6 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size);
 
 // Authenticate a client connection using a nickname
 bool Server_authenticate(SOCKET client);
-
-// Returns the type of a given message
-int Message_getType(const char *message);
-
-// Returns the content part of a message
-char *Message_getContent(const char *message, unsigned int type);
-
-// Wraps an outgoing message into the given command type
-void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
 
 /**
  * Creates and initialises the server object
@@ -442,7 +423,7 @@ bool Server_authenticate(SOCKET client) {
   if (received > 0) {
     if (kMessageTypeNick == Message_getType(response)) {
       // The client has sent a nick in the format '/nick Name'
-      char *nick = Message_getContent(response, kMessageTypeNick);
+      char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength);
       Client *clientInfo = NULL;
       // Lookup if a client is already logged with the provided nickname
       clientInfo = Server_getClientInfoForNickname(nick);
@@ -459,135 +440,13 @@ bool Server_authenticate(SOCKET client) {
         Error("Authentication: client info not found for client %lu", pthread_self());
       }
       Info("Client with nick '%s' is already logged in", nick);
+      Message_free(&nick);
     }
   }
   // We leave error management or client disconnection to the calling function
   return false;
 }
 
-/**
- * Finds the type of a given message
- * @param[in] message The server or client message content
- * @param[out] The message type code or 0 on failure
- */
-int Message_getType(const char *message) {
-  if (strncmp(message, "/nick ", 6) == 0) {
-    return kMessageTypeNick;
-  }
-  if (strncmp(message, "/msg ", 5) == 0) {
-    return kMessageTypeMsg;
-  }
-  if (strncmp(message, "/quit", 5) == 0) {
-    return kMessageTypeQuit;
-  }
-  if (strncmp(message, "/log ", 5) == 0) {
-    return kMessageTypeLog;
-  }
-  if (strncmp(message, "/err ", 5) == 0) {
-    return kMessageTypeErr;
-  }
-  if (strncmp(message, "/ok", 3) == 0) {
-    // Trailing space and additional content is optional on OK
-    return kMessageTypeOk;
-  }
-  return 0;
-}
-
-/**
- * Returns the content part of a given message
- * The return value is a pointer to part of the input string and
- * doesn't need to be freed separately
- * @param[in] message The message to parse
- * @param[in] type The type of message we are extracting
- * @param[out] The trimmed content of the string
- */
-char *Message_getContent(const char *message, unsigned int type) {
-  unsigned int prefixLength = 0;
-  unsigned int maxLength = kBufferSize;
-  switch (type) {
-    case kMessageTypeMsg:
-      prefixLength = strlen("/msg");
-    break;
-    case kMessageTypeNick:
-      prefixLength = strlen("/nick");
-      maxLength = kMaxNicknameLength;
-    break;
-    case kMessageTypeQuit:
-      prefixLength = strlen("/quit");
-    break;
-    case kMessageTypeOk:
-      prefixLength = strlen("/ok");
-    break;
-    case kMessageTypeErr:
-      prefixLength = strlen("/err");
-    break;
-    case kMessageTypeLog:
-      prefixLength = strlen("/log");
-    break;
-  }
-  maxLength -= prefixLength;
-
-  // Points to start of the parse
-  char *pStart = ((char *)message + prefixLength);
-
-  // Points to the max length of the string
-  char *pEnd = pStart + maxLength;
-
-  // Trimming spaces at the beginning of the string
-  const char *spaces = "\t\n\v\f\r ";
-  pStart += strspn(pStart, spaces);
-
-  // Ensure we have at least a null terminator at the end
-  // and trim all trailing spaces
-  do {
-    *pEnd = 0;
-    pEnd--;
-  } while (pEnd >= pStart && strchr(spaces, *pEnd) != NULL);
-
-  return pStart;
-}
-
-/**
- * Wraps an outgoing message into the given command type
- * @param[in] type Type of command to generate
- * @param[in] dest Destination char array
- * @param[in] size Maximum size of the message to generate
- * @param[in] format printf-compatible formatted string
- * @param[in] ...
- */
-void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...) {
-  char *commandPrefix = "";
-  switch (type) {
-    case kMessageTypeNick:
-      commandPrefix = "/nick";
-    break;
-    case kMessageTypeMsg:
-      commandPrefix = "/msg";
-    break;
-    case kMessageTypeLog:
-      commandPrefix = "/log";
-    break;
-    case kMessageTypeOk:
-      commandPrefix = "/ok";
-    break;
-    case kMessageTypeErr:
-      commandPrefix = "/err";
-    break;
-  }
-
-  va_list args;
-  va_start(args, format);
-
-  // Compile the message with the provided args in a temporary buffer
-  char buffer[size];
-  memset(buffer, 0, size);
-  vsnprintf(buffer, size, format, args);
-
-  va_end(args);
-
-  // Compile the final message by adding the prefix
-  snprintf(dest, size, "%s %s", commandPrefix, buffer);
-}
 
 /**
  * Handles communications with a single client, it is spawned
@@ -657,7 +516,7 @@ void* Server_handleClient(void* socket) {
       int messageType = Message_getType(messageBuffer);
       if (kMessageTypeQuit == messageType) break;
 
-      char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg);
+      char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg, kBufferSize);
       char broadcastBuffer[kBroadcastBufferSize] = {0};
       switch (messageType) {
         case kMessageTypeMsg:
@@ -670,6 +529,7 @@ void* Server_handleClient(void* socket) {
         default:
           ; // Ignore for now...
       }
+      Message_free(&messageContent);
     }
   }
 

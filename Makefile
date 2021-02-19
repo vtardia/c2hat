@@ -28,8 +28,8 @@ prereq:
 	mkdir -p obj/server obj/client obj/lib obj/test lib bin
 
 # Server final binary
-server: prereq liblogger libsocket libpid liblist libqueue obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -lqueue -llist -o bin/server
+server: prereq liblogger libsocket libpid liblist libqueue libmessage obj/server/main.o obj/server/server.o
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -o bin/server
 
 
 # Server dependencies
@@ -47,6 +47,13 @@ obj/server/pid.o: src/server/pid.c
 
 libpid: prereq obj/server/pid.o
 	$(AR) lib/libpid.a obj/server/pid.o
+
+# Message static library
+obj/server/message.o: src/server/message.c
+	$(CC) $(CFLAGS) -c src/server/message.c $(INCFLAGS) -o obj/server/message.o $(OSFLAG)
+
+libmessage: prereq obj/server/message.o
+	$(AR) lib/libmessage.a obj/server/message.o
 
 # Socket static library
 obj/lib/socket.o: src/lib/socket/socket.c
@@ -94,7 +101,7 @@ obj/client/main.o: src/client/main.c
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
-test: test/list test/queue
+test: test/list test/queue test/message
 
 test/list: liblist
 	mkdir -p obj/test/list bin/test
@@ -109,6 +116,13 @@ test/queue: libqueue
 	$(CC) $(CFLAGS) -c test/queue/main.c $(INCFLAGS) -o obj/test/queue/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/queue/main.o obj/test/queue/queue_tests.o $(LDFLAGS) -lqueue -o bin/test/queue
 	$(VALGRIND) bin/test/queue
+
+test/message: libmessage
+	mkdir -p obj/test/message bin/test
+	$(CC) $(CFLAGS) -c test/message/message_tests.c $(INCFLAGS) -I src/server -o obj/test/message/message_tests.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c test/message/main.c $(INCFLAGS) -I src/server -o obj/test/message/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/message/main.o obj/test/message/message_tests.o $(LDFLAGS) -lmessage -o bin/test/message
+	$(VALGRIND) bin/test/message
 
 clean:
 	rm -rfv bin/**

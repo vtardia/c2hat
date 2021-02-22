@@ -423,7 +423,9 @@ bool Server_authenticate(SOCKET client) {
   if (received > 0) {
     if (kMessageTypeNick == Message_getType(response)) {
       // The client has sent a nick in the format '/nick Name'
-      char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength);
+      // In order to have a full 20 chars nickname, we need to add a 7 chars pad
+      // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
+      char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength + 7);
       Client *clientInfo = NULL;
       // Lookup if a client is already logged with the provided nickname
       clientInfo = Server_getClientInfoForNickname(nick);
@@ -435,6 +437,7 @@ bool Server_authenticate(SOCKET client) {
           // Update client entry
           snprintf(clientInfo->nickname, kMaxNicknameLength, "%s", nick);
           Info("User %s (%d) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
+          Message_free(&nick);
           return true;
         }
         Error("Authentication: client info not found for client %lu", pthread_self());

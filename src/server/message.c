@@ -48,33 +48,42 @@ int Message_getType(const char *message) {
  * @param[out] The trimmed content of the string
  */
 char *Message_getContent(const char *message, unsigned int type, size_t length) {
-  // We are assuming here that message is null terminated
+  // We are assuming here that message is null terminated,
+  // the behaviour is undefined otherwise
   if (length == 0 || message == NULL || strlen(message) == 0) return NULL;
 
   unsigned int prefixLength = 0;
   size_t maxLength = length;
+  char *prefix;
   switch (type) {
     case kMessageTypeMsg:
-      prefixLength = strlen("/msg");
+      prefix = "/msg";
     break;
     case kMessageTypeNick:
-      prefixLength = strlen("/nick");
+      prefix = "/nick";
     break;
     case kMessageTypeQuit:
-      prefixLength = strlen("/quit");
+      prefix = "/quit";
     break;
     case kMessageTypeOk:
-      prefixLength = strlen("/ok");
+      prefix = "/ok";
     break;
     case kMessageTypeErr:
-      prefixLength = strlen("/err");
+      prefix = "/err";
     break;
     case kMessageTypeLog:
-      prefixLength = strlen("/log");
+      prefix = "/log";
     break;
+    default:
+      prefix = "";
+      return NULL; // Invalid message type
   }
+  prefixLength = strlen(prefix);
   maxLength -= prefixLength;
   if (maxLength <= 0 || prefixLength > strlen(message)) return NULL;
+
+  // The message does not contain the prefix
+  if (!strstr(message, prefix)) return NULL;
 
   // Points to start of the parse
   char *pStart = (char *)message + prefixLength;
@@ -118,6 +127,8 @@ char *Message_getContent(const char *message, unsigned int type, size_t length) 
  * @param[in] ...
  */
 void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...) {
+  if (dest == NULL) return;
+
   char *commandPrefix = "";
   switch (type) {
     case kMessageTypeNick:
@@ -135,6 +146,8 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
     case kMessageTypeErr:
       commandPrefix = "/err";
     break;
+    default:
+      return; // Unknown message type
   }
 
   va_list args;

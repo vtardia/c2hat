@@ -101,7 +101,7 @@ obj/client/main.o: src/client/main.c
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
-test: test/list test/queue test/message
+test: test/list test/queue test/message test/logger
 
 test/list: liblist
 	mkdir -p obj/test/list bin/test
@@ -123,6 +123,12 @@ test/message: libmessage
 	$(CC) $(CFLAGS) -c test/message/main.c $(INCFLAGS) -I src/server -o obj/test/message/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/message/main.o obj/test/message/message_tests.o $(LDFLAGS) -lmessage -o bin/test/message
 	$(VALGRIND) bin/test/message
+
+test/logger: liblogger
+	mkdir -p obj/test/logger bin/test
+	$(CC) $(CFLAGS) -c test/logger/main.c $(INCFLAGS) -o obj/test/logger/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/logger/main.o $(LDFLAGS) -llogger -o bin/test/logger
+	$(VALGRIND) bin/test/logger
 
 clean:
 	rm -rfv bin/**

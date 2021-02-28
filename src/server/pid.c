@@ -2,6 +2,7 @@
  * Copyright (C) 2020 Vito Tardia
  */
 
+/// @file pid.c
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -9,7 +10,11 @@
 
 static FILE *pidFile = NULL;
 
-// Try to open a PID file, inject the current process PID and return it
+/**
+ * Tries to open a PID file, inject the current process PID and returns it
+ * In case of error it exits the program
+ * @param[in] pidFilePath The full PID file path
+ */
 pid_t PID_init(const char *pidFilePath) {
   if(access(pidFilePath, F_OK ) != -1) {
     // PID file already exists
@@ -26,7 +31,11 @@ pid_t PID_init(const char *pidFilePath) {
   return my_pid;
 }
 
-// Loads a PID from a given PID file
+/**
+ * Loads a PID from a given PID file and returns it
+ * In case of error it exits the program
+ * @param[in] pidFilePath The full PID file path to load
+ */
 pid_t PID_load(const char *pidFilePath) {
   char buffer[100] = {0};
   pidFile = fopen(pidFilePath, "r");
@@ -38,7 +47,11 @@ pid_t PID_load(const char *pidFilePath) {
   return atoi(buffer);
 }
 
-// Check that a PID file exists and it's readable
+/**
+ * Checks that a PID file exists and it's readable
+ * In case of error it exits the program
+ * @param[in] pidFilePath The full PID file path to check
+ */
 void PID_check(const char *pidFilePath) {
   if(access(pidFilePath, F_OK ) == -1) {
     // There is no PID file

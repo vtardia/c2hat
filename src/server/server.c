@@ -523,16 +523,16 @@ void* Server_handleClient(void* socket) {
       char broadcastBuffer[kBroadcastBufferSize] = {0};
       switch (messageType) {
         case kMessageTypeMsg:
-          if (strlen(messageContent) > 0) {
+          if (messageContent != NULL && strlen(messageContent) > 0) {
             // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
             Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
             Server_broadcast(broadcastBuffer, strlen(broadcastBuffer));
+            Message_free(&messageContent);
           }
         break;
         default:
           ; // Ignore for now...
       }
-      Message_free(&messageContent);
     }
   }
 

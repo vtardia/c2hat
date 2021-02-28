@@ -130,6 +130,13 @@ test/logger: liblogger
 	$(CC) $(CFLAGS) obj/test/logger/main.o $(LDFLAGS) -llogger -o bin/test/logger
 	$(VALGRIND) bin/test/logger
 
+test/pid: libpid liblogger
+	mkdir -p obj/test/pid bin/test
+	$(CC) $(CFLAGS) -c test/pid/main.c $(INCFLAGS) -I src/server -o obj/test/pid/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/pid/main.o $(LDFLAGS) -lpid -llogger -o bin/test/pid
+	cp test/pid/pid.sh bin/test/pid.sh
+	./bin/test/pid.sh
+
 clean:
 	rm -rfv bin/**
 	rm -rfv obj/**

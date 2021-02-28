@@ -166,9 +166,9 @@ FILE_PATTERNS          = *.c \
                          *.qsf \
                          *.ice
 RECURSIVE              = YES
-EXCLUDE                =
+EXCLUDE                = lib/ini
 EXCLUDE_SYMLINKS       = NO
-EXCLUDE_PATTERNS       =
+EXCLUDE_PATTERNS       = ini.*
 EXCLUDE_SYMBOLS        =
 EXAMPLE_PATH           =
 EXAMPLE_PATTERNS       = *
@@ -191,10 +191,10 @@ REFERENCES_LINK_SOURCE = YES
 SOURCE_TOOLTIPS        = YES
 USE_HTAGS              = NO
 VERBATIM_HEADERS       = YES
-CLANG_ASSISTED_PARSING = NO
-CLANG_ADD_INC_PATHS    = YES
-CLANG_OPTIONS          =
-CLANG_DATABASE_PATH    =
+# CLANG_ASSISTED_PARSING = NO
+# CLANG_ADD_INC_PATHS    = YES
+# CLANG_OPTIONS          =
+# CLANG_DATABASE_PATH    =
 #---------------------------------------------------------------------------
 # Configuration options related to the alphabetical class index
 #---------------------------------------------------------------------------

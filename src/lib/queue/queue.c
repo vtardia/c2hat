@@ -7,18 +7,25 @@
 
 #include "queue.h"
 
-// A QueueNode is a generic struct with a void pointer
-// so that it can hold different type of data
-typedef struct _Node QueueNode;
-typedef struct _Node {
-  QueueNode *next;
-  QueueData data;
+/**
+ * A QueueNode is a generic struct with a void pointer
+ * so that it can hold different type of data
+ */
+typedef struct _QNode QueueNode;
+
+/// Internal structure, alias for QueueNode
+typedef struct _QNode {
+  QueueNode *next; ///< Pointer to the next node in the queue
+  QueueData data;  ///< Pointer to the content of the node
 } QueueNode;
 
+/**
+ * Structure that keep tracks of QueueNodes
+ */
 typedef struct _Queue {
-  QueueNode *first;
-  QueueNode *last;
-  int length;
+  QueueNode *first; ///< Pointer to the first item in the queue
+  QueueNode *last;  ///< Pointer to the last item in the queue
+  int length; ///< Length of the queue
 } Queue;
 
 /// Creation and disposal

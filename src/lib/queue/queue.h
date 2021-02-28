@@ -7,19 +7,22 @@
 
 #include <stdbool.h>
 
-
-// A queue is a minimal struct that keeps information
-// about its nodes. The Queue structure is an opaque type,
-// its members should be accessed only by the exposed functions.
+/**
+ * A queue is a minimal struct that keeps information
+ * about its nodes. The Queue structure is an opaque type,
+ * its members should be accessed only by the exposed functions.
+ */
 typedef struct _Queue Queue;
 
-// QueueData is a wrapper structure for each item stored within
-// a queue node. It contains a void pointer to the actual data
-// and the data size. The external program is responsible of
-// passing the right data length and perform type conversion.
+/**
+ * QueueData is a wrapper structure for each item stored within
+ * a queue node. It contains a void pointer to the actual data
+ * and the data size. The external program is responsible of
+ * passing the right data length and perform type conversion.
+ */
 typedef struct {
-  void *content;
-  size_t length;
+  void *content; ///< Pointer to the actual data
+  size_t length; ///< Size of the data
 } QueueData;
 
 /// Creation and disposal

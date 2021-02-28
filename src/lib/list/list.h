@@ -7,27 +7,35 @@
 
 #include <stdbool.h>
 
-// Generic data type. We can redefine list data to
-// any type that suit our purpose
+/**
+ * Generic data type. We can redefine list data to
+ * any type that suit our purpose
+ */
 typedef void ListData;
 
-// A ListNode is a generic struct with a void pointer
-// so that it can hold different type of data
+/**
+ * A ListNode is a generic struct with a void pointer
+ * so that it can hold different type of data
+ */
 typedef struct _Node ListNode;
+
+/// Anonymous node structure, use ListNode
 typedef struct _Node {
-  ListNode *prev;
-  ListNode *next;
-  ListData *data;
-  size_t dataSize;
+  ListNode *prev; ///< Pointer to the previous node in the list
+  ListNode *next; ///< Pointer to the next node in the list
+  ListData *data; ///< Pointer to the node data
+  size_t dataSize; ///< Size of the node data
 } ListNode;
 
-// A list is a minimal struct that keeps information
-// about its nodes
+/**
+ * A list is a minimal struct that keeps information
+ * about its nodes
+ */
 typedef struct {
-  ListNode *first;
-  ListNode *last;
-  ListNode *current;
-  int length;
+  ListNode *first; ///< Pointer to the first list node
+  ListNode *last;  ///< Pointer to the last list node
+  ListNode *current; ///< Pointer to the current list node
+  int length; ///< Length of the list
 } List;
 
 

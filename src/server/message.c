@@ -161,7 +161,10 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
   va_end(args);
 
   // Compile the final message by adding the prefix
-  snprintf(dest, size, "%s %s", commandPrefix, buffer);
+  if (strlen(buffer) > 0)
+    snprintf(dest, size, "%s %s", commandPrefix, buffer);
+  else
+    snprintf(dest, size, "%s", commandPrefix);
 }
 
 /**

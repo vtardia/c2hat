@@ -524,6 +524,12 @@ void* Server_handleClient(void* socket) {
       switch (messageType) {
         case kMessageTypeMsg:
           if (messageContent != NULL && strlen(messageContent) > 0) {
+
+            // Send /ok to the client to acknowledge the correct message
+            memset(messageBuffer, '\0', kBufferSize);
+            Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
+            Server_send(*client, messageBuffer, strlen(messageBuffer));
+
             // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
             Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
             Server_broadcast(broadcastBuffer, strlen(broadcastBuffer));

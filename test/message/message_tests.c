@@ -239,4 +239,10 @@ void TestMessage_format() {
   Message_format(kMessageTypeOk, message, 1024, "Hello %s!", nickname);
   assert(strcmp(message, "/ok Hello Fox!") == 0);
   printf(".");
+
+  // OK with no arguments
+  memset(message, 0, 1024);
+  Message_format(kMessageTypeOk, message, 1024, "");
+  assert(strcmp(message, "/ok") == 0);
+  printf(".");
 }

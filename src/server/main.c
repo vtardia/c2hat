@@ -62,6 +62,9 @@ const char *kCommandStatus = "status";
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
+/// Set to true when the server starts successfully
+bool serverStartedSuccessfully = false;
+
 void usage(const char *program);
 
 /**
@@ -69,7 +72,8 @@ void usage(const char *program);
  */
 void clean() {
   Info("Cleaning up...");
-  remove(kDefaultPIDFile);
+  // Remove PID file only if it was created by a successul server start
+  if (serverStartedSuccessfully) remove(kDefaultPIDFile);
 }
 
 /**
@@ -162,6 +166,9 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   // Init PID file (after server creation so we don't create on failure)
   pid_t pid = PID_init(kDefaultPIDFile);
   Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
+
+  // The PID file can be safely deleted on exit
+  serverStartedSuccessfully = true;
 
   // Start the chat server (infinite loop until SIGTERM)
   Server_start(server);

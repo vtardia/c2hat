@@ -124,6 +124,9 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
 
   Socket_bind(server->socket, bindAddress->ai_addr, bindAddress->ai_addrlen);
 
+  // Note: if the bind fails here (eg server is already running),
+  // the memory allocated for the server and bindAddress vars will not be freed
+
   // We don't need bindAddress anymore
   freeaddrinfo(bindAddress);
 

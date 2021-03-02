@@ -46,6 +46,12 @@ static bool terminate = false;
 static List *clients = NULL;
 static Queue *messages = NULL;
 
+// Mutex for client list
+pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
+
+// Mutex for message queue
+pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
+
 // Initialise, start and destroy the server object
 Server *Server_init(const char *host, int portNumber, int maxConnections);
 void Server_start(Server *);
@@ -240,6 +246,7 @@ void Server_start(Server *this) {
     if (clients->length < kMaxClientConnections) {
 
       // Add client to the list (the client is cloned)
+      pthread_mutex_lock(&clientsLock);
       List_append(clients, &client, sizeof(Client));
 
       // Get pointer to a copy of the inserted client,
@@ -250,6 +257,7 @@ void Server_start(Server *this) {
       // Start client thread
       pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
       last->threadID = clientThreadID; // Update client list item
+      pthread_mutex_unlock(&clientsLock);
       pthread_detach(clientThreadID);
     } else {
       Info("Connection limits reached");
@@ -340,6 +348,7 @@ void Server_dropClient(SOCKET client) {
 
   // Drop client from the clients list
   // We need to pass sizeof(Client) as size or the item will not be compared
+  pthread_mutex_lock(&clientsLock);
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
     if (!List_delete(clients, index)) {
@@ -348,6 +357,7 @@ void Server_dropClient(SOCKET client) {
   } else {
     Warn("Unable to find client with thread ID %lu", clientThreadID);
   }
+  pthread_mutex_unlock(&clientsLock);
   Info("Closing client thread %lu", clientThreadID);
   pthread_exit(NULL);
 }
@@ -358,11 +368,14 @@ void Server_dropClient(SOCKET client) {
  * @param[out] A pointer to a Client structure or NULL
  */
 Client *Server_getClientInfoForThread(pthread_t clientThreadID) {
+  Client *client = NULL;
+  pthread_mutex_lock(&clientsLock);
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
-    return (Client *)List_item(clients, index);
+    client = (Client *)List_item(clients, index);
   }
-  return NULL;
+  pthread_mutex_unlock(&clientsLock);
+  return client;
 }
 
 /**
@@ -371,11 +384,14 @@ Client *Server_getClientInfoForThread(pthread_t clientThreadID) {
  * @param[out] A pointer to a Client structure or NULL
  */
 Client *Server_getClientInfoForNickname(char *clientNickname) {
+  Client *client = NULL;
+  pthread_mutex_lock(&clientsLock);
   int index = List_search(clients, clientNickname, sizeof(Client), Client_findByNickname);
   if (index >= 0) {
-    return (Client *)List_item(clients, index);
+    client = (Client *)List_item(clients, index);
   }
-  return NULL;
+  pthread_mutex_unlock(&clientsLock);
+  return client;
 }
 
 /**
@@ -567,19 +583,26 @@ void* Server_handleBroadcast(void* data) {
   while (!terminate) {
     do {
       // Lock Message Queue
+      pthread_mutex_lock(&messagesLock);
       item = Queue_dequeue(messages);
       // Unlock queue
+      pthread_mutex_unlock(&messagesLock);
       if (item == NULL) break; // Queue is empty
 
-      // Lock clients
       Client *client;
+
+      // Lock clients
+      pthread_mutex_lock(&clientsLock);
+
       List_rewind(clients);
       while ((client = (Client *)List_next(clients)) != NULL) {
         int sent = Server_send(client->socket, (char*)item->content, item->length);
         if (sent <= 0) Server_dropClient(client->socket);
       }
       QueueData_free(&item);
+
       // Unlock clients
+      pthread_mutex_unlock(&clientsLock);
     } while(!Queue_empty(messages));
   }
   Info("Closing broadcast thread %lu", me);
@@ -593,7 +616,7 @@ void* Server_handleBroadcast(void* data) {
  * @param[in] length Size of the data to enqueue
  */
 void Server_broadcast(char *message, size_t length) {
-  // Lock queue
+  pthread_mutex_lock(&messagesLock);
   Queue_enqueue(messages, message, length);
-  // Unlock queue
+  pthread_mutex_unlock(&messagesLock);
 }

@@ -16,4 +16,7 @@
   // Check that a PID file exists and is readable
   void PID_check(const char *pidFilePath);
 
+  // Check that the given PID is used by an existing process
+  int PID_exists(pid_t pid);
+
 #endif

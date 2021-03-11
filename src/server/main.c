@@ -29,6 +29,13 @@ const char *kCommandStop = "stop";
 /// ID string for the STATUS command
 const char *kCommandStatus = "status";
 
+/// Shared memory handle that stores the configuration data
+const char *kServerSharedMemPath = "/c2hat";
+
+/// Size of the shared memory
+const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
+
+
 /**
  * PID File
  * On macOS and Linux it should be under /var/run or,
@@ -68,12 +75,19 @@ bool serverStartedSuccessfully = false;
 void usage(const char *program);
 
 /**
- * Closes any open resource and deletes PID file
+ * Closes any open resource and deletes PID file and shared memory
  */
 void clean() {
   Info("Cleaning up...");
   // Remove PID file only if it was created by a successul server start
-  if (serverStartedSuccessfully) remove(kDefaultPIDFile);
+  if (serverStartedSuccessfully) {
+    if (remove(kDefaultPIDFile) < 0) {
+      Error("Unable to remove PID file: %s", strerror(errno));
+    }
+    if (!Config_clean(kServerSharedMemPath)) {
+      Error("Unable to clean configuration: %s", strerror(errno));
+    }
+  }
 }
 
 /**
@@ -165,10 +179,25 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
 
   // Init PID file (after server creation so we don't create on failure)
   pid_t pid = PID_init(kDefaultPIDFile);
-  Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
 
   // The PID file can be safely deleted on exit
   serverStartedSuccessfully = true;
+
+  // Write configuration to a shared memory location
+  ServerConfigInfo currentConfig;
+  memset(&currentConfig, 0, sizeof(ServerConfigInfo));
+  currentConfig.pid = pid;
+  memcpy(&(currentConfig.logFilePath), kDefaultLogFile, strlen(kDefaultLogFile));
+  memcpy(&(currentConfig.pidFilePath), kDefaultPIDFile, strlen(kDefaultPIDFile));
+  memcpy(&(currentConfig.host), host, strlen(host));
+  currentConfig.port = 10000;
+  currentConfig.maxConnections = maxClients;
+
+  if (!Config_save(&currentConfig, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
+    return EXIT_FAILURE;
+  }
+
+  Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
 
   // Start the chat server (infinite loop until SIGTERM)
   Server_start(server);
@@ -185,25 +214,109 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
  * Stop the running server
  */
 int CMD_runStop() {
-  PID_check(kDefaultPIDFile);
-  pid_t pid = PID_load(kDefaultPIDFile);
-  printf("The server is running with PID %d\n", pid);
-  if (kill(pid, SIGTERM) == -1) {
-    printf("Unable to kill process %d\n", pid);
-    exit(EXIT_FAILURE);
+  // Load configuration
+  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(kServerSharedMemPath, sizeof(ServerConfigInfo));
+  if (currentConfig == NULL) {
+    if (errno == ENOENT) {
+      fprintf(stderr, "The server may not be running\n");
+    } else {
+      fprintf(stderr, "Unable to load configuration from shared memory: %s\n", strerror(errno));
+    }
+    return EXIT_FAILURE;
   }
-  printf("The server with PID %d has been successfully stopped\n", pid);
-  return EXIT_SUCCESS;
+
+  int pidStatus = PID_exists(currentConfig->pid);
+  int result;
+
+  // Existing PID
+  if (pidStatus > 0) {
+    printf("The server is running with PID %d\n", currentConfig->pid);
+    if (kill(currentConfig->pid, SIGTERM) == -1) {
+      printf("Unable to kill process %d: %s\n", currentConfig->pid, strerror(errno));
+      result = EXIT_FAILURE;
+    } else {
+      printf("The server with PID %d has been successfully stopped\n", currentConfig->pid);
+      // The server daemon will take care of cleaning the PID file and shared memory
+      result = EXIT_SUCCESS;
+    }
+  }
+
+  // Non-existing PID
+  if (pidStatus == 0) {
+    printf("Unable to check for PID %d: the server may not be running\n", currentConfig->pid);
+    // Enable cleaning the shared memory and PID file
+    serverStartedSuccessfully = true;
+    result = EXIT_FAILURE;
+  }
+
+  // Error checking PID
+  // We don't delete the PID file or shared memory because it may be
+  // that the current user has not access to the PID
+  if (pidStatus < 0 ) {
+    printf("Error while checking for PID %d: %s\n", currentConfig->pid, strerror(errno));
+    result = EXIT_FAILURE;
+  }
+
+  // Cleanup configuration data
+  memset(currentConfig, 0, sizeof(ServerConfigInfo));
+  free(currentConfig);
+  currentConfig = NULL;
+
+  return result;
 }
 
 /**
  * Check the status of the server daemon
  */
 int CMD_runStatus() {
-  PID_check(kDefaultPIDFile);
-  pid_t pid = PID_load(kDefaultPIDFile);
-  printf("The server is running with PID %d, check '%s' for details\n", pid, kDefaultLogFile);
-  return EXIT_SUCCESS;
+  // Load configuration
+  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(kServerSharedMemPath, sizeof(ServerConfigInfo));
+  if (currentConfig == NULL) {
+    if (errno == ENOENT) {
+      fprintf(stderr, "The server may not be running\n");
+    } else {
+      fprintf(stderr, "Unable to load configuration from shared memory: %s\n", strerror(errno));
+    }
+    return EXIT_FAILURE;
+  }
+
+  int pidStatus = PID_exists(currentConfig->pid);
+  int result;
+  switch (pidStatus) {
+    // The process esists
+    case 1:
+      printf("\nThe server is running with the following configuration:\n");
+      printf("         PID: %d\n", currentConfig->pid);
+      printf("    Log file: %s\n", currentConfig->logFilePath);
+      printf("    PID file: %s\n", currentConfig->pidFilePath);
+      printf("        Host: %s\n", currentConfig->host);
+      printf("        Port: %d\n", currentConfig->port);
+      printf(" Max Clients: %d\n", currentConfig->maxConnections);
+      printf("\n");
+      result = EXIT_SUCCESS;
+    break;
+
+    // The process does not esists
+    case 0:
+      printf("Unable to check for PID %d: the server may not be running\n", currentConfig->pid);
+      // Enable cleaning the shared memory and PID file
+      serverStartedSuccessfully = true;
+      result = EXIT_FAILURE;
+    break;
+
+    // Cannot access the process info
+    default:
+      printf("Error while checking for PID %d: %s\n", currentConfig->pid, strerror(errno));
+      result = EXIT_FAILURE;
+    break;
+  }
+
+  // Cleanup configuration data
+  memset(currentConfig, 0, sizeof(ServerConfigInfo));
+  free(currentConfig);
+  currentConfig = NULL;
+
+  return result;
 }
 
 /**

@@ -5,7 +5,19 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+  #include <unistd.h>
+
   typedef struct Server Server;
+
+  /// Contains the server's active configuration
+  typedef struct {
+    pid_t pid; ///< PID for the currently running server
+    char logFilePath[4096]; ///< Log file path
+    char pidFilePath[4096]; ///< PID file path
+    char host[40]; ///< Listening IP address
+    unsigned int port; ///< Listening TCP port
+    unsigned int maxConnections; ///< Max connections
+  } ServerConfigInfo;
 
   // Create a server for the given host/port combination
   Server *Server_init(const char *host, const int port, const int maxConnections);
@@ -29,3 +41,4 @@
 #include "socket/socket.h"
 #include "list/list.h"
 #include "queue/queue.h"
+#include "config/config.h"

@@ -5,6 +5,7 @@
 /// @file pid.c
 #include <stdlib.h>
 #include <stdio.h>
+#include <signal.h>
 
 #include "logger/logger.h"
 
@@ -42,7 +43,7 @@ pid_t PID_load(const char *pidFilePath) {
   if (!pidFile) {
     Fatal("Unable to open PID file: %s", strerror(errno));
   }
-  fread(buffer, 100, 100, pidFile);
+  fgets(buffer, 100, pidFile);
   fclose(pidFile);
   return atoi(buffer);
 }
@@ -59,4 +60,25 @@ void PID_check(const char *pidFilePath) {
     exit(EXIT_FAILURE);
   }
 }
+
+/**
+ * Checks that a process with the given PID exists
+ * Returns 1 if the PID exists
+ * Returns 0 if the PID does not exists
+ * Returns -1 on error and sets errno
+ * @param[in] pid The PID to check
+ */
+int PID_exists(pid_t pid) {
+  int result = kill(pid, 0);
+  // PID exists
+  if (result == 0) return 1;
+
+  // PID does not exists
+  if (result < 0 && errno == ESRCH) {
+    return 0;
+  }
+  // Other error
+  return -1;
+}
+
 

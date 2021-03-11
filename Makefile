@@ -5,6 +5,8 @@ AR = ar rcs
 LDFLAGS = -L lib
 INCFLAGS = -I src/lib
 VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
+SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
+TESTCONFIGLIBS =
 
 # OS detection
 OSFLAG :=
@@ -15,6 +17,8 @@ else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
 		OSFLAG += -D LINUX -D _GNU_SOURCE
+		SERVERLIBS +=  -lrt
+		TESTCONFIGLIBS +=  -lrt
 	endif
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS
@@ -28,8 +32,8 @@ prereq:
 	mkdir -p obj/server obj/client obj/lib obj/test lib bin
 
 # Server final binary
-server: prereq liblogger libsocket libpid liblist libqueue libmessage obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -o bin/server
+server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) $(SERVERLIBS) -o bin/server
 
 
 # Server dependencies
@@ -83,6 +87,13 @@ obj/lib/queue.o: src/lib/queue/queue.c
 libqueue: prereq obj/lib/queue.o
 	$(AR) lib/libqueue.a obj/lib/queue.o
 
+# Config static library
+obj/lib/config.o: src/lib/config/config.c
+	$(CC) $(CFLAGS) -c src/lib/config/config.c -o obj/lib/config.o $(OSFLAG)
+
+libconfig: prereq obj/lib/config.o
+	$(AR) lib/libconfig.a obj/lib/config.o
+
 # INI parser
 # obj/ini.o: ini/ini.c ini/ini.h
 # 	$(CC) $(CFLAGS) -c ini/ini.c -o obj/ini.o $(OSFLAG) -DINI_ALLOW_MULTILINE=0
@@ -101,7 +112,7 @@ obj/client/main.o: src/client/main.c
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
-test: test/list test/queue test/message test/logger
+test: test/list test/queue test/message test/logger test/config
 
 test/list: liblist
 	mkdir -p obj/test/list bin/test
@@ -136,6 +147,12 @@ test/pid: libpid liblogger
 	$(CC) $(CFLAGS) obj/test/pid/main.o $(LDFLAGS) -lpid -llogger -o bin/test/pid
 	cp test/pid/pid.sh bin/test/pid.sh
 	./bin/test/pid.sh
+
+test/config: libconfig
+	mkdir -p obj/test/config bin/test
+	$(CC) $(CFLAGS) -c test/config/main.c $(INCFLAGS) -o obj/test/config/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/config/main.o $(LDFLAGS) -lconfig $(TESTCONFIGLIBS) -o bin/test/config
+	$(VALGRIND) bin/test/config
 
 clean:
 	rm -rfv bin/**

@@ -293,7 +293,7 @@ int Server_send(SOCKET client, const char* message, size_t length) {
   size_t sentTotal = 0;
   char *data = (char*)message; // points to the beginning of the message
   do {
-    int sent = send(client, data, length - sentTotal, 0);
+    int sent = send(client, data, length - sentTotal, MSG_NOSIGNAL);
     if (sent < 0) {
       Error(
         "send() failed: (%d): %s",
@@ -436,7 +436,7 @@ bool Server_authenticate(SOCKET client) {
   char response[kBufferSize] = {0};
 
   Message_format(kMessageTypeNick, request, kBufferSize, "Please enter a nickname:");
-  Server_send(client, request, strlen(request));
+  Server_send(client, request, strlen(request) + 1);
 
   int received = Server_receive(client, response, kBufferSize);
   if (received > 0) {
@@ -485,14 +485,15 @@ void* Server_handleClient(void* socket) {
   // Send a welcome message
   memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Welcome to C2hat!");
-  Server_send(*client, messageBuffer, strlen(messageBuffer));
+  // Using strlen() +1 ensures the NULL terminator is sent
+  Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Ask for a nickname
   if (!Server_authenticate(*client)) {
     Info("Authentication failed for client thread %lu", me);
     memset(messageBuffer, '\0', kBufferSize);
     Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Authentication failed");
-    Server_send(*client, messageBuffer, strlen(messageBuffer));
+    Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
     Server_dropClient(*client);
   }
 
@@ -504,12 +505,12 @@ void* Server_handleClient(void* socket) {
   }
   memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Hello %s!", clientInfo->nickname);
-  Server_send(*client, messageBuffer, strlen(messageBuffer));
+  Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Broadcast that a new client has joined
   memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just joined the chat", clientInfo->nickname);
-  Server_broadcast(messageBuffer, strlen(messageBuffer));
+  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Start the chat
   while(!terminate) {
@@ -547,11 +548,11 @@ void* Server_handleClient(void* socket) {
             // Send /ok to the client to acknowledge the correct message
             memset(messageBuffer, '\0', kBufferSize);
             Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
-            Server_send(*client, messageBuffer, strlen(messageBuffer));
+            Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
 
             // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
             Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
-            Server_broadcast(broadcastBuffer, strlen(broadcastBuffer));
+            Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
             Message_free(&messageContent);
           }
         break;

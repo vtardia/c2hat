@@ -405,8 +405,9 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
 int Server_receive(SOCKET client, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
+  char cursor[1] = {0};
   do {
-    int bytesReceived = recv(client, buffer, length - total, 0);
+    int bytesReceived = recv(client, cursor, 1, 0);
 
     // The remote client closed the connection
     if (bytesReceived == 0) return 0;
@@ -414,9 +415,11 @@ int Server_receive(SOCKET client, char *buffer, size_t length) {
     // There has been an error somewhere
     if (bytesReceived < 0) return bytesReceived;
 
-    data += bytesReceived;
-    total += bytesReceived;
-  } while(*data != 0 && total < (length - 1));
+    *data = cursor[0];
+    data++;
+    total++;
+    if (total == (length - 1)) break;
+  } while(cursor[0] != 0);
 
   // Adding safe terminator in case of loop break
   if (*data != 0) *(data + 1) = 0;

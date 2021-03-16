@@ -112,6 +112,16 @@ obj/client/main.o: src/client/main.c
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
+# Test Bot
+bot: prereq libsocket obj/test/bot/main.o obj/client/client.o
+	mkdir -p bin/test
+	$(CC) $(CFLAGS) obj/test/bot/main.o obj/client/client.o $(LDFLAGS) -lsocket -lpthread -o bin/test/bot
+
+obj/test/bot/main.o: test/bot/main.c
+	mkdir -p obj/test/bot bin/test
+	$(CC) $(CFLAGS) -c test/bot/main.c $(INCFLAGS) -I src/client -o obj/test/bot/main.o $(OSFLAG)
+
+# Unit test targets
 test: test/list test/queue test/message test/logger test/config
 
 test/list: liblist

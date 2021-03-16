@@ -71,17 +71,15 @@ SOCKET Client_connect(const char *host, const char *port) {
   freeaddrinfo(bindAddress); // We don't need it anymore
   printf("Connected!\n");
 
-  Client_catch(SIGINT, Client_stop);
-  Client_catch(SIGTERM, Client_stop);
-
   return server;
 }
 
 int Client_receive(SOCKET server, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
+  char cursor[1] = {0};
   do {
-    int bytesReceived = recv(server, buffer, length - total, 0);
+    int bytesReceived = recv(server, cursor, 1, 0);
     if (bytesReceived == 0) {
       printf("Connection closed by remote server\n");
       break; // exit the whole loop
@@ -90,9 +88,11 @@ int Client_receive(SOCKET server, char *buffer, size_t length) {
       fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
       break; // exit the whole loop
     }
-    data += bytesReceived;
-    total += bytesReceived;
-  } while(*data != 0 && total < (length - 1));
+    *data = cursor[0];
+    data ++;
+    total++;
+    if (total == (length - 1)) break;
+  } while(cursor[0] != 0);
 
   // Adding safe terminator in case of loop break
   if (*data != 0) *(data + 1) = 0;
@@ -117,6 +117,9 @@ int Client_send(SOCKET server, const char *buffer, size_t length) {
 }
 
 void Client_listen(SOCKET server) {
+  Client_catch(SIGINT, Client_stop);
+  Client_catch(SIGTERM, Client_stop);
+
   char read[kBufferSize] = {0};
 
   // Wait for the OK signal from the server

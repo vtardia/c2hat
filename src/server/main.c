@@ -299,7 +299,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
 
   // Init PID file (after server creation so we don't create on failure)
   currentPIDFilePath = GetPIDFilePath();
-  if (currentLogFilePath == NULL) {
+  if (currentPIDFilePath == NULL) {
     Error("Unable to initialise PID file '%s'", currentPIDFilePath);
     return EXIT_FAILURE;
   }

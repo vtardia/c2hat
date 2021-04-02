@@ -28,14 +28,16 @@ pthread_mutex_t termLock = PTHREAD_MUTEX_INITIALIZER;
 void maskSignal() {
   sigset_t mask;
   sigemptyset(&mask);
+#if defined(__linux__)
   sigaddset(&mask, SIGRTMIN+3);
+#endif
   pthread_sigmask(SIG_BLOCK, &mask, NULL);
 }
 
 void Bot_stop(int signal) {
   pthread_mutex_lock(&termLock);
   terminate = true;
-  printf("Received signal %d in thread %lu\n", signal, pthread_self());
+  printf("Received signal %d in thread %lu\n", signal, (unsigned long)pthread_self());
   pthread_mutex_unlock(&termLock);
 }
 
@@ -63,7 +65,7 @@ void* RunBot(void* data) {
   char nick[50] = {0};
   sprintf(nick, "Bot %d", *id);
 
-  printf("Bot Thread %d... %lu\n", *id, pthread_self());
+  printf("Bot Thread %d... %lu\n", *id, (unsigned long)pthread_self());
 
   // Wait for the OK signal from the server
   char read[kBufferSize] = {0};
@@ -207,7 +209,7 @@ int main(int argc, char const *argv[]) {
     // pthread_detach(threadId[i]);
   }
 
-  printf("Main loop... %lu\n", pthread_self());
+  printf("Main loop... %lu\n", (unsigned long)pthread_self());
 
   while (!terminate) {
     sleep(1);

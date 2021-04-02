@@ -118,11 +118,9 @@ void parseCommand(char *dest, const char *arg) {
  * Returns true on success, false on failure
  * @param[in] argc The number of arguments
  * @param[in] argv The array of arguments
- * @param[out] host The listening IP address
- * @param[out] port The listening TCP port
- * @param[out] clients The maximum number of clients connected
+ * @param[in] currentConfig Pointer to a configuration structure
  */
-int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
+int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
   struct option options[] = {
     {"host", required_argument, NULL, 'h'},
     {"port", required_argument, NULL, 'p'},
@@ -137,9 +135,15 @@ int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
     ch = getopt_long(argc, argv, "h:p:m:", options, NULL);
     if( (signed char)ch == -1 ) break; // no more options
     switch (ch) {
-      case 'h': *host = optarg; break;
-      case 'p': *port = atoi(optarg); break;
-      case 'm': *clients = atoi(optarg); break;
+      case 'h':
+        memcpy(currentConfig->host, optarg, strlen(optarg));
+      break;
+      case 'p':
+        currentConfig->port = atoi(optarg);
+      break;
+      case 'm':
+        currentConfig->maxConnections = atoi(optarg);
+      break;
       default:
         valid = false;
         break;
@@ -254,15 +258,15 @@ void cleanup() {
 
 /**
  * Starts the server
- * @param[in] host Listening IP address
- * @param[in] port Listening TCP port
- * @param[in] maxClients Maximum number of client connections
+ * @param[in] currentConfig Pointer to a configuration structure
  */
-int CMD_runStart(const char *host, const int port, const int maxClients) {
+int CMD_runStart(ServerConfigInfo *currentConfig) {
   pid_t child = fork();
   if (child > 0) {
     // I'm in parent process
-    fprintf(stdout, "Starting server on %s:%d with PID %d\n", host, port, child);
+    fprintf(stdout, "Starting server on %s:%d with PID %d\n",
+      currentConfig->host, currentConfig->port, child
+    );
     return EXIT_SUCCESS;
   }
 
@@ -289,7 +293,9 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
 #endif
 
   // Initialise the chat server
-  Server *server = Server_init(host, port, maxClients);
+  Server *server = Server_init(
+    currentConfig->host, currentConfig->port, currentConfig->maxConnections
+  );
 
   // Init PID file (after server creation so we don't create on failure)
   currentPIDFilePath = GetPIDFilePath();
@@ -302,25 +308,24 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   // The PID file can be safely deleted on exit
   serverStartedSuccessfully = true;
 
-  // Write configuration to a shared memory location
-  ServerConfigInfo currentConfig;
-  memset(&currentConfig, 0, sizeof(ServerConfigInfo));
-  currentConfig.pid = pid;
-  memcpy(&(currentConfig.logFilePath), currentLogFilePath, strlen(currentLogFilePath));
-  memcpy(&(currentConfig.pidFilePath), currentPIDFilePath, strlen(currentPIDFilePath));
-  memcpy(&(currentConfig.host), host, strlen(host));
-  currentConfig.port = 10000;
-  currentConfig.maxConnections = maxClients;
+  // Update the configuration and write it to a shared memory location
+  currentConfig->pid = pid;
+  memcpy(currentConfig->logFilePath, currentLogFilePath, strlen(currentLogFilePath));
+  memcpy(currentConfig->pidFilePath, currentPIDFilePath, strlen(currentPIDFilePath));
 
   if (currentLogFilePath != NULL) {
     free(currentLogFilePath);
   }
 
-  if (!Config_save(&currentConfig, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
+  if (!Config_save(currentConfig, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
     return EXIT_FAILURE;
   }
 
-  Info("Starting on %s:%d with PID %u and %d clients...", host, port, pid, maxClients);
+  Info(
+    "Starting on %s:%d with PID %u and %d clients...",
+    currentConfig->host, currentConfig->port,
+    currentConfig->pid, currentConfig->maxConnections
+  );
 
   // Start the chat server (infinite loop until SIGTERM)
   Server_start(server);
@@ -465,12 +470,15 @@ int main(int argc, ARGV argv) {
   char command[10] = {0};
   parseCommand(command, argv[1]);
 
-  if (strcmp(kCommandStart, command) == 0 && argc <= 6) {
-    int maxClients = kDefaultMaxClients;
-    int serverPort = kDefaultServerPort;
-    char *serverHost = (char*)kDefaultServerHost;
-    if (parseOptions(argc, argv, &serverHost, &serverPort, &maxClients)) {
-      return CMD_runStart(serverHost, serverPort, maxClients);
+  if (strcmp(kCommandStart, command) == 0 && argc <= 8) {
+    // Initialise a default configuration
+    ServerConfigInfo currentConfig;
+    memset(&currentConfig, 0, sizeof(ServerConfigInfo));
+    memcpy(&(currentConfig.host), kDefaultServerHost, strlen(kDefaultServerHost));
+    currentConfig.port = kDefaultServerPort;
+    currentConfig.maxConnections = kDefaultMaxClients;
+    if (parseOptions(argc, argv, &currentConfig)) {
+      return CMD_runStart(&currentConfig);
     }
     usage(argv[0]);
     return EXIT_FAILURE;

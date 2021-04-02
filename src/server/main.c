@@ -66,6 +66,12 @@ const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
   const char *kDefaultLogFile = "/tmp/c2hat.log";
 #endif
 
+const char *kDefaultLogFileName = "c2hat.log";
+const char *kDefaultPIDFileName = "c2hat.pid";
+
+char *currentLogFilePath = NULL;
+char *currentPIDFilePath = NULL;
+
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
@@ -81,8 +87,11 @@ void clean() {
   Info("Cleaning up...");
   // Remove PID file only if it was created by a successul server start
   if (serverStartedSuccessfully) {
-    if (remove(kDefaultPIDFile) < 0) {
-      Error("Unable to remove PID file: %s", strerror(errno));
+    if (currentPIDFilePath != NULL) {
+      if (remove(currentPIDFilePath) < 0) {
+        Error("Unable to remove PID file: %s", strerror(errno));
+      }
+      free(currentPIDFilePath);
     }
     if (!Config_clean(kServerSharedMemPath)) {
       Error("Unable to clean configuration: %s", strerror(errno));
@@ -140,6 +149,110 @@ int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
 }
 
 /**
+ * Returns a usable and accessible file path or NULL for stderr
+ */
+char *GetLogFilePath() {
+#if defined(WIN32)
+  return strdup(kDefaultLogFile);
+#else
+  const char *logFileName = kDefaultLogFileName;
+  char home[255] = {0};
+  strcat(home, getenv("HOME"));
+  #if defined(LINUX)
+    char *paths[] = {
+      "/var/log",
+      home,
+      "/tmp"
+    };
+    int pathsc = 3;
+  #else
+    #if defined(MACOS)
+    char *paths[] = {
+      "/var/log",
+      "/Library/Logs",
+      strcat(home, "/Library/Logs"),
+      home,
+      "/tmp"
+    };
+    int pathsc = 5;
+    #else
+    char *paths[] = {
+      "/tmp"
+    };
+    int pathsc = 1;
+    #endif
+  #endif
+  for (int i = 0; i < pathsc; ++i) {
+    if (access(paths[i], R_OK | W_OK) == 0) {
+      char *result = (char *)calloc(strlen(paths[i]) + strlen(logFileName) + 2, 1);
+      if (!result) return NULL;
+      return strcat(strcat(strcat(result, paths[i]), "/"), logFileName);
+    }
+  }
+  return NULL;
+#endif
+}
+
+/**
+ * Returns a usable and accessible file path or NULL for stderr
+ */
+char *GetPIDFilePath() {
+#if defined(WIN32)
+  return strdup(kDefaultPIDFile);
+#else
+  const char *pidFileName = kDefaultPIDFileName;
+  #if defined(LINUX)
+    char *paths[] = {
+      "/var/run",
+      getenv("HOME"),
+      "/tmp"
+    };
+    int pathsc = 3;
+  #else
+    #if defined(MACOS)
+    char *paths[] = {
+      "/var/run",
+      getenv("HOME"),
+      "/tmp"
+    };
+    int pathsc = 3;
+    #else
+    char *paths[] = {
+      "/tmp"
+    };
+    int pathsc = 1;
+    #endif
+  #endif
+  for (int i = 0; i < pathsc; ++i) {
+    if (access(paths[i], R_OK | W_OK) == 0) {
+      char *result = (char *)calloc(strlen(paths[i]) + strlen(pidFileName) + 2, 1);
+      if (!result) return NULL;
+      return strcat(strcat(strcat(result, paths[i]), "/"), pidFileName);
+    }
+  }
+  return NULL;
+#endif
+}
+
+/**
+ * Clean facility called by STATUS and STOP commands
+ * to clean the leftofers
+ */
+void cleanup() {
+  if (currentPIDFilePath != NULL) {
+    if (remove(currentPIDFilePath) < 0) {
+      fprintf(stderr, "Unable to remove PID file: %s", strerror(errno));
+    }
+    free(currentPIDFilePath);
+    currentPIDFilePath = NULL;
+  }
+  if (!Config_clean(kServerSharedMemPath)) {
+    fprintf(stderr, "Unable to clean configuration: %s", strerror(errno));
+  }
+}
+
+
+/**
  * Starts the server
  * @param[in] host Listening IP address
  * @param[in] port Listening TCP port
@@ -159,9 +272,10 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   atexit(clean);
 
   // Init log facility
-  if (LogInit(L_INFO, stderr, kDefaultLogFile) < 0) {
-    fprintf(stderr, "Unable to initialise the logger (%s): %s\n", kDefaultLogFile, strerror(errno));
-    fprintf(stdout, "Unable to initialise the logger (%s): %s\n", kDefaultLogFile, strerror(errno));
+  currentLogFilePath = GetLogFilePath(); // Can take arguments in the future, like use stdin/out
+  if (LogInit(L_INFO, stderr, currentLogFilePath) < 0) {
+    fprintf(stderr, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
+    fprintf(stdout, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
     exit(EXIT_FAILURE);
   }
 
@@ -178,7 +292,12 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   Server *server = Server_init(host, port, maxClients);
 
   // Init PID file (after server creation so we don't create on failure)
-  pid_t pid = PID_init(kDefaultPIDFile);
+  currentPIDFilePath = GetPIDFilePath();
+  if (currentLogFilePath == NULL) {
+    Error("Unable to initialise PID file '%s'", currentPIDFilePath);
+    return EXIT_FAILURE;
+  }
+  pid_t pid = PID_init(currentPIDFilePath);
 
   // The PID file can be safely deleted on exit
   serverStartedSuccessfully = true;
@@ -187,11 +306,15 @@ int CMD_runStart(const char *host, const int port, const int maxClients) {
   ServerConfigInfo currentConfig;
   memset(&currentConfig, 0, sizeof(ServerConfigInfo));
   currentConfig.pid = pid;
-  memcpy(&(currentConfig.logFilePath), kDefaultLogFile, strlen(kDefaultLogFile));
-  memcpy(&(currentConfig.pidFilePath), kDefaultPIDFile, strlen(kDefaultPIDFile));
+  memcpy(&(currentConfig.logFilePath), currentLogFilePath, strlen(currentLogFilePath));
+  memcpy(&(currentConfig.pidFilePath), currentPIDFilePath, strlen(currentPIDFilePath));
   memcpy(&(currentConfig.host), host, strlen(host));
   currentConfig.port = 10000;
   currentConfig.maxConnections = maxClients;
+
+  if (currentLogFilePath != NULL) {
+    free(currentLogFilePath);
+  }
 
   if (!Config_save(&currentConfig, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
     return EXIT_FAILURE;
@@ -225,13 +348,14 @@ int CMD_runStop() {
     return EXIT_FAILURE;
   }
 
+  currentPIDFilePath = strdup(currentConfig->pidFilePath);
   int pidStatus = PID_exists(currentConfig->pid);
   int result;
 
   // Existing PID
   if (pidStatus > 0) {
     printf("The server is running with PID %d\n", currentConfig->pid);
-    if (kill(currentConfig->pid, SIGTERM) == -1) {
+    if (kill(currentConfig->pid, SIGTERM) < 0) {
       printf("Unable to kill process %d: %s\n", currentConfig->pid, strerror(errno));
       result = EXIT_FAILURE;
     } else {
@@ -245,7 +369,7 @@ int CMD_runStop() {
   if (pidStatus == 0) {
     printf("Unable to check for PID %d: the server may not be running\n", currentConfig->pid);
     // Enable cleaning the shared memory and PID file
-    serverStartedSuccessfully = true;
+    cleanup();
     result = EXIT_FAILURE;
   }
 
@@ -258,6 +382,7 @@ int CMD_runStop() {
   }
 
   // Cleanup configuration data
+  if (currentPIDFilePath != NULL) free(currentPIDFilePath);
   memset(currentConfig, 0, sizeof(ServerConfigInfo));
   free(currentConfig);
   currentConfig = NULL;
@@ -281,6 +406,7 @@ int CMD_runStatus() {
   }
 
   int pidStatus = PID_exists(currentConfig->pid);
+  currentPIDFilePath = strdup(currentConfig->pidFilePath);
   int result;
   switch (pidStatus) {
     // The process esists
@@ -300,7 +426,7 @@ int CMD_runStatus() {
     case 0:
       printf("Unable to check for PID %d: the server may not be running\n", currentConfig->pid);
       // Enable cleaning the shared memory and PID file
-      serverStartedSuccessfully = true;
+      cleanup();
       result = EXIT_FAILURE;
     break;
 
@@ -312,6 +438,7 @@ int CMD_runStatus() {
   }
 
   // Cleanup configuration data
+  if (currentPIDFilePath != NULL) free(currentPIDFilePath);
   memset(currentConfig, 0, sizeof(ServerConfigInfo));
   free(currentConfig);
   currentConfig = NULL;

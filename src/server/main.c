@@ -135,7 +135,7 @@ int parseOptions(int argc, ARGV argv, char **host, int *port, int *clients) {
   char ch;
   while (true) {
     ch = getopt_long(argc, argv, "h:p:m:", options, NULL);
-    if( ch == -1 ) break; // no more options
+    if( (signed char)ch == -1 ) break; // no more options
     switch (ch) {
       case 'h': *host = optarg; break;
       case 'p': *port = atoi(optarg); break;

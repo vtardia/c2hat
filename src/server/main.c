@@ -78,6 +78,8 @@ typedef char * const * ARGV;
 /// Set to true when the server starts successfully
 bool serverStartedSuccessfully = false;
 
+bool runServerInForeground = false;
+
 void usage(const char *program);
 
 /**
@@ -125,6 +127,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
     {"host", required_argument, NULL, 'h'},
     {"port", required_argument, NULL, 'p'},
     {"max-clients", required_argument, NULL, 'm'},
+    {"foreground", no_argument, NULL, 'f'},
     { NULL, 0, NULL, 0}
   };
 
@@ -144,6 +147,9 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
       case 'm':
         currentConfig->maxConnections = atoi(optarg);
       break;
+      case 'f':
+        runServerInForeground = true;
+      break;
       default:
         valid = false;
         break;
@@ -156,6 +162,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
  * Returns a usable and accessible file path or NULL for stderr
  */
 char *GetLogFilePath() {
+  if (runServerInForeground) return NULL;
 #if defined(WIN32)
   return strdup(kDefaultLogFile);
 #else
@@ -261,16 +268,28 @@ void cleanup() {
  * @param[in] currentConfig Pointer to a configuration structure
  */
 int CMD_runStart(ServerConfigInfo *currentConfig) {
-  pid_t child = fork();
-  if (child > 0) {
-    // I'm in parent process
-    fprintf(stdout, "Starting server on %s:%d with PID %d\n",
-      currentConfig->host, currentConfig->port, child
+  if (runServerInForeground) {
+    pid_t serverPID = getpid();
+    fprintf(stdout, "Starting foreground server on %s:%d with PID %d\n",
+      currentConfig->host, currentConfig->port, serverPID
     );
-    return EXIT_SUCCESS;
+  } else {
+    pid_t serverPID = fork();
+    if (serverPID > 0) {
+      // I'm in parent process
+      fprintf(stdout, "Starting background server on %s:%d with PID %d\n",
+        currentConfig->host, currentConfig->port, serverPID
+      );
+      return EXIT_SUCCESS;
+    }
+    // serverPID = 0 means I'm in the child
+    if (serverPID < 0) {
+      fprintf(stderr, "Unable to start daemon server: %s\n", strerror(errno));
+      return EXIT_FAILURE;
+    }
   }
 
-  // I'm the child process now
+  // If foreground is enabled I'm the main process, otherwise I'm the child
 
   // Register shutdown function to close resource handlers
   atexit(clean);
@@ -310,7 +329,11 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
 
   // Update the configuration and write it to a shared memory location
   currentConfig->pid = pid;
-  memcpy(currentConfig->logFilePath, currentLogFilePath, strlen(currentLogFilePath));
+  if (currentLogFilePath == NULL) {
+    memcpy(currentConfig->logFilePath, "STDOUT", strlen("STDOUT"));
+  } else {
+    memcpy(currentConfig->logFilePath, currentLogFilePath, strlen(currentLogFilePath));
+  }
   memcpy(currentConfig->pidFilePath, currentPIDFilePath, strlen(currentPIDFilePath));
 
   if (currentLogFilePath != NULL) {
@@ -455,7 +478,7 @@ int CMD_runStatus() {
  * Displays program usage
  */
 void usage(const char *program) {
-  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>] [-m <max-clients>]|stop|status]\n", program);
+  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>] [-m <max-clients>] [--foreground]|stop|status]\n", program);
 }
 
 /**
@@ -470,7 +493,7 @@ int main(int argc, ARGV argv) {
   char command[10] = {0};
   parseCommand(command, argv[1]);
 
-  if (strcmp(kCommandStart, command) == 0 && argc <= 8) {
+  if (strcmp(kCommandStart, command) == 0 && argc <= 9) {
     // Initialise a default configuration
     ServerConfigInfo currentConfig;
     memset(&currentConfig, 0, sizeof(ServerConfigInfo));

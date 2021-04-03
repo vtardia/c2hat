@@ -120,16 +120,16 @@ void Client_listen(SOCKET server) {
   Client_catch(SIGINT, Client_stop);
   Client_catch(SIGTERM, Client_stop);
 
-  char read[kBufferSize] = {0};
+  char buffer[kBufferSize] = {0};
 
   // Wait for the OK signal from the server
-  int received = Client_receive(server, read, kBufferSize);
+  int received = Client_receive(server, buffer, kBufferSize);
   if (received > 0) {
-    if (strncmp(read, "/ok", 3) != 0) {
+    if (strncmp(buffer, "/ok", 3) != 0) {
       printf("The server refused the connection\n");
       terminate = true;
     }
-    printf("[server]: %s\n", (read + 4));
+    printf("[server]: %s\n", (buffer + 4));
     printf("To send data, enter text followed by enter.\n");
   } else {
     terminate = true;
@@ -161,13 +161,14 @@ void Client_listen(SOCKET server) {
 
     if (FD_ISSET(server, &reads)) {
       // We have data in a socket
-      char read[kBufferSize] = {0};
-      int received = Client_receive(server, read, kBufferSize);
+      memset(buffer, 0, kBufferSize);
+      received = Client_receive(server, buffer, kBufferSize);
       if (received <= 0) {
+        // break;
         terminate = true;
       }
       // Print up to byte_received from the server
-      printf("Received (%d bytes): %.*s\n", received, received, read);
+      printf("Received (%d bytes): %.*s\n", received, received, buffer);
     }
 
     // Check for terminal input
@@ -176,14 +177,14 @@ void Client_listen(SOCKET server) {
   #else
     if(FD_ISSET(fileno(stdin), &reads)) {
   #endif
-      char read[kBufferSize] = {0};
+      memset(buffer, 0, kBufferSize);
       // fgets() always includes a newline...
-      if (!fgets(read, kBufferSize, stdin)) break;
+      if (!fgets(buffer, kBufferSize, stdin)) break;
       // ...so we are replacing it with a null terminator
-      char *end = read + strlen(read) -1;
+      char *end = buffer + strlen(buffer) -1;
       *end = 0;
-      printf("Sending: %s\n", read);
-      int sent = Client_send(server, read, (end - read));
+      printf("Sending: %s\n", buffer);
+      int sent = Client_send(server, buffer, strlen(buffer) + 1);
       if (sent > 0) {
         printf("Sent %d bytes.\n", sent);
       }

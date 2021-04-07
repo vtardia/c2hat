@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "message.h"
+#include "message/message.h"
 
 const int kMaxNicknameLength = 20;
 

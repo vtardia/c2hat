@@ -53,11 +53,11 @@ libpid: prereq obj/server/pid.o
 	$(AR) lib/libpid.a obj/server/pid.o
 
 # Message static library
-obj/server/message.o: src/server/message.c
-	$(CC) $(CFLAGS) -c src/server/message.c $(INCFLAGS) -o obj/server/message.o $(OSFLAG)
+obj/lib/message.o: src/lib/message/message.c
+	$(CC) $(CFLAGS) -c src/lib/message/message.c $(INCFLAGS) -o obj/lib/message.o $(OSFLAG)
 
-libmessage: prereq obj/server/message.o
-	$(AR) lib/libmessage.a obj/server/message.o
+libmessage: prereq obj/lib/message.o
+	$(AR) lib/libmessage.a obj/lib/message.o
 
 # Socket static library
 obj/lib/socket.o: src/lib/socket/socket.c

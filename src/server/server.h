@@ -37,7 +37,7 @@
 
 #include "logger/logger.h"
 #include "pid.h"
-#include "message.h"
+#include "message/message.h"
 #include "socket/socket.h"
 #include "list/list.h"
 #include "queue/queue.h"

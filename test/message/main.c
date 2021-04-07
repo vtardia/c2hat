@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "message.h"
+#include "message/message.h"
 #include "message_tests.h"
 
 int main() {

@@ -600,6 +600,8 @@ void* Server_handleBroadcast(void* data) {
 
       List_rewind(clients);
       while ((client = (Client *)List_next(clients)) != NULL) {
+        // Don't broadcast messages to non-authenticated clients
+        if (strlen(client->nickname) == 0) continue;
         int sent = Server_send(client->socket, (char*)item->content, item->length);
         if (sent <= 0) Server_dropClient(client->socket);
       }

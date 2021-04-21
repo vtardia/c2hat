@@ -217,50 +217,76 @@ void Server_start(Server *this) {
     Fatal("Unable to initialise message queue");
   }
 
+  fd_set reads;
+  fd_set errors;
+  FD_ZERO(&reads);
+  FD_ZERO(&errors);
+  FD_SET(this->socket, &reads);
+  FD_SET(this->socket, &errors);
+  SOCKET maxSocket = this->socket;
+
   while (!terminate) {
 
-    // Initialise a temporary client variable
-    Client client;
-    memset(&client, 0, sizeof(Client));
-    client.length = sizeof(client.address);
-    client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
-    if (!SOCKET_isValid(client.socket)) {
+    if (select(maxSocket+1, &reads, 0, &errors, 0) < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
         Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
-        Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        Error("select() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       }
       continue;
     }
 
-    // A client has connected, log the client info
-    getnameinfo(
-      (struct sockaddr*)&(client).address,
-      client.length, client.host, kMaxClientHostLength,
-      0, 0,
-      NI_NUMERICHOST
-    );
-    Info("New connection from %s", client.host);
+    // Main socket is ready to read
+    if (FD_ISSET(this->socket, &reads)) {
 
-    pthread_t clientThreadID = 0;
-    if (clients->length < kMaxClientConnections) {
+      // Initialise a temporary client variable
+      Client client;
+      memset(&client, 0, sizeof(Client));
+      client.length = sizeof(client.address);
+      client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
+      if (!SOCKET_isValid(client.socket)) {
+        if (EINTR == SOCKET_getErrorNumber()) {
+          Info("%s", strerror(SOCKET_getErrorNumber()));
+        } else {
+          Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        }
+        continue;
+      }
 
-      // Add client to the list (the client is cloned)
-      pthread_mutex_lock(&clientsLock);
-      List_append(clients, &client, sizeof(Client));
+      // A client has connected, log the client info
+      getnameinfo(
+        (struct sockaddr*)&(client).address,
+        client.length, client.host, kMaxClientHostLength,
+        0, 0,
+        NI_NUMERICHOST
+      );
+      Info("New connection from %s", client.host);
 
-      // Get pointer to a copy of the inserted client,
-      // because the temporary client var will be overridden
-      // at the beginning of the next cycle
-      Client *last = (Client *)List_last(clients);
+      pthread_t clientThreadID = 0;
+      if (clients->length < kMaxClientConnections) {
 
-      // Start client thread
-      pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
-      last->threadID = clientThreadID; // Update client list item
-      pthread_mutex_unlock(&clientsLock);
-      pthread_detach(clientThreadID);
-    } else {
-      Info("Connection limits reached");
+        // Add client to the list (the client is cloned)
+        pthread_mutex_lock(&clientsLock);
+        List_append(clients, &client, sizeof(Client));
+
+        // Get pointer to a copy of the inserted client,
+        // because the temporary client var will be overridden
+        // at the beginning of the next cycle
+        Client *last = (Client *)List_last(clients);
+
+        // Start client thread
+        pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
+        last->threadID = clientThreadID; // Update client list item
+        pthread_mutex_unlock(&clientsLock);
+        pthread_detach(clientThreadID);
+      } else {
+        Info("Connection limits reached");
+      }
+    }
+
+    // Main socket has an error
+    if (FD_ISSET(this->socket, &errors)) {
+      Error("Main socket failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
     }
   }
 
@@ -280,6 +306,8 @@ void Server_start(Server *this) {
 
   // Cleanup socket and server
   SOCKET_close(this->socket);
+  FD_CLR(this->socket, &reads);
+  FD_CLR(this->socket, &errors);
   Server_free(&server);
 }
 
@@ -293,13 +321,14 @@ int Server_send(SOCKET client, const char* message, size_t length) {
   size_t sentTotal = 0;
   char *data = (char*)message; // points to the beginning of the message
   do {
+    if (!SOCKET_isValid(client)) return -1;
     int sent = send(client, data, length - sentTotal, MSG_NOSIGNAL);
     if (sent < 0) {
       Error(
         "send() failed: (%d): %s",
         SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
       );
-      break;
+      return -1;
     }
     data += sent; // points to the remaining data to be sent
     sentTotal += sent;
@@ -343,14 +372,14 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
 void Server_dropClient(SOCKET client) {
   pthread_t clientThreadID = pthread_self();
 
-  // Close client socket
-  SOCKET_close(client);
-
   // Drop client from the clients list
   // We need to pass sizeof(Client) as size or the item will not be compared
   pthread_mutex_lock(&clientsLock);
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
+    // Close client socket here or it will hang during broadcast
+    // with a bad file descriptor error
+    SOCKET_close(client);
     if (!List_delete(clients, index)) {
       Warn("Unable to drop client %d with thread ID %lu", index, clientThreadID);
     }
@@ -515,54 +544,82 @@ void* Server_handleClient(void* socket) {
   Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just joined the chat", clientInfo->nickname);
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
+  fd_set reads;
+  fd_set errors;
+  FD_ZERO(&reads);
+  FD_ZERO(&errors);
+  FD_SET(*client, &reads);
+  FD_SET(*client, &errors);
+  SOCKET maxSocket = *client;
+
   // Start the chat
   while(!terminate) {
     // Initialise buffer for client data
     memset(messageBuffer, '\0', kBufferSize);
 
-    // Listen for data
-    int received = Server_receive(*client, messageBuffer, kBufferSize);
-    if (received < 0) {
-      if (SOCKET_getErrorNumber() == 0) {
-        Info("Connection closed by remote client %d", ECONNRESET);
+    if (select(maxSocket+1, &reads, 0, &errors, 0) < 0) {
+      if (EINTR == SOCKET_getErrorNumber()) {
+        Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
-        Error("recv() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        Error("select() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       }
-      break;
+      continue;
     }
 
-    if (received == 0) {
-      Info("Connection closed by remote client %d", ECONNRESET);
-      break;
-    }
+    // Main socket is ready to read
+    if (FD_ISSET(*client, &reads)) {
 
-    if (received > 0) {
-      Info("Received: %.*s", received, messageBuffer);
-
-      int messageType = Message_getType(messageBuffer);
-      if (kMessageTypeQuit == messageType) break;
-
-      char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg, kBufferSize);
-      char broadcastBuffer[kBroadcastBufferSize] = {0};
-      switch (messageType) {
-        case kMessageTypeMsg:
-          if (messageContent != NULL && strlen(messageContent) > 0) {
-
-            // Send /ok to the client to acknowledge the correct message
-            memset(messageBuffer, '\0', kBufferSize);
-            Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
-            Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
-
-            // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-            Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
-            Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
-            Message_free(&messageContent);
-          }
+      // Listen for data
+      int received = Server_receive(*client, messageBuffer, kBufferSize);
+      if (received < 0) {
+        if (SOCKET_getErrorNumber() == 0) {
+          Info("Connection closed by remote client (1) %d", ECONNRESET);
+        } else {
+          Error("recv() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        }
         break;
-        default:
-          ; // Ignore for now...
+      }
+
+      if (received == 0) {
+        Info("Connection closed by remote client (2) %d", ECONNRESET);
+        break;
+      }
+
+      if (received > 0) {
+        Info("Received: %.*s", received, messageBuffer);
+
+        int messageType = Message_getType(messageBuffer);
+        if (kMessageTypeQuit == messageType) break;
+
+        char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg, kBufferSize);
+        char broadcastBuffer[kBroadcastBufferSize] = {0};
+        switch (messageType) {
+          case kMessageTypeMsg:
+            if (messageContent != NULL && strlen(messageContent) > 0) {
+
+              // Send /ok to the client to acknowledge the correct message
+              memset(messageBuffer, '\0', kBufferSize);
+              Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
+              if (Server_send(*client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
+
+              // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
+              Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
+              Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
+              Message_free(&messageContent);
+            }
+          break;
+          default:
+            ; // Ignore for now...
+        }
       }
     }
+
+    // Client socket has an error
+    if (FD_ISSET(*client, &errors)) {
+      Error("Client socket failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    }
+
+    if (!SOCKET_isValid(*client)) break;
   }
 
   // Broadcast that client has left
@@ -572,6 +629,8 @@ void* Server_handleClient(void* socket) {
 
   // Close the connection
   Server_dropClient(*client);
+  FD_CLR(*client, &reads);
+  FD_CLR(*client, &errors);
 
   return NULL;
 }
@@ -602,8 +661,12 @@ void* Server_handleBroadcast(void* data) {
       while ((client = (Client *)List_next(clients)) != NULL) {
         // Don't broadcast messages to non-authenticated clients
         if (strlen(client->nickname) == 0) continue;
-        int sent = Server_send(client->socket, (char*)item->content, item->length);
-        if (sent <= 0) Server_dropClient(client->socket);
+        // The client may have been disconnected with a /quit message
+        // the server will hang if tries to send a message
+        if (SOCKET_isValid(client->socket)) {
+          int sent = Server_send(client->socket, (char*)item->content, item->length);
+          if (sent <= 0) Server_dropClient(client->socket);
+        }
       }
       QueueData_free(&item);
 

@@ -32,6 +32,15 @@ void Socket_setReusableAddress(SOCKET this) {
   }
 }
 
+// Set the given socket to be non-blocking using ioctl()
+void Socket_setNonBlocking(SOCKET this) {
+  int optNonBlocking = 1;
+  int rc = ioctl(this, FIONBIO, (char *)&optNonBlocking);
+  if (rc < 0) {
+    Error("Unable to set non-blocking socket (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+  }
+}
+
 void Socket_bind(SOCKET this, const struct sockaddr *addr, socklen_t addrlen) {
   // bind() returns 0 on success, non-zero on failure
   if (bind(this, addr, addrlen)) {

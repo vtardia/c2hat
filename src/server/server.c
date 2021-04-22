@@ -13,6 +13,8 @@ enum {
   kBufferSize = 1024, // Includes NULL term
   // Format is: /msg [<20charUsername>]:\s
   kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize,
+  kAuthenticationTimeout = 30, // seconds
+  kChatTimeout = 3 * 60 // 3 minutes
 };
 
 /// Holds data for queued messages
@@ -127,6 +129,7 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   server->socket = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
   Socket_unsetIPV6Only(server->socket);
   Socket_setReusableAddress(server->socket);
+  Socket_setNonBlocking(server->socket);
 
   Socket_bind(server->socket, bindAddress->ai_addr, bindAddress->ai_addrlen);
 
@@ -247,7 +250,7 @@ void Server_start(Server *this) {
       if (!SOCKET_isValid(client.socket)) {
         if (EINTR == SOCKET_getErrorNumber()) {
           Info("%s", strerror(SOCKET_getErrorNumber()));
-        } else {
+        } else if (EWOULDBLOCK != SOCKET_getErrorNumber()) {
           Error("accept() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
         }
         continue;
@@ -442,7 +445,14 @@ int Server_receive(SOCKET client, char *buffer, size_t length) {
     if (bytesReceived == 0) return 0;
 
     // There has been an error somewhere
-    if (bytesReceived < 0) return bytesReceived;
+    if (bytesReceived < 0 ) {
+      // The socket is non-blocking
+      if (EAGAIN == SOCKET_getErrorNumber() || EWOULDBLOCK == SOCKET_getErrorNumber()) {
+        continue;
+      } else {
+        return total;
+      }
+    }
 
     *data = cursor[0];
     data++;
@@ -466,36 +476,80 @@ int Server_receive(SOCKET client, char *buffer, size_t length) {
 bool Server_authenticate(SOCKET client) {
   char request[kBufferSize] = {0};
   char response[kBufferSize] = {0};
+  struct timeval timeout;
 
   Message_format(kMessageTypeNick, request, kBufferSize, "Please enter a nickname:");
   Server_send(client, request, strlen(request) + 1);
 
-  int received = Server_receive(client, response, kBufferSize);
-  if (received > 0) {
-    if (kMessageTypeNick == Message_getType(response)) {
-      // The client has sent a nick in the format '/nick Name'
-      // In order to have a full 20 chars nickname, we need to add a 7 chars pad
-      // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
-      char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength + 7);
-      Client *clientInfo = NULL;
-      // Lookup if a client is already logged with the provided nickname
-      clientInfo = Server_getClientInfoForNickname(nick);
-      if (clientInfo == NULL) {
-        // The user's nickname is unique
-        // Lookup client by thread
-        clientInfo = Server_getClientInfoForThread(pthread_self());
-        if (clientInfo != NULL) {
-          // Update client entry
-          snprintf(clientInfo->nickname, kMaxNicknameLength, "%s", nick);
-          Info("User %s (%d) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
-          Message_free(&nick);
-          return true;
-        }
-        Error("Authentication: client info not found for client %lu", pthread_self());
+  fd_set reads;
+  fd_set errors;
+  FD_ZERO(&reads);
+  FD_ZERO(&errors);
+  FD_SET(client, &reads);
+  FD_SET(client, &errors);
+  SOCKET maxSocket = client;
+
+  timeout.tv_sec  = kAuthenticationTimeout;
+  timeout.tv_usec = 0;
+
+  while(true) {
+    int rc = select(maxSocket+1, &reads, 0, &errors, &timeout);
+    if (rc < 0) {
+      if (EINTR == SOCKET_getErrorNumber()) {
+        // System interrupt signal
+        Info("%s", strerror(SOCKET_getErrorNumber()));
+      } else {
+        Error("select() failed on authentication (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       }
-      Info("Client with nick '%s' is already logged in", nick);
-      Message_free(&nick);
+      continue;
     }
+
+    // Timeout expired
+    if (rc == 0) {
+      memset(request, '\0', kBufferSize);
+      Message_format(kMessageTypeErr, request, kBufferSize, "Authentication timeout expired!");
+      Server_send(client, request, strlen(request) + 1);
+      break;
+    }
+
+    // Socket ready to receive
+    if (FD_ISSET(client, &reads)) {
+      int received = Server_receive(client, response, kBufferSize);
+      if (received > 0) {
+        if (kMessageTypeNick == Message_getType(response)) {
+          // The client has sent a nick in the format '/nick Name'
+          // In order to have a full 20 chars nickname, we need to add a 7 chars pad
+          // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
+          char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength + 7);
+          Client *clientInfo = NULL;
+          // Lookup if a client is already logged with the provided nickname
+          clientInfo = Server_getClientInfoForNickname(nick);
+          if (clientInfo == NULL) {
+            // The user's nickname is unique
+            // Lookup client by thread
+            clientInfo = Server_getClientInfoForThread(pthread_self());
+            if (clientInfo != NULL) {
+              // Update client entry
+              snprintf(clientInfo->nickname, kMaxNicknameLength, "%s", nick);
+              Info("User %s (%d) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
+              Message_free(&nick);
+              return true;
+            }
+            Error("Authentication: client info not found for client %lu", pthread_self());
+          }
+          Info("Client with nick '%s' is already logged in", nick);
+          Message_free(&nick);
+        }
+      }
+    }
+
+    // Client socket has an error
+    if (FD_ISSET(client, &errors)) {
+      Error("Client socket failed during authentication (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      break;
+    }
+
+    if (!SOCKET_isValid(client)) break;
   }
   // We leave error management or client disconnection to the calling function
   return false;
@@ -551,19 +605,30 @@ void* Server_handleClient(void* socket) {
   FD_SET(*client, &reads);
   FD_SET(*client, &errors);
   SOCKET maxSocket = *client;
+  struct timeval timeout;
+  timeout.tv_sec  = kChatTimeout;
+  timeout.tv_usec = 0;
 
   // Start the chat
   while(!terminate) {
     // Initialise buffer for client data
     memset(messageBuffer, '\0', kBufferSize);
 
-    if (select(maxSocket+1, &reads, 0, &errors, 0) < 0) {
+    int rc = select(maxSocket+1, &reads, 0, &errors, &timeout);
+    if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
         Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
         Error("select() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       }
       continue;
+    }
+
+    // Timeout expired
+    if (rc == 0) {
+      Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Connection timed out, you've been disconnected!");
+      Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
+      break;
     }
 
     // Main socket is ready to read

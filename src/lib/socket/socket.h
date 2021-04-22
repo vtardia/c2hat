@@ -13,6 +13,7 @@
     #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
+    #include <sys/sioctl.h>
 
     // Tells Visual Studio to link the declare library on compile
     // if using MingW on Windowz we need to manually use '-lws2_32'
@@ -24,6 +25,7 @@
   #else
     #include <sys/types.h>
     #include <sys/socket.h>
+    #include <sys/ioctl.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <netdb.h>
@@ -59,5 +61,8 @@
 
   // Allow the given socket to reuse the same address without waiting 20 seconds
   void Socket_setReusableAddress(SOCKET);
+
+  // Set the given socket to be non-blocking
+  void Socket_setNonBlocking(SOCKET this);
 
 #endif

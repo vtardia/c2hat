@@ -4,15 +4,23 @@
 
 #ifndef CLIENT_H
 #define CLIENT_H
-  #include "socket/socket.h"
+  #include <stdio.h>
 
-  SOCKET Client_connect(const char *host, const char *port);
+  // Opaque structure that contains client connection details
+  typedef struct _C2HatClient C2HatClient;
 
-  void Client_listen(SOCKET server);
+  // Creates a connected network client object
+  C2HatClient *Client_create(const char *host, const char *port);
 
-  int Client_send(SOCKET server, const char *buffer, size_t length);
+  // Destroys a network client
+  void Client_destroy(C2HatClient **client);
 
-  int Client_receive(SOCKET server, char *buffer, size_t length);
+  // Runs theclient application's infinite loop
+  void Client_run(C2HatClient *client, FILE *in, FILE *out, FILE *err);
+
+  // Sends data through the client's socket
+  int Client_send(const C2HatClient *client, const char *buffer, size_t length);
+
+  // Receives data through the client's socket
+  int Client_receive(const C2HatClient *client, char *buffer, size_t length);
 #endif
-
-#include <stdio.h>

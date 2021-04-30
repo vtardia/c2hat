@@ -8,22 +8,37 @@
   #include <conio.h>
 #endif
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <signal.h>
 
+#include "socket/socket.h"
+#include "message/message.h"
+
 enum {
-  kBufferSize = 1024 // Includes NULL term
+  kBufferSize = 1024 ///< Max size of data that can be sent, including the NULL terminator
 };
 
+/// Contains information on the current client application
+typedef struct _C2HatClient {
+  SOCKET server;
+  FILE *in;
+  FILE *out;
+  FILE *err;
+} C2HatClient;
+
+/// Manages the infinite loop condition
 static bool terminate = false;
 
+/// Sets the termination flag on SIGINT or SIGTERM
 void Client_stop(int signal) {
   printf("Received signal %d\n", signal);
   terminate = true;
 }
 
-// Catch interrupt signals
+/// Catches interrupt signals
 int Client_catch(int sig, void (*handler)(int)) {
    struct sigaction action;
    action.sa_handler = handler;
@@ -32,17 +47,20 @@ int Client_catch(int sig, void (*handler)(int)) {
    return sigaction (sig, &action, NULL);
 }
 
-SOCKET Client_connect(const char *host, const char *port) {
+// Tries to connect a client to the network
+bool Client_connect(C2HatClient *this, const char *host, const char *port) {
 
+  // Validate host and port information
   struct addrinfo options;
   memset(&options, 0, sizeof(options));
   struct addrinfo *bindAddress;
   options.ai_socktype = SOCK_STREAM;
   if (getaddrinfo(host, port, &options, &bindAddress)) {
-    fprintf(stderr, "Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
-    return -1;
+    fprintf(this->err, "Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
+    return false;
   }
 
+  // Get a string representation of the host and port
   char addressBuffer[100] = {0};
   char serviceBuffer[100] = {0};
   if (getnameinfo(
@@ -51,41 +69,69 @@ SOCKET Client_connect(const char *host, const char *port) {
     serviceBuffer, sizeof(serviceBuffer),
     NI_NUMERICHOST
   )) {
-    fprintf(stderr, "getnameinfo() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-    return -1;
+    fprintf(this->err, "getnameinfo() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+    return false;
   }
 
-  SOCKET server = socket(
+  // Try to create the socket
+  this->server = socket(
     bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol
   );
-  if (!SOCKET_isValid(server)) {
-    fprintf(stderr, "socket() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-    return -1;
+  if (!SOCKET_isValid(this->server)) {
+    fprintf(this->err, "socket() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    return false;
   }
 
-  printf("Connecting to %s:%s...", addressBuffer, serviceBuffer);
-  if (connect(server, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
-    fprintf(stderr, "connect() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
-    return -1;
+  // Try to connect
+  fprintf(this->out, "Connecting to %s:%s...", addressBuffer, serviceBuffer);
+  if (connect(this->server, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
+    fprintf(this->err, "connect() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    return false;
   }
   freeaddrinfo(bindAddress); // We don't need it anymore
-  printf("Connected!\n");
-
-  return server;
+  fprintf(this->out, "Connected!\n");
+  return true;
 }
 
-int Client_receive(SOCKET server, char *buffer, size_t length) {
+/// Creates a new connected network chat client
+C2HatClient *Client_create(const char *host, const char *port) {
+  C2HatClient *client = calloc(sizeof(C2HatClient), 1);
+  if (client == NULL) {
+    fprintf(stderr, "Unable to create network client (%d) %s\n", errno, strerror(errno));
+    return NULL;
+  }
+  client->in = stdin;
+  client->out = stdout;
+  client->err = stderr;
+  if (!Client_connect(client, host, port)) {
+    Client_destroy(&client);
+    return NULL;
+  }
+  return client;
+}
+
+/// Destroy a client object
+void Client_destroy(C2HatClient **this) {
+  if (this != NULL) {
+    memset(*this, 0, sizeof(C2HatClient));
+    free(*this);
+    *this = NULL;
+  }
+}
+
+/// Receives data through the client's socket
+int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
   char cursor[1] = {0};
   do {
-    int bytesReceived = recv(server, cursor, 1, 0);
+    int bytesReceived = recv(this->server, cursor, 1, 0);
     if (bytesReceived == 0) {
-      printf("Connection closed by remote server\n");
+      fprintf(this->out, "Connection closed by remote server\n");
       break; // exit the whole loop
     }
     if (bytesReceived < 0) {
-      fprintf(stderr, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      fprintf(this->err, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       break; // exit the whole loop
     }
     *data = cursor[0];
@@ -100,14 +146,15 @@ int Client_receive(SOCKET server, char *buffer, size_t length) {
   return total;
 }
 
-int Client_send(SOCKET server, const char *buffer, size_t length) {
+/// Sends data through the client's socket
+int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
   // Ignore socket closed on send, will be caught by recv()
   size_t total = 0;
   char *data = (char*)buffer; // points to the beginning of the message
   do {
-    int bytesSent = send(server, data, length - total, 0);
+    int bytesSent = send(this->server, data, length - total, 0);
     if (bytesSent < 0) {
-      fprintf(stderr, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      fprintf(this->err, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       break;
     }
     data += bytesSent; // points to the remaining data to be sent
@@ -116,21 +163,27 @@ int Client_send(SOCKET server, const char *buffer, size_t length) {
   return total;
 }
 
-void Client_listen(SOCKET server) {
+/// Runs the client's infinite loop
+void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
   Client_catch(SIGINT, Client_stop);
   Client_catch(SIGTERM, Client_stop);
+
+  // Override default streams
+  if (in == NULL) this->in = in;
+  if (out == NULL) this->out = out;
+  if (err == NULL) this->err = err;
 
   char buffer[kBufferSize] = {0};
 
   // Wait for the OK signal from the server
-  int received = Client_receive(server, buffer, kBufferSize);
+  int received = Client_receive(this, buffer, kBufferSize);
   if (received > 0) {
     if (strncmp(buffer, "/ok", 3) != 0) {
-      printf("The server refused the connection\n");
+      fprintf(this->out, "The server refused the connection\n");
       terminate = true;
     }
-    printf("[server]: %s\n", (buffer + 4));
-    printf("To send data, enter text followed by enter.\n");
+    fprintf(this->out, "[server]: %s\n", (buffer + 4));
+    fprintf(this->out, "To send data, enter text followed by enter.\n");
   } else {
     terminate = true;
   }
@@ -140,11 +193,11 @@ void Client_listen(SOCKET server) {
     fd_set reads;
     FD_ZERO(&reads);
     // Add our listening socket
-    FD_SET(server, &reads);
+    FD_SET(this->server, &reads);
   #if !defined(_WIN32)
     // On non-windows system we add STDIN to the list
     // of monitored sockets
-    FD_SET(fileno(stdin), &reads);
+    FD_SET(fileno(this->in), &reads);
   #endif
 
     // The timeout is needed for Windows
@@ -153,43 +206,70 @@ void Client_listen(SOCKET server) {
     struct timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 100000; // micro seconds
-    if (select(server + 1, &reads, 0, 0, &timeout) < 0) {
+    if (select(this->server + 1, &reads, 0, 0, &timeout) < 0) {
       if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
-      fprintf(stderr, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      fprintf(this->err, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       return;
     }
 
-    if (FD_ISSET(server, &reads)) {
+    if (FD_ISSET(this->server, &reads)) {
       // We have data in a socket
       memset(buffer, 0, kBufferSize);
-      received = Client_receive(server, buffer, kBufferSize);
+      received = Client_receive(this, buffer, kBufferSize);
       if (received <= 0) {
-        // break;
         terminate = true;
       }
-      // Print up to byte_received from the server
-      printf("Received (%d bytes): %.*s\n", received, received, buffer);
+      switch (Message_getType(buffer)) {
+        case kMessageTypeErr:
+          fprintf(this->err, "[Error]: %s\n", Message_getContent(buffer, kMessageTypeErr, received));
+        break;
+        case kMessageTypeOk:
+        break;
+        case kMessageTypeLog:
+          fprintf(this->err, "[Server]: %s\n", Message_getContent(buffer, kMessageTypeLog, received));
+        break;
+        case kMessageTypeMsg:
+          fprintf(this->err, "%s\n", Message_getContent(buffer, kMessageTypeMsg, received));
+        break;
+        case kMessageTypeQuit:
+          break;
+        break;
+        default:
+          // Print up to byte_received from the server
+          fprintf(this->err, "Received (%d bytes): %.*s\n", received, received, buffer);
+        break;
+      }
     }
 
     // Check for terminal input
   #if defined(_WIN32)
     if(_kbhit()) {
   #else
-    if(FD_ISSET(fileno(stdin), &reads)) {
+    if(FD_ISSET(fileno(this->in), &reads)) {
   #endif
       memset(buffer, 0, kBufferSize);
       // fgets() always includes a newline...
-      if (!fgets(buffer, kBufferSize, stdin)) break;
+      if (!fgets(buffer, kBufferSize, this->in)) break;
       // ...so we are replacing it with a null terminator
       char *end = buffer + strlen(buffer) -1;
       *end = 0;
-      printf("Sending: %s\n", buffer);
-      int sent = Client_send(server, buffer, strlen(buffer) + 1);
+      char message[kBufferSize] = {0};
+
+      // If the input is not a command, wrap it into a message type
+      if (!Message_getType(buffer)) {
+        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
+      } else {
+        // Send the message as is
+        memcpy(message, buffer, kBufferSize);
+      }
+
+      fprintf(this->err, "Sending: %s\n", message);
+      int sent = Client_send(this, message, strlen(message) + 1);
       if (sent > 0) {
-        printf("Sent %d bytes.\n", sent);
+        fprintf(this->err, "Sent %d bytes.\n", sent);
       }
     }
   }
-  printf("Closing connection...");
-  SOCKET_close(server);
+  fprintf(this->err, "Closing connection...");
+  SOCKET_close(this->server);
 }

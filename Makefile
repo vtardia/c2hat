@@ -100,8 +100,8 @@ libconfig: prereq obj/lib/config.o
 
 
 # Client final binary
-client: prereq libsocket obj/client/main.o obj/client/client.o
-	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -o bin/client
+client: prereq libsocket libmessage obj/client/main.o obj/client/client.o
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lmessage -o bin/client
 
 
 # Client dependencies

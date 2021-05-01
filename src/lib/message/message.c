@@ -172,7 +172,7 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
  * @param[in] message
  */
 void Message_free(char **message) {
-  if (message != NULL) {
+  if (message != NULL && *message != NULL) {
     memset(*message, 0, strlen(*message));
     free(*message);
     *message = NULL;

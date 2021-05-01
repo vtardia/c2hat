@@ -219,17 +219,21 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
       if (received <= 0) {
         terminate = true;
       }
+      char *messageContent = NULL;
       switch (Message_getType(buffer)) {
         case kMessageTypeErr:
-          fprintf(this->err, "[Error]: %s\n", Message_getContent(buffer, kMessageTypeErr, received));
+          messageContent = Message_getContent(buffer, kMessageTypeErr, received);
+          fprintf(this->err, "[Error]: %s\n", messageContent);
         break;
         case kMessageTypeOk:
         break;
         case kMessageTypeLog:
-          fprintf(this->err, "[Server]: %s\n", Message_getContent(buffer, kMessageTypeLog, received));
+          messageContent = Message_getContent(buffer, kMessageTypeLog, received);
+          fprintf(this->err, "[Server]: %s\n", messageContent);
         break;
         case kMessageTypeMsg:
-          fprintf(this->err, "%s\n", Message_getContent(buffer, kMessageTypeMsg, received));
+          messageContent = Message_getContent(buffer, kMessageTypeMsg, received);
+          fprintf(this->err, "%s\n", messageContent);
         break;
         case kMessageTypeQuit:
           break;
@@ -239,6 +243,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
           fprintf(this->err, "Received (%d bytes): %.*s\n", received, received, buffer);
         break;
       }
+      Message_free(&messageContent);
     }
 
     // Check for terminal input

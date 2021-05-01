@@ -23,6 +23,8 @@ int main(int argc, char const *argv[]) {
   const char * host = argv[1];
   const char * port = argv[2];
 
+  // FILE *chatlog = fopen("/tmp/c2hatclient.log", "a");
+
   C2HatClient *app = Client_create(host, port);
   if (app == NULL) {
     fprintf(stderr, "Connection failed\n");
@@ -40,5 +42,6 @@ int main(int argc, char const *argv[]) {
   WSACleanup();
 #endif
   printf("Bye!\n");
+  // fclose(chatlog);
   return EXIT_SUCCESS;
 }

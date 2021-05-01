@@ -169,9 +169,9 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
   Client_catch(SIGTERM, Client_stop);
 
   // Override default streams
-  if (in == NULL) this->in = in;
-  if (out == NULL) this->out = out;
-  if (err == NULL) this->err = err;
+  if (in != NULL) this->in = in;
+  if (out != NULL) this->out = out;
+  if (err != NULL) this->err = err;
 
   char buffer[kBufferSize] = {0};
   bool authenticated = false;
@@ -192,6 +192,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
   } else {
     terminate = true;
   }
+  fflush(this->out);
 
   while(!terminate) {
     // Initialise the socket set
@@ -256,6 +257,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
           fprintf(this->err, "Received (%d bytes): %.*s\n", received, received, buffer);
         break;
       }
+      fflush(this->err);
       Message_free(&messageContent);
     }
 
@@ -291,8 +293,10 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
       if (sent > 0) {
         fprintf(this->err, "Sent %d bytes.\n", sent);
       }
+      fflush(this->err);
     }
   }
   fprintf(this->err, "Closing connection...");
+  fflush(this->err);
   SOCKET_close(this->server);
 }

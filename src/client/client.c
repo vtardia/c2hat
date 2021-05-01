@@ -174,16 +174,21 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
   if (err == NULL) this->err = err;
 
   char buffer[kBufferSize] = {0};
+  bool authenticated = false;
 
   // Wait for the OK signal from the server
   int received = Client_receive(this, buffer, kBufferSize);
   if (received > 0) {
-    if (strncmp(buffer, "/ok", 3) != 0) {
+    if (Message_getType(buffer) != kMessageTypeOk) {
       fprintf(this->out, "The server refused the connection\n");
       terminate = true;
     }
-    fprintf(this->out, "[server]: %s\n", (buffer + 4));
-    fprintf(this->out, "To send data, enter text followed by enter.\n");
+    char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
+    if (strlen(messageContent) > 0) {
+      fprintf(this->err, "[Server]: %s\n", messageContent);
+    }
+    Message_free(&messageContent);
+    fprintf(this->out, " => To send data, enter text followed by enter.\n");
   } else {
     terminate = true;
   }
@@ -195,7 +200,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
     // Add our listening socket
     FD_SET(this->server, &reads);
   #if !defined(_WIN32)
-    // On non-windows system we add STDIN to the list
+    // On non-windows systems we add STDIN to the list
     // of monitored sockets
     FD_SET(fileno(this->in), &reads);
   #endif
@@ -226,6 +231,10 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
           fprintf(this->err, "[Error]: %s\n", messageContent);
         break;
         case kMessageTypeOk:
+          messageContent = Message_getContent(buffer, kMessageTypeOk, received);
+          if (strlen(messageContent) > 0) {
+            fprintf(this->err, "[Server]: %s\n", messageContent);
+          }
         break;
         case kMessageTypeLog:
           messageContent = Message_getContent(buffer, kMessageTypeLog, received);
@@ -234,6 +243,10 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
         case kMessageTypeMsg:
           messageContent = Message_getContent(buffer, kMessageTypeMsg, received);
           fprintf(this->err, "%s\n", messageContent);
+        break;
+        case kMessageTypeNick:
+          messageContent = Message_getContent(buffer, kMessageTypeNick, received);
+          fprintf(this->err, "[Server]: %s\n", messageContent);
         break;
         case kMessageTypeQuit:
           break;
@@ -262,7 +275,12 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
 
       // If the input is not a command, wrap it into a message type
       if (!Message_getType(buffer)) {
-        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
+        if (authenticated) {
+          Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
+        } else {
+          Message_format(kMessageTypeNick, message, kBufferSize, "%s", buffer);
+          authenticated = true;
+        }
       } else {
         // Send the message as is
         memcpy(message, buffer, kBufferSize);

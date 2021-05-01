@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <getopt.h>
+#include <sys/stat.h>
 
 /// Default connection limit
 const int kDefaultMaxClients = 5;
@@ -274,17 +275,36 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
       currentConfig->host, currentConfig->port, serverPID
     );
   } else {
+    pid_t sessionID = 0;
     pid_t serverPID = fork();
     if (serverPID > 0) {
-      // I'm in parent process
+      // First fork, close the parent
+      return EXIT_SUCCESS;
+    }
+    // serverPID = 0 means I'm in the child
+    if (serverPID < 0) {
+      fprintf(stderr, "Unable to start daemon server(1): %s\n", strerror(errno));
+      return EXIT_FAILURE;
+    }
+    // I'm in the child, form again
+    serverPID = fork();
+    if (serverPID < 0) {
+      fprintf(stderr, "Unable to start daemon server(2): %s\n", strerror(errno));
+      return EXIT_FAILURE;
+    }
+    if (serverPID > 0) {
+      // I'm in second parent process
       fprintf(stdout, "Starting background server on %s:%d with PID %d\n",
         currentConfig->host, currentConfig->port, serverPID
       );
       return EXIT_SUCCESS;
     }
-    // serverPID = 0 means I'm in the child
-    if (serverPID < 0) {
-      fprintf(stderr, "Unable to start daemon server: %s\n", strerror(errno));
+    // I'm in the final child
+    umask(0);
+    chdir("/usr/local");
+    sessionID = setsid();
+    if (sessionID < 0) {
+      fprintf(stderr, "Unable to set new session: %s\n", strerror(errno));
       return EXIT_FAILURE;
     }
   }
@@ -294,7 +314,9 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
   // Register shutdown function to close resource handlers
   atexit(clean);
 
-  // Init log facility
+  // Init log facility and close unused streams
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
   currentLogFilePath = GetLogFilePath(); // Can take arguments in the future, like use stdin/out
   if (LogInit(L_INFO, stderr, currentLogFilePath) < 0) {
     fprintf(stderr, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));

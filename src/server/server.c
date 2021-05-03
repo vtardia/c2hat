@@ -708,7 +708,18 @@ void* Server_handleClient(void* socket) {
 void* Server_handleBroadcast(void* data) {
   pthread_t me = pthread_self();
   QueueData *item = NULL;
+
+  // Define a sleep interval in milliseconds
+  struct timespec ts;
+  int msec = 200;
+  ts.tv_sec = msec / 1000;
+  ts.tv_nsec = (msec % 1000) * 1000000;
+
   while (!terminate) {
+    if (Queue_empty(messages)) {
+      nanosleep(&ts, NULL);
+      continue;
+    }
     do {
       // Lock Message Queue
       pthread_mutex_lock(&messagesLock);

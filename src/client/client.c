@@ -90,11 +90,32 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   }
   freeaddrinfo(bindAddress); // We don't need it anymore
   fprintf(this->out, "Connected!\n");
+
+  // Wait for the OK signal from the server
+  char buffer[kBufferSize] = {0};
+  int received = Client_receive(this, buffer, kBufferSize);
+  if (received < 0) {
+    SOCKET_close(this->server);
+    return false;
+  }
+
+  if (Message_getType(buffer) != kMessageTypeOk) {
+    fprintf(this->out, "The server refused the connection\n");
+    fflush(this->out);
+    SOCKET_close(this->server);
+    return false;
+  }
+  char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
+  if (strlen(messageContent) > 0) {
+    fprintf(this->err, "[Server]: %s\n", messageContent);
+  }
+  Message_free(&messageContent);
+
   return true;
 }
 
 /// Creates a new connected network chat client
-C2HatClient *Client_create(const char *host, const char *port) {
+C2HatClient *Client_create() {
   C2HatClient *client = calloc(sizeof(C2HatClient), 1);
   if (client == NULL) {
     fprintf(stderr, "Unable to create network client (%d) %s\n", errno, strerror(errno));
@@ -103,10 +124,6 @@ C2HatClient *Client_create(const char *host, const char *port) {
   client->in = stdin;
   client->out = stdout;
   client->err = stderr;
-  if (!Client_connect(client, host, port)) {
-    Client_destroy(&client);
-    return NULL;
-  }
   return client;
 }
 
@@ -128,11 +145,11 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
     int bytesReceived = recv(this->server, cursor, 1, 0);
     if (bytesReceived == 0) {
       fprintf(this->out, "Connection closed by remote server\n");
-      break; // exit the whole loop
+      return -1;
     }
     if (bytesReceived < 0) {
       fprintf(this->err, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-      break; // exit the whole loop
+      return -1;
     }
     *data = cursor[0];
     data ++;
@@ -155,12 +172,63 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
     int bytesSent = send(this->server, data, length - total, 0);
     if (bytesSent < 0) {
       fprintf(this->err, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-      break;
+      return -1;
     }
     data += bytesSent; // points to the remaining data to be sent
     total += bytesSent;
   } while (total < length);
   return total;
+}
+
+// Authenticates with the C2Hat server
+bool Client_authenticate(C2HatClient *this, const char *username) {
+  if (strlen(username) < 1) {
+    fprintf(this->out, "Invalid nickname\n");
+    fflush(this->out);
+    SOCKET_close(this->server);
+    return false;
+  }
+  // Wait for the AUTH signal from the server
+  char buffer[kBufferSize] = {0};
+  int received = Client_receive(this, buffer, kBufferSize);
+  if (received < 0) {
+    SOCKET_close(this->server);
+    return false;
+  }
+  if (Message_getType(buffer) != kMessageTypeNick) {
+    fprintf(this->out, "Unable to authenticate\n");
+    fflush(this->out);
+    SOCKET_close(this->server);
+    return false;
+  }
+
+  // Send credentials
+  char message[kBufferSize] = {0};
+  Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
+  int sent = Client_send(this, message, strlen(message) + 1);
+  if (sent < 0) {
+    fprintf(this->out, "Unable to authenticate\n");
+    fflush(this->out);
+    SOCKET_close(this->server);
+    return false;
+  }
+
+  // Wait for OK/ERR
+  memset(buffer, 0, kBufferSize);
+  received = Client_receive(this, buffer, kBufferSize);
+  if (received < 0) {
+    SOCKET_close(this->server);
+    return false;
+  }
+
+  if (Message_getType(buffer) != kMessageTypeOk) {
+    fprintf(this->out, "Authentication failed\n");
+    fflush(this->out);
+    SOCKET_close(this->server);
+    return false;
+  }
+
+  return true;
 }
 
 /// Runs the client's infinite loop
@@ -174,25 +242,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
   if (err != NULL) this->err = err;
 
   char buffer[kBufferSize] = {0};
-  bool authenticated = false;
-
-  // Wait for the OK signal from the server
-  int received = Client_receive(this, buffer, kBufferSize);
-  if (received > 0) {
-    if (Message_getType(buffer) != kMessageTypeOk) {
-      fprintf(this->out, "The server refused the connection\n");
-      terminate = true;
-    }
-    char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
-    if (strlen(messageContent) > 0) {
-      fprintf(this->err, "[Server]: %s\n", messageContent);
-    }
-    Message_free(&messageContent);
-    fprintf(this->out, " => To send data, enter text followed by enter.\n");
-  } else {
-    terminate = true;
-  }
-  fflush(this->out);
+  int received = 0;
 
   while(!terminate) {
     // Initialise the socket set
@@ -245,10 +295,6 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
           messageContent = Message_getContent(buffer, kMessageTypeMsg, received);
           fprintf(this->err, "%s\n", messageContent);
         break;
-        case kMessageTypeNick:
-          messageContent = Message_getContent(buffer, kMessageTypeNick, received);
-          fprintf(this->err, "[Server]: %s\n", messageContent);
-        break;
         case kMessageTypeQuit:
           break;
         break;
@@ -277,12 +323,7 @@ void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
 
       // If the input is not a command, wrap it into a message type
       if (!Message_getType(buffer)) {
-        if (authenticated) {
-          Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
-        } else {
-          Message_format(kMessageTypeNick, message, kBufferSize, "%s", buffer);
-          authenticated = true;
-        }
+        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
       } else {
         // Send the message as is
         memcpy(message, buffer, kBufferSize);

@@ -6,6 +6,7 @@
 #define CLIENT_H
   #include <stdio.h>
   #include <stdbool.h>
+  #include "socket/socket.h"
 
   // Opaque structure that contains client connection details
   typedef struct _C2HatClient C2HatClient;
@@ -30,4 +31,7 @@
 
   // Receives data through the client's socket
   int Client_receive(const C2HatClient *client, char *buffer, size_t length);
+
+  // Returns the raw socket for the given client
+  SOCKET Client_getSocket(const C2HatClient *client);
 #endif

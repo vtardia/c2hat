@@ -100,22 +100,25 @@ libconfig: prereq obj/lib/config.o
 
 
 # Client final binary
-client: prereq libsocket libmessage obj/client/main.o obj/client/client.o
-	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lmessage -o bin/client
+client: prereq libsocket libmessage obj/client/main.o obj/client/client.o obj/client/ui.o
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lmessage -lncurses -o bin/client
 
 
 # Client dependencies
 
-obj/client/main.o: src/client/main.c
-	$(CC) $(CFLAGS) -c src/client/main.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
+obj/client/main.o: src/client/uimain.c
+	$(CC) $(CFLAGS) -c src/client/uimain.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
 
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)
 
+obj/client/ui.o: src/client/ui.c
+	$(CC) $(CFLAGS) -c src/client/ui.c $(INCFLAGS) -o obj/client/ui.o $(OSFLAG)
+
 # Test Bot
-bot: prereq libsocket obj/test/bot/main.o obj/client/client.o
+bot: prereq libsocket libmessage obj/test/bot/main.o obj/client/client.o
 	mkdir -p bin/test
-	$(CC) $(CFLAGS) obj/test/bot/main.o obj/client/client.o $(LDFLAGS) -lsocket -lpthread -o bin/test/bot
+	$(CC) $(CFLAGS) obj/test/bot/main.o obj/client/client.o $(LDFLAGS) -lsocket -lpthread -lmessage -o bin/test/bot
 
 obj/test/bot/main.o: test/bot/main.c
 	mkdir -p obj/test/bot bin/test

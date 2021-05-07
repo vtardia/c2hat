@@ -29,25 +29,7 @@ typedef struct _C2HatClient {
   FILE *err;
 } C2HatClient;
 
-/// Manages the infinite loop condition
-static bool terminate = false;
-
-/// Sets the termination flag on SIGINT or SIGTERM
-void Client_stop(int signal) {
-  printf("Received signal %d\n", signal);
-  terminate = true;
-}
-
-/// Catches interrupt signals
-int Client_catch(int sig, void (*handler)(int)) {
-   struct sigaction action;
-   action.sa_handler = handler;
-   sigemptyset(&action.sa_mask);
-   action.sa_flags = 0;
-   return sigaction (sig, &action, NULL);
-}
-
-// Tries to connect a client to the network
+/// Tries to connect a client to the given chat server
 bool Client_connect(C2HatClient *this, const char *host, const char *port) {
 
   // Validate host and port information
@@ -92,25 +74,52 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   fprintf(this->out, "Connected!\n");
 
   // Wait for the OK signal from the server
+  // We are using select() with a timeout here, because if the server
+  // doesn't have available connection slots, the client will remain hung.
+  // To avoid this, we allow some second for the server to reply before failing
   char buffer[kBufferSize] = {0};
-  int received = Client_receive(this, buffer, kBufferSize);
-  if (received < 0) {
-    SOCKET_close(this->server);
-    return false;
-  }
+  fd_set reads;
+  FD_ZERO(&reads);
+  FD_SET(this->server, &reads);
+  struct timeval timeout;
+  timeout.tv_sec = 5;
+  timeout.tv_usec = 0; // micro seconds
+  while(1) {
+    if (!SOCKET_isValid(this->server)) return false;
+    int result = select(this->server + 1, &reads, 0, 0, &timeout);
+    if (result < 0) {
+      if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
+      fprintf(this->err, "Client select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fflush(this->err);
+      return false;
+    }
+    if (result == 0) {
+      fprintf(this->err, "Client timeout expired\n");
+      fflush(this->err);
+      return false;
+    }
 
-  if (Message_getType(buffer) != kMessageTypeOk) {
-    fprintf(this->out, "The server refused the connection\n");
-    fflush(this->out);
-    SOCKET_close(this->server);
-    return false;
+    if (FD_ISSET(this->server, &reads)) {
+      int received = Client_receive(this, buffer, kBufferSize);
+      if (received < 0) {
+        SOCKET_close(this->server);
+        return false;
+      }
+      if (Message_getType(buffer) != kMessageTypeOk) {
+        fprintf(this->err, "The server refused the connection\n");
+        fflush(this->err);
+        SOCKET_close(this->server);
+        return false;
+      }
+      char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
+      if (strlen(messageContent) > 0) {
+        fprintf(this->err, "[Server]: %s\n", messageContent);
+        fflush(this->err);
+      }
+      Message_free(&messageContent);
+      break;
+    }
   }
-  char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
-  if (strlen(messageContent) > 0) {
-    fprintf(this->err, "[Server]: %s\n", messageContent);
-  }
-  Message_free(&messageContent);
-
   return true;
 }
 
@@ -127,9 +136,21 @@ C2HatClient *Client_create() {
   return client;
 }
 
+/// Returns the raw client socket
+SOCKET Client_getSocket(const C2HatClient *this) {
+  if (this != NULL) return this->server;
+  return 0;
+}
+
 /// Destroy a client object
 void Client_destroy(C2HatClient **this) {
   if (this != NULL) {
+    // Check if we need to close the socket
+    if (*this != NULL) {
+      C2HatClient *client = *this;
+      if (SOCKET_isValid(client->server)) SOCKET_close(client->server);
+      client = NULL;
+    }
     memset(*this, 0, sizeof(C2HatClient));
     free(*this);
     *this = NULL;
@@ -169,7 +190,7 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
   size_t total = 0;
   char *data = (char*)buffer; // points to the beginning of the message
   do {
-    int bytesSent = send(this->server, data, length - total, 0);
+    int bytesSent = send(this->server, data, length - total, MSG_NOSIGNAL);
     if (bytesSent < 0) {
       fprintf(this->err, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       return -1;
@@ -180,7 +201,7 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
   return total;
 }
 
-// Authenticates with the C2Hat server
+/// Authenticates with the C2Hat server
 bool Client_authenticate(C2HatClient *this, const char *username) {
   if (strlen(username) < 1) {
     fprintf(this->out, "Invalid nickname\n");
@@ -227,117 +248,5 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     SOCKET_close(this->server);
     return false;
   }
-
   return true;
-}
-
-/// Runs the client's infinite loop
-void Client_run(C2HatClient *this, FILE *in, FILE *out, FILE *err) {
-  Client_catch(SIGINT, Client_stop);
-  Client_catch(SIGTERM, Client_stop);
-
-  // Override default streams
-  if (in != NULL) this->in = in;
-  if (out != NULL) this->out = out;
-  if (err != NULL) this->err = err;
-
-  char buffer[kBufferSize] = {0};
-  int received = 0;
-
-  while(!terminate) {
-    // Initialise the socket set
-    fd_set reads;
-    FD_ZERO(&reads);
-    // Add our listening socket
-    FD_SET(this->server, &reads);
-  #if !defined(_WIN32)
-    // On non-windows systems we add STDIN to the list
-    // of monitored sockets
-    FD_SET(fileno(this->in), &reads);
-  #endif
-
-    // The timeout is needed for Windows
-    // If no socket activity happens within 100ms,
-    // we check the terminal input manually
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000; // micro seconds
-    if (select(this->server + 1, &reads, 0, 0, &timeout) < 0) {
-      if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
-      fprintf(this->err, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-      return;
-    }
-
-    if (FD_ISSET(this->server, &reads)) {
-      // We have data in a socket
-      memset(buffer, 0, kBufferSize);
-      received = Client_receive(this, buffer, kBufferSize);
-      if (received <= 0) {
-        terminate = true;
-      }
-      char *messageContent = NULL;
-      switch (Message_getType(buffer)) {
-        case kMessageTypeErr:
-          messageContent = Message_getContent(buffer, kMessageTypeErr, received);
-          fprintf(this->err, "[Error]: %s\n", messageContent);
-        break;
-        case kMessageTypeOk:
-          messageContent = Message_getContent(buffer, kMessageTypeOk, received);
-          if (strlen(messageContent) > 0) {
-            fprintf(this->err, "[Server]: %s\n", messageContent);
-          }
-        break;
-        case kMessageTypeLog:
-          messageContent = Message_getContent(buffer, kMessageTypeLog, received);
-          fprintf(this->err, "[Server]: %s\n", messageContent);
-        break;
-        case kMessageTypeMsg:
-          messageContent = Message_getContent(buffer, kMessageTypeMsg, received);
-          fprintf(this->err, "%s\n", messageContent);
-        break;
-        case kMessageTypeQuit:
-          break;
-        break;
-        default:
-          // Print up to byte_received from the server
-          fprintf(this->err, "Received (%d bytes): %.*s\n", received, received, buffer);
-        break;
-      }
-      fflush(this->err);
-      Message_free(&messageContent);
-    }
-
-    // Check for terminal input
-  #if defined(_WIN32)
-    if(_kbhit()) {
-  #else
-    if(FD_ISSET(fileno(this->in), &reads)) {
-  #endif
-      memset(buffer, 0, kBufferSize);
-      // fgets() always includes a newline...
-      if (!fgets(buffer, kBufferSize, this->in)) break;
-      // ...so we are replacing it with a null terminator
-      char *end = buffer + strlen(buffer) -1;
-      *end = 0;
-      char message[kBufferSize] = {0};
-
-      // If the input is not a command, wrap it into a message type
-      if (!Message_getType(buffer)) {
-        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
-      } else {
-        // Send the message as is
-        memcpy(message, buffer, kBufferSize);
-      }
-
-      fprintf(this->err, "Sending: %s\n", message);
-      int sent = Client_send(this, message, strlen(message) + 1);
-      if (sent > 0) {
-        fprintf(this->err, "Sent %d bytes.\n", sent);
-      }
-      fflush(this->err);
-    }
-  }
-  fprintf(this->err, "Closing connection...");
-  fflush(this->err);
-  SOCKET_close(this->server);
 }

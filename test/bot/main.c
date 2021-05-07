@@ -22,8 +22,6 @@ char *port = NULL;
 
 char messages[1024][100];
 
-pthread_mutex_t termLock = PTHREAD_MUTEX_INITIALIZER;
-
 // Called within a thread function, hides that thread from signals
 void maskSignal() {
   sigset_t mask;
@@ -35,10 +33,8 @@ void maskSignal() {
 }
 
 void Bot_stop(int signal) {
-  pthread_mutex_lock(&termLock);
   terminate = true;
   printf("Received signal %d in thread %lu\n", signal, (unsigned long)pthread_self());
-  pthread_mutex_unlock(&termLock);
 }
 
 // Catch interrupt signals
@@ -51,93 +47,74 @@ int Bot_catch(int sig, void (*handler)(int)) {
 }
 
 void* RunBot(void* data) {
-  maskSignal();
   int *id = (int *)data;
-  SOCKET server = Client_connect(host, port);
-  if (server == -1) {
-    fprintf(stderr, "Connection failed\n");
-  #if defined(_WIN32)
-    WSACleanup();
-  #endif
+
+  // Create a chat client
+  C2HatClient *bot = Client_create();
+  if (bot == NULL) {
+    fprintf(stderr, "[%d] Bot client creation failed\n", *id);
     return NULL;
   }
 
-  char nick[50] = {0};
-  sprintf(nick, "Bot %d", *id);
-
-  printf("Bot Thread %d... %lu\n", *id, (unsigned long)pthread_self());
-
-  // Wait for the OK signal from the server
-  char read[kBufferSize] = {0};
-  int received = Client_receive(server, read, kBufferSize);
-  if (received > 0) {
-    if (strncmp(read, "/ok", 3) != 0) {
-      printf("The server refused the connection\n");
-      SOCKET_close(server);
-      return NULL;
-    }
-    printf("[%s/server]: %s\n", nick, (read + 4));
-  } else {
-    SOCKET_close(server);
+  // Try to connect
+  if (!Client_connect(bot, host, port)) {
+    fprintf(stderr, "[%d] Connection failed\n", *id);
+    Client_destroy(&bot);
     return NULL;
   }
 
-  // Wait for the authentication prompt
-  memset(read, 0, kBufferSize);
-  received = Client_receive(server, read, kBufferSize);
-  if (received > 0) {
-    if (strncmp(read, "/nick", 5) != 0) {
-      printf("Unable to autenticate\n");
-      SOCKET_close(server);
-      return NULL;
-    }
-    printf("[%s/server]: %s\n", nick, (read + 6));
-  } else {
-    SOCKET_close(server);
+  // Choose your nickname
+  char nickname[50] = {0};
+  sprintf(nickname, "Bot %d", *id);
+
+  printf("Starting Bot thread %d: %lu\n", *id, (unsigned long)pthread_self());
+
+  // Authenticate
+  if (!Client_authenticate(bot, nickname)) {
+    fprintf(stderr, "[%s] Authentication failed\n", nickname);
+    Client_destroy(&bot);
     return NULL;
   }
 
-  // Send Nick
-  char nickMessage[100] = {0};
-  sprintf(nickMessage, "/nick %s", nick);
-  Client_send(server, nickMessage, strlen(nickMessage) + 1);
-  memset(read, 0, kBufferSize);
-  received = Client_receive(server, read, kBufferSize);
-  if (received > 0) {
-    if (strncmp(read, "/ok", 3) != 0) {
-      printf("[%s] Authentication failed\n", nick);
-      SOCKET_close(server);
-      return NULL;
-    }
-    printf("[%s/server]: %s\n", nick, (read + 4));
-  } else {
-    SOCKET_close(server);
-    return NULL;
-  }
-
+  // Initialise random engine
   srand(time(NULL));
-  while (!terminate) {
-    // Initialise the socket set
-    fd_set reads;
-    FD_ZERO(&reads);
-    // Add our listening socket
-    FD_SET(server, &reads);
 
-    if (select(server + 1, &reads, 0, 0, NULL) < 0) {
+  // Prepare for the message loop
+  fd_set reads;
+  FD_ZERO(&reads);
+  SOCKET server = Client_getSocket(bot);
+  FD_SET(server, &reads);
+
+  // Set connection timeout
+  struct timeval timeout;
+  timeout.tv_sec = 5;
+  timeout.tv_usec = 0; // micro seconds
+
+  // Start the message loop
+  while (!terminate) {
+    if (!SOCKET_isValid(server)) break;
+    int result = select(server + 1, &reads, 0, 0, &timeout);
+    if (result < 0) {
       if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
-      fprintf(stderr, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+      fprintf(stderr, "[%s] select() failed. (%d): %s\n", nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      break;
+    }
+
+    // Server didn't respond on time
+    if (result == 0) {
+      fprintf(stderr, "[%s] select() timeout expired. (%d): %s\n", nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       break;
     }
 
     if (FD_ISSET(server, &reads)) {
       // We have data in a socket
       char read[kBufferSize] = {0};
-      int received = Client_receive(server, read, kBufferSize);
+      int received = Client_receive(bot, read, kBufferSize);
       if (received <= 0) {
         break;
       }
       // Print up to byte_received from the server
-      printf("[%s/server]: %.*s\n", nick, received, read);
+      printf("[%s/server]: %.*s\n", nickname, received, read);
     }
 
     // Throw a dice to send a message
@@ -146,22 +123,26 @@ void* RunBot(void* data) {
       int messageID = rand() % 100;
       char message[1024] = {0};
       snprintf(message, 1023, "/msg %s", messages[messageID]);
-      int sent = Client_send(server, message, strlen(message) + 1);
+      int sent = Client_send(bot, message, strlen(message) + 1);
       if (sent <= 0) {
-        fprintf(stderr, "[%s] Unable to send message: %s\n", nick, strerror(errno));
+        fprintf(stderr, "[%s] Unable to send message: %s\n", nickname, strerror(errno));
       }
     }
-    sleep(5);
+    sleep(1);
   }
 
-  Client_send(server, "/quit", strlen("/quit") + 1);
-
-  printf("[%s] Closing connection...", nick);
-  SOCKET_close(server);
-
+  // Signal received, prepare to close
+  printf("[%s] Closing connection...\n", nickname);
+  int sent = Client_send(bot, "/quit", strlen("/quit") + 1);
+  if (sent <= 0) {
+    fprintf(stderr, "[%s] Unable close connection: %s\n", nickname, strerror(errno));
+  }
+  FD_CLR(server, &reads);
+  Client_destroy(&bot);
   return id;
 }
 
+/// Load the test messages from the file
 void LoadMessages() {
   FILE *fd = fopen("test/bot/messages.txt", "r");
   if (!fd) {
@@ -177,14 +158,27 @@ void LoadMessages() {
   fclose(fd);
 }
 
-int main(int argc, char const *argv[]) {
+/// Initialise sockets (win only)
+void BotInit() {
 #if defined(_WIN32)
   WSADATA d;
   if (WSAStartup(MAKEWORD(2, 2), &d)) {
     fprintf(stderr, "Failed to initialize.\n");
-    return 1;
+    exit(EXIT_FAILURE);
   }
 #endif
+}
+
+/// Cleanup sockets and return (win only)
+int BotCleanup(int result) {
+#if defined(_WIN32)
+  WSACleanup();
+#endif
+  return result;
+}
+
+int main(int argc, char const *argv[]) {
+  BotInit();
 
   if (argc < 3) {
     fprintf(stderr, "Usage: %s hostname port\n", argv[0]);
@@ -202,30 +196,44 @@ int main(int argc, char const *argv[]) {
   pthread_t threadId[kMaxBots];
   int values[kMaxBots];
 
-  // Start new threads to process func1, each with a different input value
+  // Start new threads to process, each with a different input value
   for(int i = 0; i < kMaxBots; i++) {
     values[i] = i;
     pthread_create(&threadId[i], NULL, RunBot, &values[i]);
-    // pthread_detach(threadId[i]);
   }
 
   printf("Main loop... %lu\n", (unsigned long)pthread_self());
 
-  while (!terminate) {
-    sleep(1);
-  }
-
   printf("Terminating...\n");
 
   // Wait for all the threads to finish and close
+  // TODO: if some threads are already terminated,
+  // trying to join them by passing a pointer causes a segmentation fault:
+  // try to use a COMPLETE flag so that we can only join running threads
   for(int j = 0; j < kMaxBots; j++) {
-    pthread_join(threadId[j], NULL);
-    // pthread_kill(threadId[j], 15);
+    // int *id = NULL;
+    // int res = pthread_join(threadId[j], (void**)&id);
+    int res = pthread_join(threadId[j], NULL);
+    switch(res) {
+      case 0:
+        // printf("Joined %d, (%d)\n", j, *id);
+        printf("Bot %d joined!\n", j);
+      break;
+      case EINVAL:
+        fprintf(stderr, "Unable to join Bot %d: thread not joinable\n", j);
+      break;
+      case ESRCH:
+        fprintf(stderr, "Unable to join Bot %d: thread not found\n", j);
+      break;
+      case EDEADLK:
+        fprintf(stderr, "Unable to join Bot %d: possible deadlock\n", j);
+      break;
+      default:
+        fprintf(stderr, "Unable to join Bot %d: %s\n", j, strerror(errno));
+      break;
+    }
   }
 
-#if defined(_WIN32)
-  WSACleanup();
-#endif
   printf("Bye!\n");
-  return 0;
+  return BotCleanup(EXIT_SUCCESS);
 }

@@ -72,11 +72,11 @@ int main(int argc, char const *argv[]) {
   pthread_t listeningThreadID = 0;
   pthread_create(&listeningThreadID, NULL, Client_listen, app);
 
-  char buffer[kBufferSize] = {0};
   while(!terminate) {
     UILoopInit();
 
     // Request user input
+    char buffer[kBufferSize] = {0};
     int inputSize = UIGetUserInput(buffer, kBufferSize);
     // User pressed F1 or other exit commands
     if (inputSize < 0) {

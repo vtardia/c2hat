@@ -84,6 +84,7 @@ void UIDrawChatWin() {
   // Chat window container: 100% wide, 80% tall, starts at top left
   chatWinBox = subwin(mainWin, (LINES * 0.8), COLS, 0, 0);
   box(chatWinBox, 0, 0);
+  // TODO: Draw title
   wrefresh(chatWinBox);
   // Chat log box, within the chat window
   chatWin = subwin(chatWinBox, (LINES * 0.8) -2, COLS -2, 1, 1);
@@ -108,51 +109,67 @@ void UILoopInit() {
 int UIGetUserInput(char *buffer, size_t length) {
   int y, x, maxY, maxX;
   int ch;
+
+  // Variable pointer that follow the cursor on the window
   char *cursor = buffer;
+
+  // Variable pointer that point to the end of the typed message
+  char *eom = buffer;
+
+  // Fixed pointer to the very end of the buffer
   char *end = buffer + length - 1;
+  // Safe NULL terminator
   *end = 0;
+
   wmove(inputWin, 0, 0);
   wrefresh(inputWin);
   while ((ch = getch()) != KEY_F(1)) {
     if (ch == KEY_RESIZE) continue;
+    getyx(inputWin, y, x);
+    getmaxyx(inputWin, maxY, maxX);
     switch(ch) {
       case kKeyBackspace:
       case kKeyDel:
-         if (end - cursor > 0) {
-            wprintw(inputWin, "\b \b\0");
-            *(--cursor) = 0;
-            wrefresh(inputWin);
-         } else {
-            wprintw(inputWin, "\b \0");
-         }
+        mvwdelch(inputWin, y, x -1);
+        wrefresh(inputWin);
       break;
-      case kKeyEOT: // Ctrl + D
-        // Add a null terminator
-        if (cursor < end) *cursor = 0;
+      case kKeyEnter:
+      // case kKeyEOT: // Ctrl + D
+        // Read the content of the window up to a max
+        wmove(inputWin, 0, 0);
+        winnstr(inputWin, buffer, length -1);
         // Clear window and pass the input to the caller
         wclear(inputWin);
         wrefresh(inputWin);
-        return cursor - buffer + 1;
+        return strlen(buffer) + 1;
       break;
+      case KEY_LEFT:
+          wmove(inputWin, y, x -1);
+          if (cursor > buffer) cursor--;
+          wrefresh(inputWin);
+        break;
+      case KEY_RIGHT:
+        // We can move to the right only of there is already text
+        if (cursor < eom) {
+          wmove(inputWin, y, x + 1);
+          cursor++;
+          wrefresh(inputWin);
+        }
+        break;
       case KEY_UP:
       case KEY_DOWN:
-      case KEY_LEFT:
-      case KEY_RIGHT:
         // Ignoring arrow keys and scrolling for now, too complicated
-        getyx(inputWin, y, x);
-        getmaxyx(inputWin, maxY, maxX);
-        // wscrl(inputWin, 1);
-        // wrefresh(inputWin);
         break;
       case ERR:
         // Display some message in the status bar
       break;
       default:
         // If we have space, add a character to the message
-        if (cursor < end && (ch == kKeyEnter || (ch > 31 && ch <= 255))) {
-          *cursor = ch;
+        if (cursor < end && (ch > 31 && ch <= 255)) {
+          if (cursor == eom) wprintw(inputWin, (char *)&ch);
+          if (cursor < eom) winsch(inputWin, ch);
           cursor++;
-          wprintw(inputWin, (char *)&ch);
+          if (cursor > eom) eom = cursor;
           wrefresh(inputWin);
         }
       break;

@@ -64,6 +64,10 @@ int main(int argc, char const *argv[]) {
 
   UIInit();
 
+  char connectionStatus[120] = {0};
+  int statusMessageLength = sprintf(connectionStatus, "Connected to %s:%s", host, port);
+  UISetStatusMessage(connectionStatus, statusMessageLength);
+
   App_catch(SIGINT, App_stop);
   App_catch(SIGTERM, App_stop);
   App_catch(SIGWINCH, UIResizeHandler);

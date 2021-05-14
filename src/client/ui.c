@@ -8,16 +8,19 @@
 enum {
   kKeyEnter = 10,
   kKeyBackspace = 8,
+  kKeyESC = 27,
   kKeyDel = 127,
   kKeyEOT = 4 // Ctrl+D = end of input
 };
 
-static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox;
+static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
 
 void UIColors();
 void UIDrawChatWin();
 void UIDrawInputWin();
+void UIDrawStatusBar();
 void UIDrawTermTooSmall();
+void UISetInputCounter(int, int);
 
 /**
  * Initialises NCurses configuration
@@ -51,6 +54,7 @@ void UIInit() {
   } else {
     UIDrawChatWin();
     UIDrawInputWin();
+    UIDrawStatusBar();
   }
 }
 
@@ -65,6 +69,7 @@ void UIWindow_destroy(WINDOW *win) {
  */
 void UIClean() {
   // Destroy windows
+  UIWindow_destroy(statusBarWin);
   UIWindow_destroy(inputWin);
   UIWindow_destroy(inputWinBox);
   UIWindow_destroy(chatWin);
@@ -84,11 +89,19 @@ void UIDrawChatWin() {
   // Chat window container: 100% wide, 80% tall, starts at top left
   chatWinBox = subwin(mainWin, (LINES * 0.8), COLS, 0, 0);
   box(chatWinBox, 0, 0);
-  // TODO: Draw title
+
+  // Draw title
+  const char *title = " C2Hat ";
+  size_t titleLength = strlen(title);
+  mvwaddch(chatWinBox, 0, (COLS/2) - titleLength/2 - 1 , ACS_RTEE);
+  mvwaddstr(chatWinBox, 0, (COLS/2) - titleLength/2, title);
+  mvwaddch(chatWinBox, 0, (COLS/2) + titleLength/2 + 1, ACS_LTEE);
   wrefresh(chatWinBox);
+
   // Chat log box, within the chat window
   chatWin = subwin(chatWinBox, (LINES * 0.8) -2, COLS -2, 1, 1);
   scrollok(chatWin, TRUE);
+  leaveok(chatWin, TRUE);
 }
 
 void UIDrawInputWin() {
@@ -98,6 +111,13 @@ void UIDrawInputWin() {
   wrefresh(inputWinBox);
   // Input box, within the container
   inputWin = subwin(inputWinBox, (LINES * 0.2) - 2, COLS - 2, (LINES * 0.8) + 1, 1);
+}
+
+void UIDrawStatusBar() {
+  // h, w, posY, posX
+  statusBarWin = subwin(mainWin, 1, COLS, LINES -1, 0);
+  leaveok(statusBarWin, TRUE);
+  wrefresh(statusBarWin);
 }
 
 void UILoopInit() {
@@ -111,18 +131,26 @@ int UIGetUserInput(char *buffer, size_t length) {
   int ch;
 
   // Variable pointer that follow the cursor on the window
-  char *cursor = buffer;
+  int cursor = 0;
 
   // Variable pointer that point to the end of the typed message
-  char *eom = buffer;
+  int eom = 0;
+
+  // Keeps track of character limit
+  int eob = length -1;
 
   // Fixed pointer to the very end of the buffer
-  char *end = buffer + length - 1;
-  // Safe NULL terminator
+  char *end = buffer + eob;
+
+  // Add a safe NULL terminator at the end of buffer
   *end = 0;
 
+  // Initialise the input window and counters
   wmove(inputWin, 0, 0);
   wrefresh(inputWin);
+  UISetInputCounter(eom, eob);
+
+  // Wait for input
   while ((ch = getch()) != KEY_F(1)) {
     if (ch == KEY_RESIZE) continue;
     getyx(inputWin, y, x);
@@ -130,47 +158,113 @@ int UIGetUserInput(char *buffer, size_t length) {
     switch(ch) {
       case kKeyBackspace:
       case kKeyDel:
-        mvwdelch(inputWin, y, x -1);
-        wrefresh(inputWin);
+        if (cursor > 0) {
+          int newX, newY;
+          if (x == 0) {
+            // Y must be > 0 if we have text (cursor > 0)
+            newX = maxX - 1;
+            newY = y - 1;
+          } else {
+            // X > 0, Y = whatever
+            newY = y;
+            newX = x - 1;
+          }
+          if (mvwdelch(inputWin, newY, newX) != ERR) {
+            cursor--;
+            eom--;
+            wrefresh(inputWin);
+          }
+          UISetInputCounter(eom, eob);
+        }
       break;
       case kKeyEnter:
       // case kKeyEOT: // Ctrl + D
         // Read the content of the window up to a max
-        wmove(inputWin, 0, 0);
-        winnstr(inputWin, buffer, length -1);
+        mvwinnstr(inputWin, 0, 0, buffer, length -1);
         // Clear window and pass the input to the caller
         wclear(inputWin);
         wrefresh(inputWin);
         return strlen(buffer) + 1;
       break;
+      case kKeyESC:
+        // Cancel any operation and reset everything
+        wmove(inputWin, 0, 0);
+        wclear(inputWin);
+        wrefresh(inputWin);
+        cursor = 0;
+        eom = 0;
+        UISetInputCounter(eom, eob);
+      break;
       case KEY_LEFT:
-          wmove(inputWin, y, x -1);
-          if (cursor > buffer) cursor--;
-          wrefresh(inputWin);
-        break;
+        if (y > 0 && x == 0) {
+          // The text cursor is at the beginning of line 2+,
+          // move at the end of the previous line
+          if (wmove(inputWin, y - 1, maxX - 1) != ERR) {
+            wrefresh(inputWin);
+            if (cursor > 0) cursor--;
+          }
+        } else if (x > 0) {
+          // The text cursor is in the middle of a line,
+          // just move to the left by one step
+          if (wmove(inputWin, y, x - 1) != ERR) {
+            wrefresh(inputWin);
+            if (cursor > 0) cursor--;
+          }
+        }
+        UISetInputCounter(eom, eob);
+      break;
       case KEY_RIGHT:
         // We can move to the right only of there is already text
-        if (cursor < eom) {
-          wmove(inputWin, y, x + 1);
-          cursor++;
-          wrefresh(inputWin);
+        if (eom > ((y * maxX) + x)) {
+          if (wmove(inputWin, y, x + 1) != ERR) {
+            wrefresh(inputWin);
+            cursor++;
+            // Cursor cannot be greater than the end of message
+            if (cursor > eom) cursor = eom;
+          }
         }
-        break;
+      break;
       case KEY_UP:
+        if (y > 0) {
+          if (wmove(inputWin, y - 1, x) != ERR) {
+            wrefresh(inputWin);
+            cursor -= maxX;
+          }
+        }
+      break;
       case KEY_DOWN:
-        // Ignoring arrow keys and scrolling for now, too complicated
-        break;
+        // We can move only if there is enogh text in the line below
+        if (y < (maxY - 1) && eom >= (maxX + x)) {
+          if (wmove(inputWin, y + 1, x) != ERR) {
+            wrefresh(inputWin);
+            cursor += maxX;
+          }
+        }
+      break;
       case ERR:
         // Display some message in the status bar
       break;
       default:
         // If we have space, add a character to the message
-        if (cursor < end && (ch > 31 && ch <= 255)) {
-          if (cursor == eom) wprintw(inputWin, (char *)&ch);
-          if (cursor < eom) winsch(inputWin, ch);
-          cursor++;
-          if (cursor > eom) eom = cursor;
+        if (cursor < eob && (ch > 31 && ch <= 255)) {
+          // Appending content to the end of the line
+          if (cursor == eom && (wprintw(inputWin, (char *)&ch) != ERR)) {
+            cursor++;
+            eom++;
+          }
+          // Inserting content in the middle of a line
+          if (cursor < eom && (winsch(inputWin, ch) != ERR)) {
+            if (x < maxX && wmove(inputWin, y, x + 1) != ERR) {
+              cursor++;
+              eom++;
+            } else if (wmove(inputWin, y + 1, 0) != ERR) {
+              cursor++;
+              eom++;
+            }
+            // Don't update the cursor if you can't move
+          }
           wrefresh(inputWin);
+          UISetInputCounter(eom, eob);
         }
       break;
     }
@@ -182,6 +276,8 @@ int UIGetUserInput(char *buffer, size_t length) {
 }
 
 void UILogMessage(char *buffer, size_t length) {
+  int y, x;
+  getyx(inputWin, y, x);
   char *messageContent = NULL;
   switch (Message_getType(buffer)) {
     case kMessageTypeErr:
@@ -212,6 +308,26 @@ void UILogMessage(char *buffer, size_t length) {
   }
   wrefresh(chatWin);
   Message_free(&messageContent);
+  wmove(inputWin, y, x);
+  wrefresh(inputWin);
+}
+
+void UISetStatusMessage(char *buffer, size_t length) {
+  // Considers 80% of the status bar available
+  size_t size = (length < (size_t)(COLS * 0.8)) ? length : (COLS * 0.8) - 1;
+  mvwprintw(statusBarWin, 0, 1, "%.*s", size, buffer);
+  wrefresh(statusBarWin);
+}
+
+void UISetInputCounter(int current, int max) {
+  int y, x;
+  getyx(inputWin, y, x);
+  char text[20] = {0};
+  size_t length = sprintf(text, "%4d/%d", current, max);
+  mvwprintw(statusBarWin, 0, (COLS - length - 1), "%s", text);
+  wrefresh(statusBarWin);
+  wmove(inputWin, y, x);
+  wrefresh(inputWin);
 }
 
 void UIDrawTermTooSmall() {
@@ -237,6 +353,7 @@ void UIResizeHandler(int signal) {
   } else {
     UIDrawChatWin();
     UIDrawInputWin();
+    UIDrawStatusBar();
 
     // Refresh and move cursor to input window
     wrefresh(chatWin);

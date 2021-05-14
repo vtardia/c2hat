@@ -24,4 +24,7 @@
 
   // Displays output from the server in he chat log
   void UILogMessage(char *buffer, size_t length);
+
+  // Displays a message in the status bar
+  void UISetStatusMessage(char *buffer, size_t length);
 #endif

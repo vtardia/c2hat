@@ -65,7 +65,7 @@ int main(int argc, char const *argv[]) {
   UIInit();
 
   char connectionStatus[120] = {0};
-  int statusMessageLength = sprintf(connectionStatus, "Connected to %s:%s", host, port);
+  int statusMessageLength = sprintf(connectionStatus, "Connected to %s:%s - Hit F1 to quit", host, port);
   UISetStatusMessage(connectionStatus, statusMessageLength);
 
   App_catch(SIGINT, App_stop);

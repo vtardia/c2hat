@@ -149,6 +149,10 @@ int UIGetUserInput(char *buffer, size_t length) {
   wmove(inputWin, 0, 0);
   wclear(inputWin);
   wrefresh(inputWin);
+  getmaxyx(inputWin, maxY, maxX);
+  if (eob > (maxX * maxY)) {
+    eob = maxX * maxY;
+  }
   UISetInputCounter(eom, eob);
 
   // Wait for input
@@ -278,10 +282,6 @@ int UIGetUserInput(char *buffer, size_t length) {
           }
           wrefresh(inputWin);
           UISetInputCounter(eom, eob);
-        } else {
-          wmove(inputWin, 0, maxX/2);
-          wprintw(inputWin, "%d", ch);
-          wrefresh(inputWin);
         }
       break;
     }

@@ -14,6 +14,7 @@ enum {
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
+static char currentStatusBarMessage[512] = {0};
 
 void UIColors();
 void UIDrawChatWin();
@@ -332,8 +333,10 @@ void UILogMessage(char *buffer, size_t length) {
 void UISetStatusMessage(char *buffer, size_t length) {
   // Considers 80% of the status bar available
   size_t size = (length < (size_t)(COLS * 0.8)) ? length : (COLS * 0.8) - 1;
-  mvwprintw(statusBarWin, 0, 1, "%.*s", size, buffer);
-  wrefresh(statusBarWin);
+  if (mvwprintw(statusBarWin, 0, 1, "%.*s", size, buffer) != ERR) {
+    wrefresh(statusBarWin);
+    memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
+  }
 }
 
 void UISetInputCounter(int current, int max) {
@@ -371,6 +374,9 @@ void UIResizeHandler(int signal) {
     UIDrawChatWin();
     UIDrawInputWin();
     UIDrawStatusBar();
+    if (strlen(currentStatusBarMessage) > 0) {
+      UISetStatusMessage(currentStatusBarMessage, strlen(currentStatusBarMessage));
+    }
 
     // Refresh and move cursor to input window
     wrefresh(chatWin);

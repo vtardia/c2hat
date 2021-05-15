@@ -87,7 +87,7 @@ void UIColors() {
 
 void UIDrawChatWin() {
   // Chat window container: 100% wide, 80% tall, starts at top left
-  chatWinBox = subwin(mainWin, (LINES * 0.8), COLS, 0, 0);
+  chatWinBox = subwin(mainWin, (LINES - 6), COLS, 0, 0);
   box(chatWinBox, 0, 0);
 
   // Draw title
@@ -99,18 +99,18 @@ void UIDrawChatWin() {
   wrefresh(chatWinBox);
 
   // Chat log box, within the chat window
-  chatWin = subwin(chatWinBox, (LINES * 0.8) -2, COLS -2, 1, 1);
+  chatWin = subwin(chatWinBox, (LINES - 8), COLS -2, 1, 1);
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
 }
 
 void UIDrawInputWin() {
   // Input box container: 100% wide, 20% tall, starts at the bottom of the chat box
-  inputWinBox = subwin(mainWin, (LINES * 0.2), COLS, (LINES * 0.8), 0);
+  inputWinBox = subwin(mainWin, (5), COLS, (LINES -6), 0);
   box(inputWinBox, 0, 0);
   wrefresh(inputWinBox);
   // Input box, within the container
-  inputWin = subwin(inputWinBox, (LINES * 0.2) - 2, COLS - 2, (LINES * 0.8) + 1, 1);
+  inputWin = subwin(inputWinBox, (3), COLS - 2, (LINES - 6) + 1, 1);
 }
 
 void UIDrawStatusBar() {
@@ -147,6 +147,7 @@ int UIGetUserInput(char *buffer, size_t length) {
 
   // Initialise the input window and counters
   wmove(inputWin, 0, 0);
+  wclear(inputWin);
   wrefresh(inputWin);
   UISetInputCounter(eom, eob);
 
@@ -158,6 +159,7 @@ int UIGetUserInput(char *buffer, size_t length) {
     switch(ch) {
       case kKeyBackspace:
       case kKeyDel:
+      case KEY_BACKSPACE:
         if (cursor > 0) {
           int newX, newY;
           if (x == 0) {
@@ -180,11 +182,22 @@ int UIGetUserInput(char *buffer, size_t length) {
       case kKeyEnter:
       // case kKeyEOT: // Ctrl + D
         // Read the content of the window up to a max
-        mvwinnstr(inputWin, 0, 0, buffer, length -1);
-        // Clear window and pass the input to the caller
-        wclear(inputWin);
-        wrefresh(inputWin);
-        return strlen(buffer) + 1;
+        // mvwinnstr() reads only one line at a time so we need a loop
+        {
+          // Points to the end of every read block
+          char *cur = buffer;
+          for (int i = 0; i < maxY; i++) {
+            // eob - (cur - buffer) = remaning available unread bytes in the buffer
+            int read = mvwinnstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
+            if (read != ERR) {
+              cur += read;
+            }
+          }
+          if ((cur - buffer) > 0) {
+            wmove(inputWin, 0, 0);
+            return strlen(buffer) + 1;
+          }
+        }
       break;
       case kKeyESC:
         // Cancel any operation and reset everything
@@ -265,6 +278,10 @@ int UIGetUserInput(char *buffer, size_t length) {
           }
           wrefresh(inputWin);
           UISetInputCounter(eom, eob);
+        } else {
+          wmove(inputWin, 0, maxX/2);
+          wprintw(inputWin, "%d", ch);
+          wrefresh(inputWin);
         }
       break;
     }

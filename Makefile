@@ -100,14 +100,17 @@ libconfig: prereq obj/lib/config.o
 
 
 # Client final binary
-client: prereq libsocket libmessage obj/client/main.o obj/client/client.o obj/client/ui.o
+client: prereq libsocket libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
 	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lncurses -o bin/client
 
 
 # Client dependencies
 
-obj/client/main.o: src/client/uimain.c
-	$(CC) $(CFLAGS) -c src/client/uimain.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
+obj/client/main.o: src/client/main.c
+	$(CC) $(CFLAGS) -c src/client/main.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
+
+obj/client/app.o: src/client/app.c
+	$(CC) $(CFLAGS) -c src/client/app.c $(INCFLAGS) -o obj/client/app.o $(OSFLAG)
 
 obj/client/client.o: src/client/client.c
 	$(CC) $(CFLAGS) -c src/client/client.c $(INCFLAGS) -o obj/client/client.o $(OSFLAG)

@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2021 Vito Tardia
+ */
+
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>

@@ -23,13 +23,37 @@ enum {
 
 /// Contains information on the current client application
 typedef struct _C2HatClient {
-  SOCKET server;
-  FILE *in;
-  FILE *out;
-  FILE *err;
+  SOCKET server; ///< Connection socket resource
+  FILE *in;      ///< Input stream (currently unused)
+  FILE *out;     ///< Output stream
+  FILE *err;     ///< Error stream
 } C2HatClient;
 
-/// Tries to connect a client to the given chat server
+/**
+ * Creates a new connected network chat client
+ *
+ * @param[out] A new C2HatClient instance or NULL on failure
+ */
+C2HatClient *Client_create() {
+  C2HatClient *client = calloc(sizeof(C2HatClient), 1);
+  if (client == NULL) {
+    fprintf(stderr, "Unable to create network client (%d) %s\n", errno, strerror(errno));
+    return NULL;
+  }
+  client->in = stdin;
+  client->out = stdout;
+  client->err = stderr;
+  return client;
+}
+
+/**
+ * Tries to connect a client to the given chat server
+ *
+ * @param[in] this C2HatClient structure holding the connection information
+ * @param[in] host Remote server host name or IP address
+ * @param[in] post Remote server port
+ * @param[out] Success or failure
+ */
 bool Client_connect(C2HatClient *this, const char *host, const char *port) {
 
   // Validate host and port information
@@ -105,15 +129,17 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
         SOCKET_close(this->server);
         return false;
       }
+      // At this point the server will only send /ok or /err messages
       if (Message_getType(buffer) != kMessageTypeOk) {
         fprintf(this->err, "The server refused the connection\n");
         fflush(this->err);
         SOCKET_close(this->server);
         return false;
       }
+      // Display the server welcome message
       char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
       if (strlen(messageContent) > 0) {
-        fprintf(this->err, "[Server]: %s\n", messageContent);
+        fprintf(this->err, "[Server] %s\n", messageContent);
         fflush(this->err);
       }
       Message_free(&messageContent);
@@ -123,45 +149,32 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   return true;
 }
 
-/// Creates a new connected network chat client
-C2HatClient *Client_create() {
-  C2HatClient *client = calloc(sizeof(C2HatClient), 1);
-  if (client == NULL) {
-    fprintf(stderr, "Unable to create network client (%d) %s\n", errno, strerror(errno));
-    return NULL;
-  }
-  client->in = stdin;
-  client->out = stdout;
-  client->err = stderr;
-  return client;
-}
-
-/// Returns the raw client socket
+/**
+ * Returns the raw client socket
+ *
+ * This is handy when external application need to implement
+ * a custom listen loop
+ */
 SOCKET Client_getSocket(const C2HatClient *this) {
   if (this != NULL) return this->server;
   return 0;
 }
 
-/// Destroy a client object
-void Client_destroy(C2HatClient **this) {
-  if (this != NULL) {
-    // Check if we need to close the socket
-    if (*this != NULL) {
-      C2HatClient *client = *this;
-      if (SOCKET_isValid(client->server)) SOCKET_close(client->server);
-      client = NULL;
-    }
-    memset(*this, 0, sizeof(C2HatClient));
-    free(*this);
-    *this = NULL;
-  }
-}
-
-/// Receives data through the client's socket
+/**
+ * Receives data from the server through the client's socket
+ * until a null terminator is found or the buffer is full
+ *
+ * @param[in] this C2HatClient structure holding the connection information
+ * @param[in] buffer Char buffer to store the received data
+ * @param[in] length Length of the char buffer
+ * @param[out] The number of bytes received
+ */
 int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
   char cursor[1] = {0};
+  // Reading 1 byte at a time, until either the NULL terminator is found
+  // or the given length is reached
   do {
     int bytesReceived = recv(this->server, cursor, 1, 0);
     if (bytesReceived == 0) {
@@ -170,46 +183,76 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
     }
     if (bytesReceived < 0) {
       fprintf(this->err, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      // We don't care about partial read, it would be useless anyway
       return -1;
     }
+    // Save data to the buffer and advance the cursor
     *data = cursor[0];
     data ++;
     total++;
+    // Break the loop at length -1 so we can add the NULL terminator
     if (total == (length - 1)) break;
   } while(cursor[0] != 0);
 
-  // Adding safe terminator in case of loop break
+  // Adding safe NULL terminator at the end
   if (*data != 0) *(data + 1) = 0;
 
   return total;
 }
 
-/// Sends data through the client's socket
+/**
+ * Sends data through the client's socket using a loop
+ * to ensure all the given data is sent
+ *
+ * @param[in] this C2HatClient structure holding the connection information
+ * @param[in] buffer The bytes ot data to send
+ * @param[in] length Size of the data to send
+ * @param[out] Number of bytes sent
+ */
 int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
-  // Ignore socket closed on send, will be caught by recv()
   size_t total = 0;
-  char *data = (char*)buffer; // points to the beginning of the message
+
+  // Cursor pointing to the beginning of the message
+  char *data = (char*)buffer;
+
+  // Keep sending data until the buffer is empty
   do {
     int bytesSent = send(this->server, data, length - total, MSG_NOSIGNAL);
     if (bytesSent < 0) {
       fprintf(this->err, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       return -1;
     }
-    data += bytesSent; // points to the remaining data to be sent
+    // Ignoring socket closed (byteSent == 0) on send, will be caught by recv()
+
+    // Cursor now points to the remaining data to be sent
+    data += bytesSent;
     total += bytesSent;
   } while (total < length);
   return total;
 }
 
-/// Authenticates with the C2Hat server
+/**
+ * Authenticates with the C2Hat server
+ *
+ * Currently the authentication consists only of a unique username
+ * of max 20 chars. We are not validating the size from the client side
+ * because the server will do this validation and trim the excess data
+ *
+ * @param[in] this C2HatClient structure holding the connection information
+ * @param[in] username A NULL-terminated string containing the user's name
+ * @param[out] Success or failure
+ */
 bool Client_authenticate(C2HatClient *this, const char *username) {
-  if (strlen(username) < 1) {
+  // Minimal validation: ensure that at least two characters are entered
+  if (strlen(username) < 2) {
     fprintf(this->out, "Invalid nickname\n");
     fflush(this->out);
     SOCKET_close(this->server);
     return false;
   }
-  // Wait for the AUTH signal from the server
+  // Wait for the AUTH signal from the server,
+  // we are ok for this to be blocking because
+  // the server won't sent any data to unauthenticated clients
   char buffer[kBufferSize] = {0};
   int received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
@@ -249,4 +292,22 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     return false;
   }
   return true;
+}
+
+/**
+ * Safely destroys a C2HatClient object
+ */
+void Client_destroy(C2HatClient **this) {
+  if (this != NULL) {
+    // Check if we need to close the socket
+    if (*this != NULL) {
+      C2HatClient *client = *this;
+      if (SOCKET_isValid(client->server)) SOCKET_close(client->server);
+      client = NULL;
+    }
+    // Erase the used memory
+    memset(*this, 0, sizeof(C2HatClient));
+    free(*this);
+    *this = NULL;
+  }
 }

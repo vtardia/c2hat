@@ -20,11 +20,8 @@
   // Authenticates with the C2Hat server
   bool Client_authenticate(C2HatClient *this, const char *username);
 
-  // Destroys a network client
-  void Client_destroy(C2HatClient **client);
-
-  // Runs theclient application's infinite loop
-  void Client_run(C2HatClient *client, FILE *in, FILE *out, FILE *err);
+  // Returns the raw socket for the given client
+  SOCKET Client_getSocket(const C2HatClient *client);
 
   // Sends data through the client's socket
   int Client_send(const C2HatClient *client, const char *buffer, size_t length);
@@ -32,6 +29,6 @@
   // Receives data through the client's socket
   int Client_receive(const C2HatClient *client, char *buffer, size_t length);
 
-  // Returns the raw socket for the given client
-  SOCKET Client_getSocket(const C2HatClient *client);
+  // Destroys a network client
+  void Client_destroy(C2HatClient **client);
 #endif

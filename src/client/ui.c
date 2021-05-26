@@ -51,6 +51,10 @@ void UIInit() {
   // Normal cursor
   curs_set(1);
 
+  // Time for getch() to wait before accepting the ESC key
+  // (in milliseconds, default 1000)
+  set_escdelay(200);
+
   // Initialise colors
   UIColors();
 

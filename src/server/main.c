@@ -140,6 +140,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
     if( (signed char)ch == -1 ) break; // no more options
     switch (ch) {
       case 'h':
+        memset(currentConfig->host, 0, strlen(currentConfig->host));
         memcpy(currentConfig->host, optarg, strlen(optarg));
       break;
       case 'p':

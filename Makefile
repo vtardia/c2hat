@@ -1,6 +1,6 @@
 # Compiler base command and options
 CC = gcc
-CFLAGS = -g -Wall -Wextra -Werror -std=c17
+CFLAGS = -Wall -Wextra -Werror -std=c17
 AR = ar rcs
 LDFLAGS = -L lib
 INCFLAGS = -I src/lib
@@ -28,8 +28,13 @@ endif
 
 all: prereq client server
 
+debug: clean prereq/debug all
+
 prereq:
 	mkdir -p obj/server obj/client obj/lib obj/test lib bin
+
+prereq/debug:
+	$(eval CFLAGS += -g)
 
 # Server final binary
 server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o
@@ -128,43 +133,43 @@ obj/test/bot/main.o: test/bot/main.c
 	$(CC) $(CFLAGS) -c test/bot/main.c $(INCFLAGS) -I src/client -o obj/test/bot/main.o $(OSFLAG)
 
 # Unit test targets
-test: test/list test/queue test/message test/logger test/config
+test: clean prereq/debug test/list test/queue test/message test/logger test/config
 
-test/list: liblist
+test/list: prereq/debug liblist
 	mkdir -p obj/test/list bin/test
 	$(CC) $(CFLAGS) -c test/list/list_tests.c $(INCFLAGS) -o obj/test/list/list_tests.o $(OSFLAG)
 	$(CC) $(CFLAGS) -c test/list/main.c $(INCFLAGS) -o obj/test/list/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/list/main.o obj/test/list/list_tests.o $(LDFLAGS) -llist -o bin/test/list
 	$(VALGRIND) bin/test/list
 
-test/queue: libqueue
+test/queue: prereq/debug libqueue
 	mkdir -p obj/test/queue bin/test
 	$(CC) $(CFLAGS) -c test/queue/queue_tests.c $(INCFLAGS) -o obj/test/queue/queue_tests.o $(OSFLAG)
 	$(CC) $(CFLAGS) -c test/queue/main.c $(INCFLAGS) -o obj/test/queue/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/queue/main.o obj/test/queue/queue_tests.o $(LDFLAGS) -lqueue -o bin/test/queue
 	$(VALGRIND) bin/test/queue
 
-test/message: libmessage
+test/message: prereq/debug libmessage
 	mkdir -p obj/test/message bin/test
 	$(CC) $(CFLAGS) -c test/message/message_tests.c $(INCFLAGS) -I src/server -o obj/test/message/message_tests.o $(OSFLAG)
 	$(CC) $(CFLAGS) -c test/message/main.c $(INCFLAGS) -I src/server -o obj/test/message/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/message/main.o obj/test/message/message_tests.o $(LDFLAGS) -lmessage -o bin/test/message
 	$(VALGRIND) bin/test/message
 
-test/logger: liblogger
+test/logger: prereq/debug liblogger
 	mkdir -p obj/test/logger bin/test
 	$(CC) $(CFLAGS) -c test/logger/main.c $(INCFLAGS) -o obj/test/logger/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/logger/main.o $(LDFLAGS) -llogger -o bin/test/logger
 	$(VALGRIND) bin/test/logger
 
-test/pid: libpid liblogger
+test/pid: prereq/debug libpid liblogger
 	mkdir -p obj/test/pid bin/test
 	$(CC) $(CFLAGS) -c test/pid/main.c $(INCFLAGS) -I src/server -o obj/test/pid/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/pid/main.o $(LDFLAGS) -lpid -llogger -o bin/test/pid
 	cp test/pid/pid.sh bin/test/pid.sh
 	./bin/test/pid.sh
 
-test/config: libconfig
+test/config: prereq/debug libconfig
 	mkdir -p obj/test/config bin/test
 	$(CC) $(CFLAGS) -c test/config/main.c $(INCFLAGS) -o obj/test/config/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/config/main.o $(LDFLAGS) -lconfig $(TESTCONFIGLIBS) -o bin/test/config

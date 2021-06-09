@@ -668,7 +668,7 @@ void* Server_handleClient(void* socket) {
               if (Server_send(*client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
 
               // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-              Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s]: %s", clientInfo->nickname, messageContent);
+              Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s] %s", clientInfo->nickname, messageContent);
               Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
               Message_free(&messageContent);
             }

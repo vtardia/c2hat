@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 
 #include "ui.h"
 #include "message/message.h"
@@ -302,27 +303,34 @@ int UIGetUserInput(char *buffer, size_t length) {
 }
 
 void UILogMessage(char *buffer, size_t length) {
+  // Compute local time
+  time_t now = time(NULL);
+  char timeBuffer[15] = {0};
+  int result = strftime(timeBuffer, 15, "%H:%M:%S", localtime(&now));
+  if (result <= 0) memset(timeBuffer, 0, 15);
+
+  // Display the message
   int y, x;
   getyx(inputWin, y, x);
   char *messageContent = NULL;
   switch (Message_getType(buffer)) {
     case kMessageTypeErr:
       messageContent = Message_getContent(buffer, kMessageTypeErr, length);
-      wprintw(chatWin, "[Error]: %s\n", messageContent);
+      wprintw(chatWin, "[%s] [ERROR] %s\n", timeBuffer, messageContent);
     break;
     case kMessageTypeOk:
       messageContent = Message_getContent(buffer, kMessageTypeOk, length);
       if (strlen(messageContent) > 0) {
-        wprintw(chatWin, "[Server]: %s\n", messageContent);
+        wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
       }
     break;
     case kMessageTypeLog:
       messageContent = Message_getContent(buffer, kMessageTypeLog, length);
-      wprintw(chatWin, "[Server]: %s\n", messageContent);
+      wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
     break;
     case kMessageTypeMsg:
       messageContent = Message_getContent(buffer, kMessageTypeMsg, length);
-      wprintw(chatWin, "%s\n", messageContent);
+      wprintw(chatWin, "[%s] %s\n", timeBuffer, messageContent);
     break;
     case kMessageTypeQuit:
       break;

@@ -7,6 +7,7 @@ INCFLAGS = -I src/lib
 VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
 TESTCONFIGLIBS =
+BINPREFIX = c2hat-
 
 # OS detection
 OSFLAG :=
@@ -38,7 +39,7 @@ prereq/debug:
 
 # Server final binary
 server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) $(SERVERLIBS) -o bin/server
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) $(SERVERLIBS) -o bin/$(BINPREFIX)server
 
 
 # Server dependencies
@@ -106,7 +107,7 @@ libconfig: prereq obj/lib/config.o
 
 # Client final binary
 client: prereq libsocket libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
-	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lncurses -o bin/client
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lncurses -o bin/$(BINPREFIX)cli
 
 
 # Client dependencies

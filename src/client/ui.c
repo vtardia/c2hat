@@ -10,12 +10,24 @@
 #include "ui.h"
 #include "message/message.h"
 
-enum {
+enum keys {
   kKeyEnter = 10,
   kKeyBackspace = 8,
   kKeyESC = 27,
   kKeyDel = 127,
   kKeyEOT = 4 // Ctrl+D = end of input
+};
+
+enum colorPairs {
+  kColorPairDefault = 0,
+  kColorPairCyanOnDefault = 1,
+  kColorPairYellowOnDefault = 2,
+  kColorPairRedOnDefault = 3,
+  kColorPairBlueOnDefault = 4,
+  kColorPairMagentaOnDefault = 5,
+  kColorPairGreenOnDefault = 6,
+  kColorPairWhiteOnBlue = 7,
+  kColorPairWhiteOnRed = 8
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
@@ -93,6 +105,31 @@ void UIColors() {
   // Init ncurses color engine
   start_color();
   use_default_colors();
+
+  // We have 8 default ANSI colors
+  // COLOR_BLACK
+  // COLOR_RED
+  // COLOR_GREEN
+  // COLOR_YELLOW
+  // COLOR_BLUE
+  // COLOR_MAGENTA
+  // COLOR_CYAN
+  // COLOR_WHITE
+  // Every terminal can display a max of COLORS (0 based until COLORS-1)
+
+  // Initialising color pairs
+  // Every terminal can display a max of COLOR_PAIRS (0 based as above)
+  // init_pair(#, [text color (default -1)], [background color (default -1])
+  // Color pair 0 is the default for the terminal (white on black)
+  // and cannot be changed
+  init_pair(kColorPairCyanOnDefault, COLOR_CYAN, -1);
+  init_pair(kColorPairYellowOnDefault, COLOR_YELLOW, -1);
+  init_pair(kColorPairRedOnDefault, COLOR_RED, -1);
+  init_pair(kColorPairBlueOnDefault, COLOR_BLUE, -1);
+  init_pair(kColorPairMagentaOnDefault, COLOR_MAGENTA, -1);
+  init_pair(kColorPairGreenOnDefault, COLOR_GREEN, -1);
+  init_pair(kColorPairWhiteOnBlue, COLOR_WHITE, COLOR_BLUE);
+  init_pair(kColorPairWhiteOnRed, COLOR_WHITE, COLOR_RED);
 }
 
 void UIDrawChatWin() {
@@ -127,6 +164,8 @@ void UIDrawStatusBar() {
   // h, w, posY, posX
   statusBarWin = subwin(mainWin, 1, COLS, LINES -1, 0);
   leaveok(statusBarWin, TRUE);
+  // Set window default background
+  wbkgd(statusBarWin, COLOR_PAIR(kColorPairWhiteOnBlue));
   wrefresh(statusBarWin);
 }
 
@@ -316,17 +355,23 @@ void UILogMessage(char *buffer, size_t length) {
   switch (Message_getType(buffer)) {
     case kMessageTypeErr:
       messageContent = Message_getContent(buffer, kMessageTypeErr, length);
+      wattron(chatWin, COLOR_PAIR(kColorPairWhiteOnRed));
       wprintw(chatWin, "[%s] [ERROR] %s\n", timeBuffer, messageContent);
+      wattroff(chatWin, COLOR_PAIR(kColorPairWhiteOnRed));
     break;
     case kMessageTypeOk:
       messageContent = Message_getContent(buffer, kMessageTypeOk, length);
       if (strlen(messageContent) > 0) {
+        wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
         wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
+        wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
       }
     break;
     case kMessageTypeLog:
       messageContent = Message_getContent(buffer, kMessageTypeLog, length);
+      wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
       wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
+      wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
     break;
     case kMessageTypeMsg:
       messageContent = Message_getContent(buffer, kMessageTypeMsg, length);

@@ -7,4 +7,5 @@
   void TestMessage_getType();
   void TestMessage_getContent();
   void TestMessage_format();
+  void TestMessage_getUser();
 #endif

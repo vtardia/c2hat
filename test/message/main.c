@@ -13,6 +13,7 @@ int main() {
   TestMessage_getType();
   TestMessage_getContent();
   TestMessage_format();
+  TestMessage_getUser();
 
   printf("\n");
   return 0;

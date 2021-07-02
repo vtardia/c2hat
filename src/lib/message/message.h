@@ -18,9 +18,14 @@
   };
 
   #include <stddef.h>
+  #include <stdbool.h>
 
   // Returns the type of a given message
   int Message_getType(const char *message);
+
+  // Returns the user part of a given message
+  // The length of user MUST be > length
+  bool Message_getUser(const char *message, char *user, size_t length);
 
   // Returns the content part of a message
   char *Message_getContent(const char *message, unsigned int type, size_t length);

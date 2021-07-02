@@ -246,3 +246,65 @@ void TestMessage_format() {
   assert(strcmp(message, "/ok") == 0);
   printf(".");
 }
+
+void TestMessage_getUser() {
+  char *message = NULL;
+  size_t length = 0;
+  char user[21] = {0};
+
+  // Test that fails if type is not /msg
+  length = 20;
+  message = "/log [SomeUser] did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Fails when there is no [
+  message = "/msg SomeUser] did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Fails when there is no ]
+  message = "/msg [SomeUser did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Fails when user length is <= 0
+  message = "/msg [] did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  message = "/msg ][ did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Fails when user length is > max length
+  length = 5;
+  message = "/msg [Vercingetorix] said something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Returns a correct user
+  length = 20;
+  message = "/msg [Vercingetorix] said something";
+  assert(Message_getUser(message, user, length));
+  assert(strlen(user) == 13);
+  assert(strncmp(user, "Vercingetorix", 13) == 0);
+  printf(".");
+
+  // Test a buffer overflow, when user[] is shorter than max length
+  length = 5;
+  // MUST be length + 1 (kMaxNicknameLength + 1) to avoid
+  // unexpected buffer overflow results
+  char otherUser[5] = {0};
+  message = "/msg [Abcde] said something";
+  // Buffer too short to contain the username
+  assert(Message_getUser(message, otherUser, sizeof(otherUser) -1) == false);
+  printf(".");
+}
+

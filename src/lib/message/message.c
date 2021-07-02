@@ -40,6 +40,33 @@ int Message_getType(const char *message) {
 }
 
 /**
+ * Finds the user name of a given message
+ * The message type must be /msg
+ * @param[in] message The server or client message content
+ * @param[in] user    Contains the extracted user name
+ * @param[in] length The maximum length of the returned content
+ * @param[out] Success/failure
+ */
+bool Message_getUser(const char *message, char *user, size_t length) {
+  if (Message_getType(message) == kMessageTypeMsg) {
+    char *start = strchr(message, '[');
+    if (start != NULL) {
+      // We have a starting point
+      start++; // User name starts after the bracket
+      char *end = strchr(start, ']');
+      if (end != NULL) {
+        size_t userLength = end - start;
+        if (userLength > 0 && userLength <= length) {
+          memcpy(user, start, userLength);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Returns the content part of a given message up to the specified length
  * The return value MUST be freed. The value at [length - 1] is the NULL terminator
  * @param[in] message The message to parse

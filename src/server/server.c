@@ -651,7 +651,7 @@ void* Server_handleClient(void* socket) {
       }
 
       if (received > 0) {
-        Info("Received: %.*s", received, messageBuffer);
+        Info("Received: (%d bytes) %.*s", received, received, messageBuffer);
 
         int messageType = Message_getType(messageBuffer);
         if (kMessageTypeQuit == messageType) break;

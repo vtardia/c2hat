@@ -9,6 +9,7 @@
 
 #include "ui.h"
 #include "message/message.h"
+#include "hash/hash.h"
 
 enum keys {
   kKeyEnter = 10,
@@ -30,8 +31,14 @@ enum colorPairs {
   kColorPairWhiteOnRed = 8
 };
 
+enum users {
+  /// Max username length excluding the NULL terminator, ensure this matches with the one in app.h
+  kMaxNicknameLength = 20
+};
+
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
 static char currentStatusBarMessage[512] = {0};
+static Hash *users = NULL;
 
 void UIColors();
 void UIDrawChatWin();
@@ -78,6 +85,12 @@ void UIInit() {
     UIDrawInputWin();
     UIDrawStatusBar();
   }
+
+  // Initialise Users hash
+  users = Hash_new();
+
+  // Initialises the random generator
+  srand(time(NULL));
 }
 
 void UIWindow_destroy(WINDOW *win) {
@@ -99,6 +112,8 @@ void UIClean() {
   UIWindow_destroy(mainWin);
   // Close ncurses
   endwin();
+  // Free user list
+  Hash_free(&users);
 }
 
 void UIColors() {
@@ -246,8 +261,10 @@ int UIGetUserInput(char *buffer, size_t length) {
               cur += read;
             }
           }
+          wmove(inputWin, 0, 0);
+          wclear(inputWin);
+          wrefresh(inputWin);
           if ((cur - buffer) > 0) {
-            wmove(inputWin, 0, 0);
             return strlen(buffer) + 1;
           }
         }
@@ -341,6 +358,34 @@ int UIGetUserInput(char *buffer, size_t length) {
   return -1;
 }
 
+/**
+ * Returns a custom color for a given user name
+ */
+int UIGetUserColor(char *userName) {
+  int colors[] = {
+    kColorPairDefault,
+    kColorPairCyanOnDefault,
+    kColorPairYellowOnDefault,
+    kColorPairBlueOnDefault,
+    kColorPairMagentaOnDefault,
+    kColorPairGreenOnDefault
+  };
+  int *color = (int *)Hash_getValue(users, userName);
+  if (color == NULL) {
+    // First time we see this user
+    // Generate a random color value from kColorPairDefault (0)
+    // to kColorPairGreenOnDefault (6)
+    int userColor = colors[rand() % 7];
+    // Add it to the hash
+    if (!Hash_set(users, userName, &userColor, sizeof(int))) {
+      userColor = 0; // Just in case, we return the default
+    }
+    return userColor;
+  }
+  // Return a copy of the value pointed by color
+  return *color;
+}
+
 void UILogMessage(char *buffer, size_t length) {
   // Compute local time
   time_t now = time(NULL);
@@ -375,7 +420,22 @@ void UILogMessage(char *buffer, size_t length) {
     break;
     case kMessageTypeMsg:
       messageContent = Message_getContent(buffer, kMessageTypeMsg, length);
+      // Get user from message
+      // The userName length MUST be kMaxNicknameLength + 1 in order to
+      // avoid the undefined behaviour caused by a buffer overflow
+      char userName[kMaxNicknameLength + 1] = {0};
+      /* bool hasCustomColor = false; */
+      int userColor = kColorPairDefault;
+      /* hasCustomColor = Message_getUser(buffer, userName, kMaxNicknameLength); */
+      if (Message_getUser(buffer, userName, kMaxNicknameLength)) {
+        // Get/set color associated to user
+        userColor = UIGetUserColor(userName);
+      }
+      // Activate color mode
+      wattron(chatWin, COLOR_PAIR(userColor));
       wprintw(chatWin, "[%s] %s\n", timeBuffer, messageContent);
+      // Deactivate color mode
+      wattroff(chatWin, COLOR_PAIR(userColor));
     break;
     case kMessageTypeQuit:
       break;

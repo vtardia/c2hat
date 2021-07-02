@@ -8,7 +8,9 @@
 
   enum {
     /// Max size of data that can be sent, including the NULL terminator
-    kBufferSize = 1024
+    kBufferSize = 1024,
+    /// Max username length excluding the NULL terminator
+    kMaxNicknameLength = 20
   };
 
   /**

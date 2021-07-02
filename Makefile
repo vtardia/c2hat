@@ -9,6 +9,13 @@ SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
 TESTCONFIGLIBS =
 BINPREFIX = c2hat-
 
+# Default Hash size
+HASH_SIZE = 128
+
+# Default locale for unicode chars
+# Use 'make -e LOCALE=<YourLocale>' to override
+LOCALE = en_GB.UTF-8
+
 # OS detection
 OSFLAG :=
 ifeq ($(OS), Windows_NT)
@@ -106,11 +113,17 @@ libconfig: prereq obj/lib/config.o
 
 
 # Client final binary
-client: prereq libsocket libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
-	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lncurses -o bin/$(BINPREFIX)cli
+client: prereq libsocket libhash libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lhash -lncursesw -o bin/$(BINPREFIX)cli
 
 
 # Client dependencies
+
+obj/lib/hash.o: src/lib/hash/hash.c
+	$(CC) $(CFLAGS) -c src/lib/hash/hash.c -D HASH_SIZE=$(HASH_SIZE) -o obj/lib/hash.o $(OSFLAG)
+
+libhash: prereq obj/lib/hash.o
+	$(AR) lib/libhash.a obj/lib/hash.o
 
 obj/client/main.o: src/client/main.c
 	$(CC) $(CFLAGS) -c src/client/main.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
@@ -135,6 +148,13 @@ obj/test/bot/main.o: test/bot/main.c
 
 # Unit test targets
 test: clean prereq/debug test/list test/queue test/message test/logger test/config
+
+test/hash: prereq/debug libhash
+	mkdir -p obj/test/hash bin/test
+	$(CC) $(CFLAGS) -c test/hash/hash_tests.c $(INCFLAGS) -o obj/test/hash/hash_tests.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c test/hash/main.c $(INCFLAGS) -o obj/test/hash/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/hash/main.o obj/test/hash/hash_tests.o $(LDFLAGS) -lhash -o bin/test/hash
+	$(VALGRIND) bin/test/hash
 
 test/list: prereq/debug liblist
 	mkdir -p obj/test/list bin/test

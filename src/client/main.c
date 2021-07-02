@@ -9,10 +9,15 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
+#include <locale.h>
 
 #include "ui.h"
 #include "client.h"
 #include "app.h"
+
+#ifndef LOCALE
+#define LOCALE "en_GB.UTF-8"
+#endif
 
 int main(int argc, char const *argv[]) {
   // Validate command line arguments
@@ -22,6 +27,18 @@ int main(int argc, char const *argv[]) {
   }
   const char * host = argv[1];
   const char * port = argv[2];
+
+  // Check locale compatibility
+  if (strstr(LOCALE, "UTF-8") == NULL) {
+    printf("The given locale (%s) does not support UTF-8\n", LOCALE);
+    return EXIT_FAILURE;
+  }
+
+  if (!setlocale(LC_ALL, LOCALE)) {
+    printf("Unable to set locale to '%s'\n", LOCALE);
+    return EXIT_FAILURE;
+  }
+  setenv("NCURSES_NO_UTF8_ACS", "0", 1);
 
   // Initialise sockets on Windows
   App_init();
@@ -41,9 +58,11 @@ int main(int argc, char const *argv[]) {
   }
 
   // Authenticate
-  char nickname[30] = {0};
+  // Account for the extra new line char and null terminator
+  char nickname[kMaxNicknameLength + 2] = {0};
   fprintf(stdout, "Please, enter a nickname: ");
-  if (!fgets(nickname, 30, stdin)) {
+  // Account for the extra new line with + 1
+  if (!fgets(nickname, kMaxNicknameLength + 1, stdin)) {
     fprintf(stderr, "Unable to authenticate\n");
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);

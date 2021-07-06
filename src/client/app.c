@@ -94,6 +94,10 @@ void *App_listen(void *client) {
 
 /// Implements the application input loop
 void App_run(C2HatClient *this) {
+
+  /// Characters to remove from the end of the input buffer
+  const char *seps = "\t\n\v\f\r ";
+
   while(!terminate) {
     // Reset the UI input facility
     UILoopInit();
@@ -105,6 +109,13 @@ void App_run(C2HatClient *this) {
     if (inputSize < 0) {
       terminate = true;
       break;
+    }
+
+    // Clean input buffer
+    int i = kBufferSize - 1;
+    while (i >= 0 && strchr(seps, buffer[i]) != NULL) {
+      buffer[i] = '\0';
+      i--;
     }
 
     int messageType = Message_getType(buffer);

@@ -8,6 +8,11 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <sys/stat.h>
+#include <locale.h>
+
+#ifndef LOCALE
+#define LOCALE "en_GB.UTF-8"
+#endif
 
 /// Default connection limit
 const int kDefaultMaxClients = 5;
@@ -270,10 +275,20 @@ void cleanup() {
  * @param[in] currentConfig Pointer to a configuration structure
  */
 int CMD_runStart(ServerConfigInfo *currentConfig) {
+  // Check locale compatibility
+  if (strstr(LOCALE, "UTF-8") == NULL) {
+    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", LOCALE);
+    return EXIT_FAILURE;
+  }
+  if (!setlocale(LC_ALL, LOCALE)) {
+    fprintf(stderr, "Unable to set locale to '%s'\n", LOCALE);
+    return EXIT_FAILURE;
+  }
+
   if (runServerInForeground) {
     pid_t serverPID = getpid();
-    fprintf(stdout, "Starting foreground server on %s:%d with PID %d\n",
-      currentConfig->host, currentConfig->port, serverPID
+    fprintf(stdout, "Starting foreground server on %s:%d with locale '%s' and PID %d\n",
+      currentConfig->host, currentConfig->port, LOCALE, serverPID
     );
   } else {
     pid_t sessionID = 0;
@@ -295,8 +310,8 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     }
     if (serverPID > 0) {
       // I'm in second parent process
-      fprintf(stdout, "Starting background server on %s:%d with PID %d\n",
-        currentConfig->host, currentConfig->port, serverPID
+      fprintf(stdout, "Starting background server on %s:%d with locale '%s' and PID %d\n",
+        currentConfig->host, currentConfig->port, LOCALE, serverPID
       );
       return EXIT_SUCCESS;
     }
@@ -468,6 +483,7 @@ int CMD_runStatus() {
       printf("    PID file: %s\n", currentConfig->pidFilePath);
       printf("        Host: %s\n", currentConfig->host);
       printf("        Port: %d\n", currentConfig->port);
+      printf("      Locale: %s\n", currentConfig->locale);
       printf(" Max Clients: %d\n", currentConfig->maxConnections);
       printf("\n");
       result = EXIT_SUCCESS;
@@ -523,6 +539,7 @@ int main(int argc, ARGV argv) {
     memcpy(&(currentConfig.host), kDefaultServerHost, strlen(kDefaultServerHost));
     currentConfig.port = kDefaultServerPort;
     currentConfig.maxConnections = kDefaultMaxClients;
+    memcpy(&(currentConfig.locale), LOCALE, strlen(LOCALE));
     if (parseOptions(argc, argv, &currentConfig)) {
       return CMD_runStart(&currentConfig);
     }

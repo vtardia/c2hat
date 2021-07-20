@@ -15,6 +15,7 @@
     char logFilePath[4096]; ///< Log file path
     char pidFilePath[4096]; ///< PID file path
     char host[40]; ///< Listening IP address
+    char locale[25]; ///< Server locale
     unsigned int port; ///< Listening TCP port
     unsigned int maxConnections; ///< Max connections
   } ServerConfigInfo;

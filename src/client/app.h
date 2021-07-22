@@ -5,12 +5,15 @@
 #ifndef APP_H
 #define APP_H
   #include "client.h"
+  #include <stddef.h>
 
   enum {
     /// Max size of data that can be sent, including the NULL terminator
     kBufferSize = 1024,
-    /// Max username length excluding the NULL terminator
-    kMaxNicknameLength = 20
+    /// Max username length, in characters, excluding the NULL terminator
+    kMaxNicknameLength = 12,
+    /// Max username size in bytes, for Unicode characters
+    kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
   };
 
   /**

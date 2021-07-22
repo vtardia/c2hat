@@ -5,21 +5,23 @@
 #include "server.h"
 
 #include <pthread.h>
+#include <wchar.h>
 
 enum {
   kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
-  kMaxNicknameLength = 20,
+  kMaxNicknameLength = 12, // Characters, excluding the NULL terminator
+  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t), // Size in bytes for Unicode
   kBufferSize = 1024, // Includes NULL term
   // Format is: /msg [<20charUsername>]:\s
-  kBroadcastBufferSize = 9 + kMaxNicknameLength + kBufferSize,
+  kBroadcastBufferSize = 9 + kMaxNicknameSize + kBufferSize,
   kAuthenticationTimeout = 30, // seconds
   kChatTimeout = 3 * 60 // 3 minutes
 };
 
 /// Holds data for queued messages
 typedef struct {
-  char sender[kMaxNicknameLength + 1]; ///< Sender's nickname
+  char sender[kMaxNicknameSize + sizeof(wchar_t)]; ///< Sender's nickname
   char content[kBufferSize]; ///< Message content
   int  contentLength; ///< Message length
 } Message;
@@ -27,7 +29,7 @@ typedef struct {
 /// Holds the details of connected clients
 typedef struct {
   pthread_t threadID; ///< Thread ID associated to the client
-  char nickname[kMaxNicknameLength + 1]; ///< Client name (+ NULL terminator)
+  char nickname[kMaxNicknameSize + sizeof(wchar_t)]; ///< Client name (+ NULL terminator)
   SOCKET socket; ///< Client's socket
   struct sockaddr_storage address; ///< Binary IP address
   socklen_t length; ///< Length of the binary IP address
@@ -363,8 +365,8 @@ int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
 int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
   char *nickname = (char *)b;
-  // The (0*size) statement avoids the 'unused parameter' error at compile time
-  return strncmp(client->nickname, nickname, kMaxNicknameLength + (0 * size));
+  (void)size; // Avoids the 'unused parameter' error at compile time
+  return strncmp(client->nickname, nickname, kMaxNicknameSize);
 }
 
 /**
@@ -520,7 +522,7 @@ bool Server_authenticate(SOCKET client) {
           // The client has sent a nick in the format '/nick Name'
           // In order to have a full 20 chars nickname, we need to add a 7 chars pad
           // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
-          char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameLength + 7);
+          char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameSize + 7);
           Client *clientInfo = NULL;
           // Lookup if a client is already logged with the provided nickname
           clientInfo = Server_getClientInfoForNickname(nick);
@@ -530,8 +532,8 @@ bool Server_authenticate(SOCKET client) {
             clientInfo = Server_getClientInfoForThread(pthread_self());
             if (clientInfo != NULL) {
               // Update client entry
-              snprintf(clientInfo->nickname, kMaxNicknameLength, "%s", nick);
-              Info("User %s (%d) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
+              snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
+              Info("User %s (%d bytes) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
               Message_free(&nick);
               return true;
             }

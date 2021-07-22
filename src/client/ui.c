@@ -32,8 +32,11 @@ enum colorPairs {
 };
 
 enum users {
-  /// Max username length excluding the NULL terminator, ensure this matches with the one in app.h
-  kMaxNicknameLength = 20
+  /// Max username length (in characters) excluding the NULL terminator,
+  /// ensure this matches with the one in app.h
+  kMaxNicknameLength = 12,
+  /// Max username size in bytes, for Unicode characters
+  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
@@ -421,13 +424,13 @@ void UILogMessage(char *buffer, size_t length) {
     case kMessageTypeMsg:
       messageContent = Message_getContent(buffer, kMessageTypeMsg, length);
       // Get user from message
-      // The userName length MUST be kMaxNicknameLength + 1 in order to
+      // The userName length MUST be kMaxNicknameSize + 1 in order to
       // avoid the undefined behaviour caused by a buffer overflow
-      char userName[kMaxNicknameLength + 1] = {0};
+      char userName[kMaxNicknameSize + 1] = {0};
       /* bool hasCustomColor = false; */
       int userColor = kColorPairDefault;
-      /* hasCustomColor = Message_getUser(buffer, userName, kMaxNicknameLength); */
-      if (Message_getUser(buffer, userName, kMaxNicknameLength)) {
+      /* hasCustomColor = Message_getUser(buffer, userName, kMaxNicknameSize); */
+      if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
         // Get/set color associated to user
         userColor = UIGetUserColor(userName);
       }

@@ -9,7 +9,7 @@
 
 #include "message/message.h"
 
-const int kMaxNicknameLength = 20;
+const int kMaxNicknameLength = 12;
 
 void TestMessage_getType() {
 
@@ -117,7 +117,7 @@ void TestMessage_getContent() {
   message = "/nick 01234567890123456789";
   content = Message_getContent(message, kMessageTypeNick, kMaxNicknameLength + 7);
   assert(content != NULL);
-  assert(strcmp(content, "01234567890123456789") == 0);
+  assert(strcmp(content, "012345678901") == 0);
   Message_free(&content);
   printf(".");
 

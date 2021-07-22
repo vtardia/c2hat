@@ -13,6 +13,7 @@
 
 #include "ui.h"
 #include "client.h"
+#include "trim/wtrim.h"
 #include "app.h"
 
 #ifndef LOCALE
@@ -58,18 +59,25 @@ int main(int argc, char const *argv[]) {
   }
 
   // Authenticate
+  // Read from the input as Unicode (UCS)
   // Account for the extra new line char and null terminator
-  char nickname[kMaxNicknameLength + 2] = {0};
-  fprintf(stdout, "Please, enter a nickname: ");
-  // Account for the extra new line with + 1
-  if (!fgets(nickname, kMaxNicknameLength + 1, stdin)) {
+  // and that some emoji have more bytes to fill
+  wchar_t inputNickname[kMaxNicknameLength + 3] = {0};
+  fprintf(stdout, "Please, enter a nickname (max 12 chars): ");
+  // fgetws() reads length -1 characters and includes the new line
+  // so we add +3 to take into account this and emoji size
+  if (!fgetws(inputNickname, kMaxNicknameLength + 3, stdin)) {
     fprintf(stderr, "Unable to authenticate\n");
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);
   }
-  // Remove newline from nickname
-  char *end = nickname + strlen(nickname) -1;
-  *end = 0;
+  // Remove unwanted trailing spaces and new line characters
+  wchar_t *trimmedNickname = wtrim(inputNickname, NULL);
+
+  // Convert into UTF-8
+  char nickname[kMaxNicknameSize + 1 * sizeof(wchar_t)] = {0};
+  wcstombs(nickname, trimmedNickname, kMaxNicknameSize + 1 * sizeof(wchar_t));
+  // Send to the server for authentication
   if (!Client_authenticate(app, nickname)) {
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);

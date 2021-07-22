@@ -113,11 +113,23 @@ libconfig: prereq obj/lib/config.o
 
 
 # Client final binary
-client: prereq libsocket libhash libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
-	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lhash -lncursesw -o bin/$(BINPREFIX)cli
+client: prereq libsocket libhash libwtrim libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
+	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) -lsocket -lpthread -lmessage -lhash -lwtrim -lncursesw -o bin/$(BINPREFIX)cli
 
 
 # Client dependencies
+
+obj/lib/trim.o: src/lib/trim/trim.c
+	$(CC) $(CFLAGS) -c src/lib/trim/trim.c -o obj/lib/trim.o $(OSFLAG)
+
+libtrim: prereq obj/lib/trim.o
+	$(AR) lib/libtrim.a obj/lib/trim.o
+
+obj/lib/wtrim.o: src/lib/trim/wtrim.c
+	$(CC) $(CFLAGS) -c src/lib/trim/wtrim.c -o obj/lib/wtrim.o $(OSFLAG)
+
+libwtrim: prereq obj/lib/wtrim.o
+	$(AR) lib/libwtrim.a obj/lib/wtrim.o
 
 obj/lib/hash.o: src/lib/hash/hash.c
 	$(CC) $(CFLAGS) -c src/lib/hash/hash.c -D HASH_SIZE=$(HASH_SIZE) -o obj/lib/hash.o $(OSFLAG)

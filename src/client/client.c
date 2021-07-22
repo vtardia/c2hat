@@ -245,7 +245,7 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
 bool Client_authenticate(C2HatClient *this, const char *username) {
   // Minimal validation: ensure that at least two characters are entered
   if (strlen(username) < 2) {
-    fprintf(this->out, "Invalid nickname\n");
+    fprintf(this->out, "Invalid nickname: please enter at least 2 characters\n");
     fflush(this->out);
     SOCKET_close(this->server);
     return false;
@@ -260,7 +260,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     return false;
   }
   if (Message_getType(buffer) != kMessageTypeNick) {
-    fprintf(this->out, "Unable to authenticate\n");
+    fprintf(this->out, "Unable to authenticate: unknown server response\n");
     fflush(this->out);
     SOCKET_close(this->server);
     return false;
@@ -271,7 +271,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
-    fprintf(this->out, "Unable to authenticate\n");
+    fprintf(this->out, "Unable to authenticate: cannot send data to the server\n");
     fflush(this->out);
     SOCKET_close(this->server);
     return false;
@@ -281,12 +281,21 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   memset(buffer, 0, kBufferSize);
   received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
+    fprintf(this->out, "Authentication failed: cannot receive a response from the server\n");
+    fflush(this->out);
     SOCKET_close(this->server);
     return false;
   }
 
-  if (Message_getType(buffer) != kMessageTypeOk) {
-    fprintf(this->out, "Authentication failed\n");
+  int messageType = Message_getType(buffer);
+  if (messageType != kMessageTypeOk) {
+    if (messageType == kMessageTypeErr) {
+      char *errorMessage = Message_getContent(buffer, kMessageTypeErr, kBufferSize);
+      fprintf(this->out, "Authentication failed: %s\n", errorMessage);
+      Message_free(&errorMessage);
+    } else {
+      fprintf(this->out, "Authentication failed: invalid response from the server\n");
+    }
     fflush(this->out);
     SOCKET_close(this->server);
     return false;

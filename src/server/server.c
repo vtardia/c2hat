@@ -3,6 +3,7 @@
  */
 
 #include "server.h"
+#include "validate/validate.h"
 
 #include <pthread.h>
 #include <wchar.h>
@@ -10,14 +11,20 @@
 enum {
   kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
-  kMaxNicknameLength = 12, // Characters, excluding the NULL terminator
+  kMaxNicknameLength = 15, // Characters, excluding the NULL terminator
   kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t), // Size in bytes for Unicode
-  kBufferSize = 1024, // Includes NULL term
-  // Format is: /msg [<20charUsername>]:\s
+  kBufferSize = 1536, // Includes NULL term
+  // Format is: /msg [<15charUsername>]:\s
   kBroadcastBufferSize = 9 + kMaxNicknameSize + kBufferSize,
   kAuthenticationTimeout = 30, // seconds
   kChatTimeout = 3 * 60 // 3 minutes
 };
+
+/// Regex pattern used to validate the user nickname
+static const char *kRegexNicknamePattern = "^[[:alpha:]][[:alnum:]!@#$%&]\\{1,14\\}$";
+
+/// Validation error message for invalid user names, includes the rules
+static const char *kErrorMessageInvalidUsername = "Invalid username: a valid username must start with a letter and can contain 2-15 latin characters and !@#$%&";
 
 /// Holds data for queued messages
 typedef struct {
@@ -467,6 +474,22 @@ int Server_receive(SOCKET client, char *buffer, size_t length) {
 
   return total;
 }
+/**
+ * Validates a username with a pre-defined regex
+ * @param[in]  username
+ * @param[out] success/failure
+ */
+bool Client_nicknameIsValid(const char *username) {
+  char error[512] = {0};
+  int valid = Regex_match(username, kRegexNicknamePattern, error, sizeof(error));
+  if (valid) return true;
+  if (valid < 0) {
+    // There has been an error in either compiling
+    // or executing the regex above, we log it for investigation
+    Error("Unable to validate username '%s': %s", username, error);
+  }
+  return false;
+}
 
 /**
  * Authenticates a client connection
@@ -523,6 +546,16 @@ bool Server_authenticate(SOCKET client) {
           // In order to have a full 20 chars nickname, we need to add a 7 chars pad
           // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
           char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameSize + 7);
+
+          // User name validation
+          if (!Client_nicknameIsValid(nick)) {
+            memset(request, '\0', kBufferSize);
+            Message_format(kMessageTypeErr, request, kBufferSize, kErrorMessageInvalidUsername);
+            Server_send(client, request, strlen(request) + 1);
+            Message_free(&nick);
+            break;
+          }
+
           Client *clientInfo = NULL;
           // Lookup if a client is already logged with the provided nickname
           clientInfo = Server_getClientInfoForNickname(nick);

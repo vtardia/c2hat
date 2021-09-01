@@ -45,8 +45,8 @@ prereq/debug:
 	$(eval CFLAGS += -g)
 
 # Server final binary
-server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o
-	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o $(LDFLAGS) $(SERVERLIBS) -o bin/$(BINPREFIX)server
+server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o obj/lib/validate.o
+	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o obj/lib/validate.o $(LDFLAGS) $(SERVERLIBS) -o bin/$(BINPREFIX)server
 
 
 # Server dependencies
@@ -111,6 +111,10 @@ libconfig: prereq obj/lib/config.o
 # obj/ini.o: ini/ini.c ini/ini.h
 # 	$(CC) $(CFLAGS) -c ini/ini.c -o obj/ini.o $(OSFLAG) -DINI_ALLOW_MULTILINE=0
 
+# Shared validation library
+obj/lib/validate.o: prereq src/lib/validate/validate.c
+	$(CC) $(CFLAGS) -c src/lib/validate/validate.c -o obj/lib/validate.o $(OSFLAG)
+
 
 # Client final binary
 client: prereq libsocket libhash libwtrim libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
@@ -159,7 +163,7 @@ obj/test/bot/main.o: test/bot/main.c
 	$(CC) $(CFLAGS) -c test/bot/main.c $(INCFLAGS) -I src/client -o obj/test/bot/main.o $(OSFLAG)
 
 # Unit test targets
-test: clean prereq/debug test/list test/queue test/message test/logger test/config
+test: clean prereq/debug test/list test/queue test/message test/logger test/config test/validate
 
 test/hash: prereq/debug libhash
 	mkdir -p obj/test/hash bin/test
@@ -207,6 +211,12 @@ test/config: prereq/debug libconfig
 	$(CC) $(CFLAGS) -c test/config/main.c $(INCFLAGS) -o obj/test/config/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/config/main.o $(LDFLAGS) -lconfig $(TESTCONFIGLIBS) -o bin/test/config
 	$(VALGRIND) bin/test/config
+
+test/validate: prereq/debug obj/lib/validate.o
+	mkdir -p obj/test/validate  bin/test
+	$(CC) $(CFLAGS) -c test/validate/main.c $(INCFLAGS) -o obj/test/validate/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/validate/main.o obj/lib/validate.o $(LDFLAGS) -o bin/test/validate
+	$(VALGRIND) bin/test/validate
 
 clean:
 	rm -rfv bin/**

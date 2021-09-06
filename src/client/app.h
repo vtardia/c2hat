@@ -9,11 +9,13 @@
 
   enum {
     /// Max size of data that can be sent, including the NULL terminator
-    kBufferSize = 1024,
+    kBufferSize = 1536,
     /// Max username length, in characters, excluding the NULL terminator
-    kMaxNicknameLength = 12,
+    kMaxNicknameLength = 15,
     /// Max username size in bytes, for Unicode characters
     kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
+    /// Max input buffer used to ask for the user nickname
+    kMaxNicknameInputBuffer = 64 * sizeof(wchar_t)
   };
 
   /**

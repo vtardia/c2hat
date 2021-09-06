@@ -34,7 +34,7 @@ enum colorPairs {
 enum users {
   /// Max username length (in characters) excluding the NULL terminator,
   /// ensure this matches with the one in app.h
-  kMaxNicknameLength = 12,
+  kMaxNicknameLength = 15,
   /// Max username size in bytes, for Unicode characters
   kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
 };

@@ -60,23 +60,21 @@ int main(int argc, char const *argv[]) {
 
   // Authenticate
   // Read from the input as Unicode (UCS)
-  // Account for the extra new line char and null terminator
-  // and that some emoji have more bytes to fill
-  wchar_t inputNickname[kMaxNicknameLength + 3] = {0};
+  wchar_t inputNickname[kMaxNicknameInputBuffer] = {0};
   fprintf(stdout, "Please, enter a nickname (max 12 chars): ");
   // fgetws() reads length -1 characters and includes the new line
-  // so we add +3 to take into account this and emoji size
-  if (!fgetws(inputNickname, kMaxNicknameLength + 3, stdin)) {
+  if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
     fprintf(stderr, "Unable to authenticate\n");
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);
   }
+
   // Remove unwanted trailing spaces and new line characters
   wchar_t *trimmedNickname = wtrim(inputNickname, NULL);
 
   // Convert into UTF-8
-  char nickname[kMaxNicknameSize + 1 * sizeof(wchar_t)] = {0};
-  wcstombs(nickname, trimmedNickname, kMaxNicknameSize + 1 * sizeof(wchar_t));
+  char nickname[kMaxNicknameSize + sizeof(wchar_t)] = {0};
+  wcstombs(nickname, trimmedNickname, kMaxNicknameSize + sizeof(wchar_t));
   // Send to the server for authentication
   if (!Client_authenticate(app, nickname)) {
     Client_destroy(&app);

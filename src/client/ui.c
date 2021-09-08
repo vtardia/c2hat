@@ -373,13 +373,23 @@ int UIGetUserColor(char *userName) {
     kColorPairMagentaOnDefault,
     kColorPairGreenOnDefault
   };
+
+  // Initialise a default color using a random number
+  // from kColorPairDefault (colors[0])
+  // to kColorPairGreenOnDefault (colors[5])
+  static int nextColor = -1;
+  if (nextColor < 0) nextColor = rand() % 6;
+
+  // Check if a user already has a color
   int *color = (int *)Hash_getValue(users, userName);
   if (color == NULL) {
-    // First time we see this user
-    // Generate a random color value from kColorPairDefault (0)
-    // to kColorPairGreenOnDefault (6)
-    int userColor = colors[rand() % 7];
-    // Add it to the hash
+    // First time we see this user, use the next available color
+    int userColor = colors[nextColor];
+
+    // Update the next color
+    if (++nextColor > 5) nextColor = 0;
+
+    // Add the user's color to the hash
     if (!Hash_set(users, userName, &userColor, sizeof(int))) {
       userColor = 0; // Just in case, we return the default
     }

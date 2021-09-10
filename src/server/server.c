@@ -725,7 +725,7 @@ void* Server_handleClient(void* socket) {
   // Broadcast that client has left
   memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just left the chat", clientInfo->nickname);
-  Server_broadcast(messageBuffer, strlen(messageBuffer));
+  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Close the connection
   Server_dropClient(*client);

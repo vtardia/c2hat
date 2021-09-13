@@ -48,16 +48,20 @@ int Message_getType(const char *message) {
  * @param[out] Success/failure
  */
 bool Message_getUser(const char *message, char *user, size_t length) {
-  if (Message_getType(message) == kMessageTypeMsg) {
-    char *start = strchr(message, '[');
+  const char kUserNameStartTag  = '[';
+  const char kUserNameEndTag  = ']';
+  int messageType = Message_getType(message);
+  if (messageType == kMessageTypeMsg || messageType == kMessageTypeLog) {
+    char *start = strchr(message, kUserNameStartTag);
     if (start != NULL) {
       // We have a starting point
       start++; // User name starts after the bracket
-      char *end = strchr(start, ']');
+      char *end = strchr(start, kUserNameEndTag);
       if (end != NULL) {
         size_t userLength = end - start;
         if (userLength > 0 && userLength <= length) {
           memcpy(user, start, userLength);
+          *(user + userLength) = 0; // Enforce a NULL terminator
           return true;
         }
       }

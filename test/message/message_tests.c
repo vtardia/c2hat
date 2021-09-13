@@ -252,9 +252,9 @@ void TestMessage_getUser() {
   size_t length = 0;
   char user[21] = {0};
 
-  // Test that fails if type is not /msg
+  // Test that fails if type is not /msg or /log
   length = 20;
-  message = "/log [SomeUser] did something";
+  message = "/err [SomeUser] did something";
   assert(Message_getUser(message, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
@@ -267,6 +267,12 @@ void TestMessage_getUser() {
 
   // Fails when there is no ]
   message = "/msg [SomeUser did something";
+  assert(Message_getUser(message, user, length) == false);
+  assert(strlen(user) == 0);
+  printf(".");
+
+  // Fails when there is no []
+  message = "/msg SomeUser did something";
   assert(Message_getUser(message, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
@@ -305,6 +311,13 @@ void TestMessage_getUser() {
   message = "/msg [Abcde] said something";
   // Buffer too short to contain the username
   assert(Message_getUser(message, otherUser, sizeof(otherUser) -1) == false);
+  printf(".");
+
+  // Test a user name within a /quit message
+  message = "/log [Joe24] just left the chat";
+  assert(Message_getUser(message, user, length));
+  assert(strlen(user) == 5);
+  assert(strncmp(user, "Joe24", 5) == 0);
   printf(".");
 }
 

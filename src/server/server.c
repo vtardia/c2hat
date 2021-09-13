@@ -630,7 +630,7 @@ void* Server_handleClient(void* socket) {
 
   // Broadcast that a new client has joined
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just joined the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just joined the chat", clientInfo->nickname);
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   fd_set reads;
@@ -724,7 +724,7 @@ void* Server_handleClient(void* socket) {
 
   // Broadcast that client has left
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "%s just left the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just left the chat", clientInfo->nickname);
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Close the connection

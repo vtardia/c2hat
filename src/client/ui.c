@@ -429,6 +429,21 @@ void UILogMessage(char *buffer, size_t length) {
       messageContent = Message_getContent(buffer, kMessageTypeLog, length);
       wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
       wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
+      // Get user name from the message and remove it from the users hash
+      if (strstr(messageContent, "left the chat") != NULL) {
+        char userName[kMaxNicknameSize + 1] = {0};
+        if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
+          if (!Hash_delete(users, userName)) {
+            // Something should happen here, maybe log this?
+            wprintw(
+              chatWin,
+              "[%s] [SERVER] Unable to remove user '%s' from internal hash\n",
+              timeBuffer,
+              userName
+            );
+          }
+        }
+      }
       wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
     break;
     case kMessageTypeMsg:
@@ -436,13 +451,13 @@ void UILogMessage(char *buffer, size_t length) {
       // Get user from message
       // The userName length MUST be kMaxNicknameSize + 1 in order to
       // avoid the undefined behaviour caused by a buffer overflow
-      char userName[kMaxNicknameSize + 1] = {0};
-      /* bool hasCustomColor = false; */
       int userColor = kColorPairDefault;
-      /* hasCustomColor = Message_getUser(buffer, userName, kMaxNicknameSize); */
-      if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
-        // Get/set color associated to user
-        userColor = UIGetUserColor(userName);
+      {
+        char userName[kMaxNicknameSize + 1] = {0};
+        if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
+          // Get/set color associated to user
+          userColor = UIGetUserColor(userName);
+        }
       }
       // Activate color mode
       wattron(chatWin, COLOR_PAIR(userColor));
@@ -451,6 +466,7 @@ void UILogMessage(char *buffer, size_t length) {
       wattroff(chatWin, COLOR_PAIR(userColor));
     break;
     case kMessageTypeQuit:
+      // TODO: close the chat
       break;
     break;
     default:

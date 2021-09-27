@@ -6,7 +6,9 @@
 #include <signal.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdlib.h>
 
+#include "trim/wtrim.h"
 #include "app.h"
 #include "ui.h"
 #include "message/message.h"
@@ -95,39 +97,36 @@ void *App_listen(void *client) {
 /// Implements the application input loop
 void App_run(C2HatClient *this) {
 
-  /// Characters to remove from the end of the input buffer
-  const char *seps = "\t\n\v\f\r ";
-
   while(!terminate) {
     // Reset the UI input facility
     UILoopInit();
 
-    // Request user input
-    char buffer[kBufferSize] = {0};
-    int inputSize = UIGetUserInput(buffer, kBufferSize);
+    // Request user input as Unicode
+    wchar_t buffer[kMaxMessageLength] = {0};
+    size_t inputSize = UIGetUserInput(buffer, kMaxMessageLength);
     // User pressed F1 or other exit commands
-    if (inputSize < 0) {
+    if ((int)inputSize < 0) {
       terminate = true;
       break;
     }
 
     // Clean input buffer
-    int i = kBufferSize - 1;
-    while (i >= 0 && strchr(seps, buffer[i]) != NULL) {
-      buffer[i] = '\0';
-      i--;
-    }
+    wchar_t *trimmedBuffer = wtrim(buffer, NULL);
 
-    int messageType = Message_getType(buffer);
+    // Convert it into UTF-8
+    char messageBuffer[kBufferSize] = {0};
+    wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
+
+    int messageType = Message_getType(messageBuffer);
     if (messageType == kMessageTypeQuit) break;
 
     // If the input is not a command, wrap it into a message payload
     char message[kBufferSize] = {0};
     if (!messageType) {
-      Message_format(kMessageTypeMsg, message, kBufferSize, "%s", buffer);
+      Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
     } else {
       // Send the message as is
-      memcpy(message, buffer, inputSize);
+      memcpy(message, messageBuffer, inputSize);
     }
     int sent = Client_send(this, message, strlen(message) + 1);
 

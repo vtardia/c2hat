@@ -15,7 +15,9 @@
     /// Max username size in bytes, for Unicode characters
     kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
     /// Max input buffer used to ask for the user nickname
-    kMaxNicknameInputBuffer = 64 * sizeof(wchar_t)
+    kMaxNicknameInputBuffer = 64 * sizeof(wchar_t),
+    /// Max message length, in characters, including the NULL terminator
+    kMaxMessageLength = 281
   };
 
   /**

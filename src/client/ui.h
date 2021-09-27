@@ -20,7 +20,7 @@
   void UILoopInit();
 
   // Reads user input
-  int UIGetUserInput(char *buffer, size_t length);
+  size_t UIGetUserInput(wchar_t *buffer, size_t length);
 
   // Displays output from the server in he chat log
   void UILogMessage(char *buffer, size_t length);

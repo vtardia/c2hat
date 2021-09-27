@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <wctype.h>
 
 #include "ui.h"
 #include "message/message.h"
@@ -153,7 +154,9 @@ void UIColors() {
 void UIDrawChatWin() {
   // Chat window container: 100% wide, 80% tall, starts at top left
   chatWinBox = subwin(mainWin, (LINES - 6), COLS, 0, 0);
-  box(chatWinBox, 0, 0);
+  // win, left side, right side, top side, bottom side,
+  // corners: top left, top right, bottom left, bottom right
+  wborder(chatWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
 
   // Draw title
   const char *title = " C2Hat ";
@@ -172,7 +175,7 @@ void UIDrawChatWin() {
 void UIDrawInputWin() {
   // Input box container: 100% wide, 20% tall, starts at the bottom of the chat box
   inputWinBox = subwin(mainWin, (5), COLS, (LINES -6), 0);
-  box(inputWinBox, 0, 0);
+  wborder(inputWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
   wrefresh(inputWinBox);
   // Input box, within the container
   inputWin = subwin(inputWinBox, (3), COLS - 2, (LINES - 6) + 1, 1);
@@ -193,9 +196,9 @@ void UILoopInit() {
   wrefresh(inputWin);
 }
 
-int UIGetUserInput(char *buffer, size_t length) {
+size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   int y, x, maxY, maxX;
-  int ch;
+  wint_t ch = 0;
 
   // Variable pointer that follow the cursor on the window
   int cursor = 0;
@@ -207,7 +210,7 @@ int UIGetUserInput(char *buffer, size_t length) {
   int eob = length -1;
 
   // Fixed pointer to the very end of the buffer
-  char *end = buffer + eob;
+  wchar_t *end = buffer + eob;
 
   // Add a safe NULL terminator at the end of buffer
   *end = 0;
@@ -223,8 +226,13 @@ int UIGetUserInput(char *buffer, size_t length) {
   UISetInputCounter(eom, eob);
 
   // Wait for input
-  while ((ch = getch()) != KEY_F(1)) {
+  while (get_wch(&ch) != ERR) {
+    // Exit on F1
+    if (ch == KEY_F(1)) break;
+
+    // Ignore resize key
     if (ch == KEY_RESIZE) continue;
+
     getyx(inputWin, y, x);
     getmaxyx(inputWin, maxY, maxX);
     switch(ch) {
@@ -253,22 +261,24 @@ int UIGetUserInput(char *buffer, size_t length) {
       case kKeyEnter:
       // case kKeyEOT: // Ctrl + D
         // Read the content of the window up to a max
-        // mvwinnstr() reads only one line at a time so we need a loop
+        // mvwinnwstr() reads only one line at a time so we need a loop
         {
           // Points to the end of every read block
-          char *cur = buffer;
+          wchar_t *cur = buffer;
           for (int i = 0; i < maxY; i++) {
             // eob - (cur - buffer) = remaning available unread bytes in the buffer
-            int read = mvwinnstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
+            int read = mvwinnwstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
             if (read != ERR) {
               cur += read;
             }
           }
+          // Once the input message is collected, clean the window
           wmove(inputWin, 0, 0);
           wclear(inputWin);
           wrefresh(inputWin);
+          // ...and return it to the caller
           if ((cur - buffer) > 0) {
-            return strlen(buffer) + 1;
+            return wcslen(buffer) + 1;
           }
         }
       break;
@@ -331,10 +341,11 @@ int UIGetUserInput(char *buffer, size_t length) {
         // Display some message in the status bar
       break;
       default:
-        // If we have space, add a character to the message
-        if (cursor < eob && (ch > 31 && ch <= 255)) {
+        // If we have space, AND the input character is not a control char,
+        // add the new character to the message window
+        if (cursor < eob && !iswcntrl(ch)) {
           // Appending content to the end of the line
-          if (cursor == eom && (wprintw(inputWin, (char *)&ch) != ERR)) {
+          if (cursor == eom && (wprintw(inputWin, "%lc", ch) != ERR)) {
             cursor++;
             eom++;
           }
@@ -355,7 +366,8 @@ int UIGetUserInput(char *buffer, size_t length) {
       break;
     }
   }
-  memset(buffer, 0, length);
+  // An input error happened, cleanup and return error
+  memset(buffer, 0, length * sizeof(wchar_t));
   wclear(inputWin);
   wrefresh(inputWin);
   return -1;

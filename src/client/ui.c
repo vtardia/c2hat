@@ -37,7 +37,16 @@ enum users {
   /// ensure this matches with the one in app.h
   kMaxNicknameLength = 15,
   /// Max username size in bytes, for Unicode characters
-  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t),
+  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t)
+};
+
+enum config {
+  /// Max message length, in characters, including the NULL terminator
+  kMaxMessageLength = 281,
+  /// Min lines to be available in the terminal (eg. 24x80 term has 22 lines available)
+  kMinTerminalLines = 22,
+  /// Min columns to be available in the terminal
+  kMinTerminalCols = 80
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
@@ -50,6 +59,24 @@ void UIDrawInputWin();
 void UIDrawStatusBar();
 void UIDrawTermTooSmall();
 void UISetInputCounter(int, int);
+
+/**
+ * Get the number of available input lines
+ * based on the terminal width
+ */
+int UIGetInputLines() {
+  return (COLS < 94) ? 4  : 3;
+}
+
+/**
+ * Checks if we have enough space within the terminal
+ * We need at least a 24x80 terminal that can host 280
+ * characters in the input window
+ */
+bool UITermIsBigEnough() {
+  int lines= UIGetInputLines();
+  return (LINES > kMinTerminalLines && COLS > kMinTerminalCols && ((COLS - 1) * lines) >= kMaxMessageLength);
+}
 
 /**
  * Initialises NCurses configuration
@@ -82,12 +109,12 @@ void UIInit() {
   // Initialise colors
   UIColors();
 
-  if (LINES < 24 || COLS < 76) {
-    UIDrawTermTooSmall();
-  } else {
+  if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();
     UIDrawStatusBar();
+  } else {
+    UIDrawTermTooSmall();
   }
 
   // Initialise Users hash
@@ -152,8 +179,9 @@ void UIColors() {
 }
 
 void UIDrawChatWin() {
-  // Chat window container: 100% wide, 80% tall, starts at top left
-  chatWinBox = subwin(mainWin, (LINES - 6), COLS, 0, 0);
+  int chatWinBoxHeight = (COLS < 94) ? (LINES - 7) : (LINES - 6);
+  // Chat window container: 80% tall, 100% wide, starts at top left
+  chatWinBox = subwin(mainWin, chatWinBoxHeight, COLS, 0, 0);
   // win, left side, right side, top side, bottom side,
   // corners: top left, top right, bottom left, bottom right
   wborder(chatWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
@@ -167,18 +195,22 @@ void UIDrawChatWin() {
   wrefresh(chatWinBox);
 
   // Chat log box, within the chat window
-  chatWin = subwin(chatWinBox, (LINES - 8), COLS -2, 1, 1);
+  chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (COLS - 2), 1, 1);
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
 }
 
 void UIDrawInputWin() {
-  // Input box container: 100% wide, 20% tall, starts at the bottom of the chat box
-  inputWinBox = subwin(mainWin, (5), COLS, (LINES -6), 0);
+  // With COLS < 94 we need 4 lines to fit the whole message,
+  // wider terminals are ok with 3 lines
+  int inputWinBoxHeight = (COLS < 94) ? 6  : 5;
+  int inputWinBoxStart = (COLS < 94) ? (LINES - 7) : (LINES - 6);
+  // Input box container: 20% tall, 100% wide, starts at the bottom of the chat box
+  inputWinBox = subwin(mainWin, inputWinBoxHeight, COLS, inputWinBoxStart, 0);
   wborder(inputWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
   wrefresh(inputWinBox);
   // Input box, within the container
-  inputWin = subwin(inputWinBox, (3), COLS - 2, (LINES - 6) + 1, 1);
+  inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (COLS - 2), (inputWinBoxStart + 1), 1);
 }
 
 void UIDrawStatusBar() {
@@ -226,7 +258,13 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   UISetInputCounter(eom, eob);
 
   // Wait for input
-  while (get_wch(&ch) != ERR) {
+  while (true) {
+    int res = get_wch(&ch);
+    if (res == ERR) {
+      // EINTR means a signal is received
+      if (errno != EINTR) break;
+    }
+
     // Exit on F1
     if (ch == KEY_F(1)) break;
 
@@ -516,6 +554,7 @@ void UIDrawTermTooSmall() {
   char *message = "Sorry, your terminal is too small!";
   size_t messageSize = strlen(message);
   mvwprintw(mainWin, (LINES/2), (COLS/2 - messageSize/2), "%s", message);
+  mvwprintw(mainWin, (LINES/2 + 1), (COLS/2 - 3), "%dx%d", LINES, COLS);
   wrefresh(mainWin);
 }
 
@@ -530,19 +569,18 @@ void UIResizeHandler(int signal) {
   refresh();
   clear();
 
-  if (LINES < 24 || COLS < 76) {
-    UIDrawTermTooSmall();
-  } else {
+  if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();
     UIDrawStatusBar();
     if (strlen(currentStatusBarMessage) > 0) {
       UISetStatusMessage(currentStatusBarMessage, strlen(currentStatusBarMessage));
     }
-
     // Refresh and move cursor to input window
     wrefresh(chatWin);
     wcursyncup(inputWin);
     wrefresh(inputWin);
+    return;
   }
+  UIDrawTermTooSmall();
 }

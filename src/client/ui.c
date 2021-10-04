@@ -2,6 +2,10 @@
  * Copyright (C) 2021 Vito Tardia
  */
 
+// TODO: 1) extract window sizes var as static global and
+// initialise them within the init routine
+// 2) try to extract the message char counter as well
+
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -46,7 +50,9 @@ enum config {
   /// Min lines to be available in the terminal (eg. 24x80 term has 22 lines available)
   kMinTerminalLines = 22,
   /// Min columns to be available in the terminal
-  kMinTerminalCols = 80
+  kMinTerminalCols = 80,
+  /// Min columns to be considered for a wide terminal
+  kWideTerminalCols = 94
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
@@ -65,7 +71,7 @@ void UISetInputCounter(int, int);
  * based on the terminal width
  */
 int UIGetInputLines() {
-  return (COLS < 94) ? 4  : 3;
+  return (COLS < kWideTerminalCols) ? 4  : 3;
 }
 
 /**
@@ -124,6 +130,9 @@ void UIInit() {
   srand(time(NULL));
 }
 
+/**
+ * Destroys the given window object
+ */
 void UIWindow_destroy(WINDOW *win) {
   wborder(win, ' ', ' ', ' ',' ',' ',' ',' ',' ');
   wrefresh(win);
@@ -178,10 +187,19 @@ void UIColors() {
   init_pair(kColorPairWhiteOnRed, COLOR_WHITE, COLOR_RED);
 }
 
+/**
+ * Draws the chat/log window
+ */
 void UIDrawChatWin() {
-  int chatWinBoxHeight = (COLS < 94) ? (LINES - 7) : (LINES - 6);
-  // Chat window container: 80% tall, 100% wide, starts at top left
+  // If the terminal is not wide enough we need a smaller chat and a bigger
+  // input window
+  int chatWinBoxHeight = (COLS < kWideTerminalCols) ? (LINES - 7) : (LINES - 6);
+
+  // Create the chat window container: 80% tall, 100% wide, starts at top left
   chatWinBox = subwin(mainWin, chatWinBoxHeight, COLS, 0, 0);
+
+  // Add border, just top and bottom to avoid breaking the layout
+  // when the user inserts emojis
   // win, left side, right side, top side, bottom side,
   // corners: top left, top right, bottom left, bottom right
   wborder(chatWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
@@ -194,25 +212,33 @@ void UIDrawChatWin() {
   mvwaddch(chatWinBox, 0, (COLS/2) + titleLength/2 + 1, ACS_LTEE);
   wrefresh(chatWinBox);
 
-  // Chat log box, within the chat window
+  // Draw the scrollable chat log box, within the chat window
   chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (COLS - 2), 1, 1);
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
 }
 
+/**
+ * Draws the chat input window
+ */
 void UIDrawInputWin() {
-  // With COLS < 94 we need 4 lines to fit the whole message,
+  // Set sizes: ith narrow terminals we need 4 lines to fit the whole message,
   // wider terminals are ok with 3 lines
-  int inputWinBoxHeight = (COLS < 94) ? 6  : 5;
-  int inputWinBoxStart = (COLS < 94) ? (LINES - 7) : (LINES - 6);
+  int inputWinBoxHeight = (COLS < kWideTerminalCols) ? 6  : 5;
+  int inputWinBoxStart = (COLS < kWideTerminalCols) ? (LINES - 7) : (LINES - 6);
+
   // Input box container: 20% tall, 100% wide, starts at the bottom of the chat box
   inputWinBox = subwin(mainWin, inputWinBoxHeight, COLS, inputWinBoxStart, 0);
   wborder(inputWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
   wrefresh(inputWinBox);
+
   // Input box, within the container
   inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (COLS - 2), (inputWinBoxStart + 1), 1);
 }
 
+/**
+ * Draws the status bar as last line of the screen
+ */
 void UIDrawStatusBar() {
   // h, w, posY, posX
   statusBarWin = subwin(mainWin, 1, COLS, LINES -1, 0);
@@ -222,14 +248,25 @@ void UIDrawStatusBar() {
   wrefresh(statusBarWin);
 }
 
+/**
+ * Refresh the UI and move the cursor
+ * to the input window to receive input
+ */
 void UILoopInit() {
   wrefresh(chatWin);
   wcursyncup(inputWin);
   wrefresh(inputWin);
 }
 
+/**
+ * Infinite loop that waits for the user input and
+ * returns it to the caller
+ */
 size_t UIGetUserInput(wchar_t *buffer, size_t length) {
+  // Keep track of the input window coordinates
   int y, x, maxY, maxX;
+
+  // Contains the last input character
   wint_t ch = 0;
 
   // Variable pointer that follow the cursor on the window
@@ -259,9 +296,10 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
 
   // Wait for input
   while (true) {
+    // Receives a Unicode character from the user
     int res = get_wch(&ch);
     if (res == ERR) {
-      // EINTR means a signal is received
+      // EINTR means a signal is received, for example resize
       if (errno != EINTR) break;
     }
 
@@ -271,12 +309,17 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     // Ignore resize key
     if (ch == KEY_RESIZE) continue;
 
+    // Fetch the current cursor position and window size
     getyx(inputWin, y, x);
     getmaxyx(inputWin, maxY, maxX);
+
+    // Process the input character
     switch(ch) {
       case kKeyBackspace:
       case kKeyDel:
       case KEY_BACKSPACE:
+        // Delete the character at the current position,
+        // move to a new position and update the counters
         if (cursor > 0) {
           int newX, newY;
           if (x == 0) {
@@ -297,12 +340,13 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         }
       break;
       case kKeyEnter:
-      // case kKeyEOT: // Ctrl + D
-        // Read the content of the window up to a max
-        // mvwinnwstr() reads only one line at a time so we need a loop
+      case kKeyEOT: // Ctrl + D
+        // Read the content of the window up to the given limit
+        // and returns it to the caller function
         {
           // Points to the end of every read block
           wchar_t *cur = buffer;
+          // mvwinnwstr() reads only one line at a time so we need a loop
           for (int i = 0; i < maxY; i++) {
             // eob - (cur - buffer) = remaning available unread bytes in the buffer
             int read = mvwinnwstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
@@ -330,6 +374,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         UISetInputCounter(eom, eob);
       break;
       case KEY_LEFT:
+        // Advance the cursor if possible
         if (y > 0 && x == 0) {
           // The text cursor is at the beginning of line 2+,
           // move at the end of the previous line
@@ -348,6 +393,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         UISetInputCounter(eom, eob);
       break;
       case KEY_RIGHT:
+        // Move the cursor back, if possible
         // We can move to the right only of there is already text
         if (eom > ((y * maxX) + x)) {
           if (wmove(inputWin, y, x + 1) != ERR) {
@@ -359,6 +405,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         }
       break;
       case KEY_UP:
+        // Move the cursor to the line above, if possible
         if (y > 0) {
           if (wmove(inputWin, y - 1, x) != ERR) {
             wrefresh(inputWin);
@@ -367,16 +414,14 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         }
       break;
       case KEY_DOWN:
-        // We can move only if there is enogh text in the line below
+        // Move the cursor to the line below,
+        // but only if there is enough text in the line below
         if (y < (maxY - 1) && eom >= (maxX + x)) {
           if (wmove(inputWin, y + 1, x) != ERR) {
             wrefresh(inputWin);
             cursor += maxX;
           }
         }
-      break;
-      case ERR:
-        // Display some message in the status bar
       break;
       default:
         // If we have space, AND the input character is not a control char,
@@ -449,6 +494,9 @@ int UIGetUserColor(char *userName) {
   return *color;
 }
 
+/**
+ * Writes a message to the chat log window
+ */
 void UILogMessage(char *buffer, size_t length) {
   // Compute local time
   time_t now = time(NULL);
@@ -479,7 +527,8 @@ void UILogMessage(char *buffer, size_t length) {
       messageContent = Message_getContent(buffer, kMessageTypeLog, length);
       wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
       wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
-      // Get user name from the message and remove it from the users hash
+      // Intercept user disconnection messace to get user name from the message i
+      // and remove it from the users hash
       if (strstr(messageContent, "left the chat") != NULL) {
         char userName[kMaxNicknameSize + 1] = {0};
         if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
@@ -499,8 +548,6 @@ void UILogMessage(char *buffer, size_t length) {
     case kMessageTypeMsg:
       messageContent = Message_getContent(buffer, kMessageTypeMsg, length);
       // Get user from message
-      // The userName length MUST be kMaxNicknameSize + 1 in order to
-      // avoid the undefined behaviour caused by a buffer overflow
       int userColor = kColorPairDefault;
       {
         char userName[kMaxNicknameSize + 1] = {0};
@@ -530,6 +577,9 @@ void UILogMessage(char *buffer, size_t length) {
   wrefresh(inputWin);
 }
 
+/**
+ * Updates the content of the status bar
+ */
 void UISetStatusMessage(char *buffer, size_t length) {
   // Considers 80% of the status bar available
   size_t size = (length < (size_t)(COLS * 0.8)) ? length : (COLS * 0.8) - 1;
@@ -539,6 +589,10 @@ void UISetStatusMessage(char *buffer, size_t length) {
   }
 }
 
+/**
+ * Updates the message length counter in the status bar
+ * using the format <current char>/<max chars>
+ */
 void UISetInputCounter(int current, int max) {
   int y, x;
   getyx(inputWin, y, x);
@@ -550,6 +604,10 @@ void UISetInputCounter(int current, int max) {
   wrefresh(inputWin);
 }
 
+/**
+ * Displays an error message when the current terminal
+ * is too small to contain the chat
+ */
 void UIDrawTermTooSmall() {
   char *message = "Sorry, your terminal is too small!";
   size_t messageSize = strlen(message);
@@ -576,10 +634,8 @@ void UIResizeHandler(int signal) {
     if (strlen(currentStatusBarMessage) > 0) {
       UISetStatusMessage(currentStatusBarMessage, strlen(currentStatusBarMessage));
     }
-    // Refresh and move cursor to input window
-    wrefresh(chatWin);
-    wcursyncup(inputWin);
-    wrefresh(inputWin);
+    // Refresh and move cursor to the input window
+    UILoopInit();
     return;
   }
   UIDrawTermTooSmall();

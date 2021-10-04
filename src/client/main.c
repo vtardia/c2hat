@@ -31,12 +31,12 @@ int main(int argc, char const *argv[]) {
 
   // Check locale compatibility
   if (strstr(LOCALE, "UTF-8") == NULL) {
-    printf("The given locale (%s) does not support UTF-8\n", LOCALE);
+    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", LOCALE);
     return EXIT_FAILURE;
   }
 
   if (!setlocale(LC_ALL, LOCALE)) {
-    printf("Unable to set locale to '%s'\n", LOCALE);
+    fprintf(stderr, "Unable to set locale to '%s'\n", LOCALE);
     return EXIT_FAILURE;
   }
   setenv("NCURSES_NO_UTF8_ACS", "0", 1);
@@ -64,7 +64,7 @@ int main(int argc, char const *argv[]) {
   fprintf(stdout, "Please, enter a nickname (max 12 chars): ");
   // fgetws() reads length -1 characters and includes the new line
   if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
-    fprintf(stderr, "Unable to authenticate\n");
+    fprintf(stderr, "Unable to read nickname\n");
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);
   }
@@ -75,6 +75,7 @@ int main(int argc, char const *argv[]) {
   // Convert into UTF-8
   char nickname[kMaxNicknameSize + sizeof(wchar_t)] = {0};
   wcstombs(nickname, trimmedNickname, kMaxNicknameSize + sizeof(wchar_t));
+
   // Send to the server for authentication
   if (!Client_authenticate(app, nickname)) {
     Client_destroy(&app);
@@ -104,7 +105,7 @@ int main(int argc, char const *argv[]) {
   UIClean();
 
   // Wait for the listening thread to finish
-  fprintf(stdout, "Disconnecting...\n");
+  fprintf(stdout, "Disconnecting...");
   pthread_join(listeningThreadID, NULL);
 
   // Clean Exit

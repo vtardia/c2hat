@@ -89,13 +89,13 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   }
 
   // Try to connect
-  fprintf(this->out, "Connecting to %s:%s...", addressBuffer, serviceBuffer);
+  fprintf(this->err, "Connecting to %s:%s...", addressBuffer, serviceBuffer);
   if (connect(this->server, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
     fprintf(this->err, "connect() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
     return false;
   }
   freeaddrinfo(bindAddress); // We don't need it anymore
-  fprintf(this->out, "Connected!\n");
+  fprintf(this->err, "Connected!\n");
 
   // Wait for the OK signal from the server
   // We are using select() with a timeout here, because if the server
@@ -114,12 +114,12 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     if (result < 0) {
       if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
       fprintf(this->err, "Client select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-      fflush(this->err);
+      //fflush(this->err);
       return false;
     }
     if (result == 0) {
       fprintf(this->err, "Client timeout expired\n");
-      fflush(this->err);
+      //fflush(this->err);
       return false;
     }
 
@@ -132,7 +132,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
       // At this point the server will only send /ok or /err messages
       if (Message_getType(buffer) != kMessageTypeOk) {
         fprintf(this->err, "The server refused the connection\n");
-        fflush(this->err);
+        //fflush(this->err);
         SOCKET_close(this->server);
         return false;
       }
@@ -140,7 +140,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
       char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
       if (strlen(messageContent) > 0) {
         fprintf(this->err, "[Server] %s\n", messageContent);
-        fflush(this->err);
+        //fflush(this->err);
       }
       Message_free(&messageContent);
       break;
@@ -178,7 +178,7 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
   do {
     int bytesReceived = recv(this->server, cursor, 1, 0);
     if (bytesReceived == 0) {
-      fprintf(this->out, "Connection closed by remote server\n");
+      fprintf(this->err, "Connection closed by remote server\n");
       return -1;
     }
     if (bytesReceived < 0) {
@@ -245,8 +245,8 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
 bool Client_authenticate(C2HatClient *this, const char *username) {
   // Minimal validation: ensure that at least two characters are entered
   if (strlen(username) < 2) {
-    fprintf(this->out, "Invalid nickname: please enter at least 2 characters\n");
-    fflush(this->out);
+    fprintf(this->err, "Invalid nickname: please enter at least 2 characters\n");
+    //fflush(this->err);
     SOCKET_close(this->server);
     return false;
   }
@@ -260,8 +260,8 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     return false;
   }
   if (Message_getType(buffer) != kMessageTypeNick) {
-    fprintf(this->out, "Unable to authenticate: unknown server response\n");
-    fflush(this->out);
+    fprintf(this->err, "Unable to authenticate: unknown server response\n");
+    //fflush(this->err);
     SOCKET_close(this->server);
     return false;
   }
@@ -271,8 +271,8 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
-    fprintf(this->out, "Unable to authenticate: cannot send data to the server\n");
-    fflush(this->out);
+    fprintf(this->err, "Unable to authenticate: cannot send data to the server\n");
+    //fflush(this->err);
     SOCKET_close(this->server);
     return false;
   }
@@ -281,8 +281,8 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   memset(buffer, 0, kBufferSize);
   received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
-    fprintf(this->out, "Authentication failed: cannot receive a response from the server\n");
-    fflush(this->out);
+    fprintf(this->err, "Authentication failed: cannot receive a response from the server\n");
+    //fflush(this->err);
     SOCKET_close(this->server);
     return false;
   }
@@ -291,12 +291,12 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   if (messageType != kMessageTypeOk) {
     if (messageType == kMessageTypeErr) {
       char *errorMessage = Message_getContent(buffer, kMessageTypeErr, kBufferSize);
-      fprintf(this->out, "Authentication failed: %s\n", errorMessage);
+      fprintf(this->err, "Authentication failed: %s\n", errorMessage);
       Message_free(&errorMessage);
     } else {
-      fprintf(this->out, "Authentication failed: invalid response from the server\n");
+      fprintf(this->err, "Authentication failed: invalid response from the server\n");
     }
-    fflush(this->out);
+    //fflush(this->err);
     SOCKET_close(this->server);
     return false;
   }

@@ -73,7 +73,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     bindAddress->ai_addr, bindAddress->ai_addrlen,
     addressBuffer, sizeof(addressBuffer),
     serviceBuffer, sizeof(serviceBuffer),
-    NI_NUMERICHOST
+    NI_NUMERICHOST | NI_NUMERICSERV
   )) {
     fprintf(this->err, "getnameinfo() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
     return false;

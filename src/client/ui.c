@@ -85,13 +85,22 @@ bool UITermIsBigEnough() {
 }
 
 /**
+ * Clears the console
+ */
+void UIClearScreen() {
+  printf("\e[1;1H\e[2J");
+}
+
+/**
  * Initialises NCurses configuration
  */
 void UIInit() {
   if (mainWin != NULL) return; // Already initialised
 
+  UIClearScreen();
+
   if ((mainWin = initscr()) == NULL) {
-    fprintf(stderr, "Unable to initialise the user interface: %s\n", strerror(errno));
+    fprintf(stderr, "❌ Error: Unable to initialise the user interface\n%s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
 

@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
@@ -21,10 +22,17 @@
 #endif
 
 int main(int argc, char const *argv[]) {
+  // First check we are running in a terminal (TTY)
+  if (!isatty(fileno(stdout))) {
+    fprintf(stderr, "❌ Error: ENOTTY - Invalid terminal\n");
+    fprintf(stderr, "Cannot start the C2Hat client in a non-interactive terminal\n");
+    return EXIT_FAILURE;
+  }
+
   // Validate command line arguments
   if (argc < 3) {
     fprintf(stderr, "Usage: %s hostname port\n", argv[0]);
-    return 1;
+    return EXIT_FAILURE;
   }
   const char * host = argv[1];
   const char * port = argv[2];

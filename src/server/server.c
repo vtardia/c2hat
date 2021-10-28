@@ -24,7 +24,7 @@ enum {
 static const char *kRegexNicknamePattern = "^[[:alpha:]][[:alnum:]!@#$%&]\\{1,14\\}$";
 
 /// Validation error message for invalid user names, includes the rules
-static const char *kErrorMessageInvalidUsername = "Invalid username: a valid username must start with a letter and can contain 2-15 latin characters and !@#$%&";
+static const char *kErrorMessageInvalidUsername = "Nicknames must start with a letter and contain 2-15 latin characters and !@#$%&";
 
 /// Holds data for queued messages
 typedef struct {

@@ -39,7 +39,11 @@ typedef struct _options {
   char port[kMaxPortSize];
 } Options;
 
+static const char *kC2HatClientVersion = "1.0";
+
 void usage(const char *program);
+void help(const char *program);
+void version(const char *program);
 void parseOptions(int argc, ARGV argv, Options *params);
 
 int main(int argc, ARGV argv) {
@@ -151,12 +155,31 @@ int main(int argc, ARGV argv) {
 }
 
 /**
+ * Displays program version
+ */
+void version(const char *program) {
+  fprintf(stderr,
+"%1$s - C2Hat client [version %2$s]"
+"\n", basename((char *)program), kC2HatClientVersion);
+}
+
+/**
  * Displays program usage
  */
 void usage(const char *program) {
-  const char *version = "1.0";
-  FILE *target = stderr;
-  fprintf(target,
+  fprintf(stderr,
+"Usage: %1$s [options] <host> <port>\n"
+"       %1$s [-u YourNickname] <host> <port>\n"
+"\n"
+"For a listing of options, use c2hat-cli --help."
+"\n", basename((char *)program));
+}
+
+/**
+ * Displays program help
+ */
+void help(const char *program) {
+  fprintf(stderr,
 "%1$s - commandline C2Hat client [version %2$s]\n"
 "\n"
 "Usage: %1$s [options] <host> <port>\n"
@@ -174,8 +197,10 @@ void usage(const char *program) {
 "   $ %1$s -u Uncl3Ozzy chat.example.com 10000\n"
 "\n"
 "Current options include:\n"
-"   -u    specify a user's nickname before connecting;\n"
-"\n", basename((char *)program), version);
+"   -u, --user      specify a user's nickname before connecting;\n"
+"   -v, --version   display the current program version;\n"
+"   -h, --help      display this help message;\n"
+"\n", basename((char *)program), kC2HatClientVersion);
 }
 
 /**
@@ -195,17 +220,22 @@ void parseOptions(int argc, ARGV argv, Options *params) {
   struct option options[] = {
     {"user", required_argument, NULL, 'u'},
     {"help", no_argument, NULL, 'h'},
+    {"version", no_argument, NULL, 'v'},
     { NULL, 0, NULL, 0}
   };
 
   // Parse the command line arguments into options
   char ch;
   while (true) {
-    ch = getopt_long(argc, argv, "u:h", options, NULL);
+    ch = getopt_long(argc, argv, "u:hv", options, NULL);
     if( (signed char)ch == -1 ) break; // No more options available
     switch (ch) {
       case 'h': // User requested help, display it and exit
-        usage(argv[0]);
+        help(argv[0]);
+        exit(EXIT_SUCCESS);
+      break;
+      case 'v': // User requested version, display it and exit
+        version(argv[0]);
         exit(EXIT_SUCCESS);
       break;
       case 'u': // User passed a nickname

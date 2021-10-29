@@ -62,7 +62,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   struct addrinfo *bindAddress;
   options.ai_socktype = SOCK_STREAM;
   if (getaddrinfo(host, port, &options, &bindAddress)) {
-    fprintf(this->err, "❌ Error: Invalid IP/port configuration\n%s\n", gai_strerror(SOCKET_getErrorNumber()));
+    fprintf(this->err, "❌ Invalid IP/port configuration: %s\n", gai_strerror(SOCKET_getErrorNumber()));
     return false;
   }
 
@@ -91,11 +91,11 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // Try to connect
   fprintf(this->err, "Connecting to %s:%s...", addressBuffer, serviceBuffer);
   if (connect(this->server, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
-    fprintf(this->err, "connect() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    fprintf(this->err, "FAILED!\n❌ Error: %d - %s\nCheck that the host name and port number are correct\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
     return false;
   }
   freeaddrinfo(bindAddress); // We don't need it anymore
-  fprintf(this->err, "Connected!\n");
+  fprintf(this->err, "OK!\n");
 
   // Wait for the OK signal from the server
   // We are using select() with a timeout here, because if the server

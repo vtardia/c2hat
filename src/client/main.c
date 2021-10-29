@@ -76,13 +76,13 @@ int main(int argc, ARGV argv) {
   // Create chat client
   C2HatClient *app = Client_create();
   if (app == NULL) {
-    fprintf(stderr, "❌ Chat client creation failed\n");
+    fprintf(stderr, "Chat client creation failed\n");
     return App_cleanup(EXIT_FAILURE);
   }
 
   // Try to connect
   if (!Client_connect(app, options.host, options.port)) {
-    fprintf(stderr, "❌ Connection failed\n");
+    // fprintf(stderr, "❌ Connection failed\n"); // Client lib already displays error
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);
   }

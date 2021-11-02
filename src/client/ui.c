@@ -11,6 +11,7 @@
 #include <string.h>
 #include <time.h>
 #include <wctype.h>
+#include <unistd.h>
 
 #include "ui.h"
 #include "message/message.h"
@@ -57,7 +58,12 @@ enum config {
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
 static char currentStatusBarMessage[512] = {0};
+
+/// Associative array where the keys are the user nicknames
 static Hash *users = NULL;
+
+/// Flag used by the user input loop to jump out of get_wch()
+static bool uiTerminate = false;
 
 void UIColors();
 void UIDrawChatWin();
@@ -308,8 +314,14 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     // Receives a Unicode character from the user
     int res = get_wch(&ch);
     if (res == ERR) {
-      // EINTR means a signal is received, for example resize
+      // EINTR means a signal is received, for example resize (which we are ignoring here)
       if (errno != EINTR) break;
+
+      // We need to process the SIGUSR1 output that tells us to terminate
+      if (errno == EINTR && uiTerminate) {
+        sleep(2); // Allow the user to read the error message on the chat log
+        break;
+      }
     }
 
     // Exit on F1
@@ -623,6 +635,14 @@ void UIDrawTermTooSmall() {
   mvwprintw(mainWin, (LINES/2), (COLS/2 - messageSize/2), "%s", message);
   mvwprintw(mainWin, (LINES/2 + 1), (COLS/2 - 3), "%dx%d", LINES, COLS);
   wrefresh(mainWin);
+}
+
+/**
+ * Handles custom USR* signals
+ */
+void UITerminate(int signal) {
+  (void) signal;
+  uiTerminate = true;
 }
 
 /**

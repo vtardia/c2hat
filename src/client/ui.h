@@ -16,6 +16,9 @@
   // Intercepts terminal resize events
   void UIResizeHandler(int signal);
 
+  // Intercepts UI close events to unlock the input loop
+  void UITerminate(int signal);
+
   // Initialises the infinite loop
   void UILoopInit();
 

@@ -16,6 +16,9 @@
 /// Loop termination flag
 static bool terminate = false;
 
+/// Keeps track of the main thread id so other threads can send signals
+static pthread_t mainThreadID = 0;
+
 /// Initialise sockets (win only)
 void App_init() {
 #if defined(_WIN32)
@@ -89,13 +92,22 @@ void *App_listen(void *client) {
     // enough for the termination signal to be recognised
     nanosleep(&ts, NULL);
   }
+
+  // Clear file descriptors and close the socket
   FD_CLR(server, &reads);
   SOCKET_close(server);
+
+  // Tell the main thread that it needs to close the UI
+  pthread_kill(mainThreadID, SIGUSR1);
+
+  // Clean exit
   pthread_exit(NULL);
 }
 
 /// Implements the application input loop
 void App_run(C2HatClient *this) {
+  // Initialise the thread id in order to receive messages
+  mainThreadID = pthread_self();
 
   while(!terminate) {
     // Reset the UI input facility

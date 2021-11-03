@@ -139,7 +139,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
       // Display the server welcome message
       char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
       if (strlen(messageContent) > 0) {
-        fprintf(this->err, "[Server] %s\n", messageContent);
+        fprintf(this->err, "\n💬 %s\n", messageContent);
         //fflush(this->err);
       }
       Message_free(&messageContent);

@@ -96,7 +96,7 @@ int main(int argc, ARGV argv) {
   } else {
     // ...or read from the input as Unicode (UCS)
     wchar_t inputNickname[kMaxNicknameInputBuffer] = {0};
-    fprintf(stdout, "Please, enter a nickname (max 12 chars): ");
+    fprintf(stdout, "   〉Please, enter a nickname (max 12 chars): ");
     // fgetws() reads length -1 characters and includes the new line
     if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
       fprintf(stderr, "Unable to read nickname\n");

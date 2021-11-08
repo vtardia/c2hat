@@ -602,9 +602,20 @@ void UILogMessage(char *buffer, size_t length) {
  * Updates the content of the status bar
  */
 void UISetStatusMessage(char *buffer, size_t length) {
-  // Considers 80% of the status bar available
-  size_t size = (length < (size_t)(COLS * 0.8)) ? length : (COLS * 0.8) - 1;
-  if (mvwprintw(statusBarWin, 0, 1, "%.*s", size, buffer) != ERR) {
+  // Calculate the terminal size to be displayed at the bottom left
+  char termSize[20] = {0};
+  snprintf(termSize, 19, "[%d,%d]", COLS, LINES);
+  size_t termSizeLength = strlen(termSize);
+
+  // Considers 80% of the status bar available, minus the term size message
+  size_t availableSpace = (COLS * 0.8) - termSizeLength;
+  size_t size = (length < availableSpace) ? length : (availableSpace - 1);
+
+  // Display the term size
+  mvwprintw(statusBarWin, 0, 1, "%s", termSize);
+
+  // Display the provided message after the term size
+  if (mvwprintw(statusBarWin, 0, termSizeLength + 2, "%.*s", size, buffer) != ERR) {
     wrefresh(statusBarWin);
     memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
   }

@@ -2,6 +2,7 @@
  * Copyright (C) 2020 Vito Tardia
  */
 
+#include "../c2hat.h"
 #include "server.h"
 #include "validate/validate.h"
 
@@ -11,11 +12,6 @@
 enum {
   kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
-  kMaxNicknameLength = 15, // Characters, excluding the NULL terminator
-  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t), // Size in bytes for Unicode
-  kBufferSize = 1536, // Includes NULL term
-  // Format is: /msg [<15charUsername>]:\s
-  kBroadcastBufferSize = 9 + kMaxNicknameSize + kBufferSize,
   kAuthenticationTimeout = 30, // seconds
   kChatTimeout = 3 * 60 // 3 minutes
 };

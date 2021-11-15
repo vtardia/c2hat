@@ -8,7 +8,7 @@ VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
 # Note: on macOS you need to install the updated ncurses with Homebrew
 # then you can use $(ncursesw6-config --cflags --libs) to get the correct parameters
-CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -lncursesw -ltinfo -ldl
+CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -lncursesw -ltinfo -ldl
 TESTCONFIGLIBS =
 BINPREFIX = c2hat-
 
@@ -120,7 +120,7 @@ obj/lib/validate.o: prereq src/lib/validate/validate.c
 
 
 # Client final binary
-client: prereq libsocket libhash libwtrim libmessage obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o
+client: prereq libsocket libhash libwtrim libmessage liblist obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o obj/client/uilog.o
 	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) $(CLIENTLIBS) -o bin/$(BINPREFIX)cli
 
 
@@ -155,6 +155,9 @@ obj/client/client.o: src/client/client.c
 
 obj/client/ui.o: src/client/ui.c
 	$(CC) $(CFLAGS) -c src/client/ui.c $(INCFLAGS) -o obj/client/ui.o $(OSFLAG)
+
+obj/client/uilog.o: src/client/uilog.c
+	$(CC) $(CFLAGS) -c src/client/uilog.c $(INCFLAGS) -o obj/client/uilog.o $(OSFLAG)
 
 # Test Bot
 bot: prereq libsocket libmessage obj/test/bot/main.o obj/client/client.o
@@ -220,6 +223,12 @@ test/validate: prereq/debug obj/lib/validate.o
 	$(CC) $(CFLAGS) -c test/validate/main.c $(INCFLAGS) -o obj/test/validate/main.o $(OSFLAG)
 	$(CC) $(CFLAGS) obj/test/validate/main.o obj/lib/validate.o $(LDFLAGS) -o bin/test/validate
 	$(VALGRIND) bin/test/validate
+
+test/uilog: prereq/debug libmessage obj/client/uilog.o
+	mkdir -p obj/test/uilog  bin/test
+	$(CC) $(CFLAGS) -c test/uilog/main.c $(INCFLAGS) -o obj/test/uilog/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) obj/test/uilog/main.o obj/client/uilog.o $(LDFLAGS) -lmessage -o bin/test/uilog
+	$(VALGRIND) bin/test/uilog
 
 clean:
 	rm -rfv bin/**

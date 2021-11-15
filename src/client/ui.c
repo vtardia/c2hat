@@ -12,10 +12,15 @@
 #include <time.h>
 #include <wctype.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <signal.h>
 
+#include "../c2hat.h"
 #include "ui.h"
 #include "message/message.h"
 #include "hash/hash.h"
+#include "list/list.h"
+#include "uilog.h"
 
 enum keys {
   kKeyEnter = 10,
@@ -37,14 +42,6 @@ enum colorPairs {
   kColorPairWhiteOnRed = 8
 };
 
-enum users {
-  /// Max username length (in characters) excluding the NULL terminator,
-  /// ensure this matches with the one in app.h
-  kMaxNicknameLength = 15,
-  /// Max username size in bytes, for Unicode characters
-  kMaxNicknameSize = kMaxNicknameLength * sizeof(wchar_t)
-};
-
 enum config {
   /// Max message length, in characters, including the NULL terminator
   kMaxMessageLength = 281,
@@ -53,7 +50,16 @@ enum config {
   /// Min columns to be available in the terminal
   kMinTerminalCols = 80,
   /// Min columns to be considered for a wide terminal
-  kWideTerminalCols = 94
+  kWideTerminalCols = 94,
+  /// Max cached lines for the chat log window
+  kMaxCachedLines = 100
+};
+
+enum chatWinStatusType {
+  /// The chat window is currently receiving messages in real time
+  kChatWinStatusLive = 1,
+  /// The user is currently navigating the chat window with page keys
+  kChatWinStatusBrowse = 2
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
@@ -62,8 +68,14 @@ static char currentStatusBarMessage[512] = {0};
 /// Associative array where the keys are the user nicknames
 static Hash *users = NULL;
 
+/// Dynamic list that caches the chatlog content
+static List *messages = NULL;
+
 /// Flag used by the user input loop to jump out of get_wch()
 static bool uiTerminate = false;
+
+/// Keeps track of chat window status
+static enum chatWinStatusType chatWinStatus = kChatWinStatusLive;
 
 void UIColors();
 void UIDrawChatWin();
@@ -71,6 +83,7 @@ void UIDrawInputWin();
 void UIDrawStatusBar();
 void UIDrawTermTooSmall();
 void UISetInputCounter(int, int);
+void UILogMessageDisplay(ChatLogEntry *entry);
 
 /**
  * Get the number of available input lines
@@ -140,6 +153,17 @@ void UIInit() {
 
   // Initialise Users hash
   users = Hash_new();
+  if (users == NULL) {
+    fprintf(stderr, "❌ Error: Unable to initialise the users list\n%s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  // Initialise chat buffer
+  messages = List_new();
+  if (messages == NULL) {
+    fprintf(stderr, "❌ Error: Unable to initialise the chat log buffer\n%s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
 
   // Initialises the random generator
   srand(time(NULL));
@@ -167,8 +191,9 @@ void UIClean() {
   UIWindow_destroy(mainWin);
   // Close ncurses
   endwin();
-  // Free user list
+  // Free user list and message buffer
   Hash_free(&users);
+  List_free(&messages);
 }
 
 void UIColors() {
@@ -231,6 +256,25 @@ void UIDrawChatWin() {
   chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (COLS - 2), 1, 1);
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
+
+  // Draw the content inside the window, if present
+  if (messages && messages->length > 0) {
+    // TODO: this is good for live window status,
+    // needs to be reworked for browsing status,
+    // maybe package into a UIDrawChatLogContent()
+    int maxY, maxX;
+    getmaxyx(chatWin, maxY, maxX);
+    (void)maxX;
+    int availableLines = maxY;
+    int start = messages->length - availableLines - 1;
+    if (start < 0) start = 0;
+    for (int line = start; line < messages->length; line++) {
+      ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
+      if (entry != NULL) {
+        UILogMessageDisplay(entry);
+      }
+    }
+  }
 }
 
 /**
@@ -516,86 +560,102 @@ int UIGetUserColor(char *userName) {
 }
 
 /**
- * Writes a message to the chat log window
+ * Displays a log entry in the chat log window
  */
-void UILogMessage(char *buffer, size_t length) {
-  // Compute local time
-  time_t now = time(NULL);
-  char timeBuffer[15] = {0};
-  int result = strftime(timeBuffer, 15, "%H:%M:%S", localtime(&now));
-  if (result <= 0) memset(timeBuffer, 0, 15);
+void UILogMessageDisplay(ChatLogEntry *entry) {
+  if (chatWinStatus != kChatWinStatusLive) return;
 
-  // Display the message
+  // Backup input window coordinates
   int y, x;
   getyx(inputWin, y, x);
-  char *messageContent = NULL;
-  switch (Message_getType(buffer)) {
+
+  switch (entry->type) {
     case kMessageTypeErr:
-      messageContent = Message_getContent(buffer, kMessageTypeErr, length);
       wattron(chatWin, COLOR_PAIR(kColorPairWhiteOnRed));
-      wprintw(chatWin, "[%s] [ERROR] %s\n", timeBuffer, messageContent);
+      wprintw(chatWin, "[%s] [ERROR] %s\n", entry->timestamp, entry->content);
       wattroff(chatWin, COLOR_PAIR(kColorPairWhiteOnRed));
     break;
     case kMessageTypeOk:
-      messageContent = Message_getContent(buffer, kMessageTypeOk, length);
-      if (strlen(messageContent) > 0) {
-        wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
-        wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
-        wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
-      }
-    break;
-    case kMessageTypeLog:
-      messageContent = Message_getContent(buffer, kMessageTypeLog, length);
       wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
-      wprintw(chatWin, "[%s] [SERVER] %s\n", timeBuffer, messageContent);
-      // Intercept user disconnection messace to get user name from the message i
-      // and remove it from the users hash
-      if (strstr(messageContent, "left the chat") != NULL) {
-        char userName[kMaxNicknameSize + 1] = {0};
-        if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
-          if (!Hash_delete(users, userName)) {
-            // Something should happen here, maybe log this?
-            wprintw(
-              chatWin,
-              "[%s] [SERVER] Unable to remove user '%s' from internal hash\n",
-              timeBuffer,
-              userName
-            );
-          }
-        }
-      }
+      wprintw(chatWin, "[%s] [SERVER] %s\n", entry->timestamp, entry->content);
       wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
     break;
-    case kMessageTypeMsg:
-      messageContent = Message_getContent(buffer, kMessageTypeMsg, length);
-      // Get user from message
-      int userColor = kColorPairDefault;
-      {
-        char userName[kMaxNicknameSize + 1] = {0};
-        if (Message_getUser(buffer, userName, kMaxNicknameSize)) {
-          // Get/set color associated to user
-          userColor = UIGetUserColor(userName);
-        }
-      }
+    case kMessageTypeLog:
+      wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+      wprintw(chatWin, "[%s] [SERVER] %s\n", entry->timestamp, entry->content);
+      wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+    break;
+    case kMessageTypeMsg: ;
+      // The semicolon above prevents the
+      // 'a label can only be part of a statement and a declaration is not a statement' error
+      // Get/set color associated to user
+      int userColor = (entry->username) ? UIGetUserColor(entry->username) : kColorPairDefault;
       // Activate color mode
       wattron(chatWin, COLOR_PAIR(userColor));
-      wprintw(chatWin, "[%s] %s\n", timeBuffer, messageContent);
+      wprintw(chatWin, "[%s] %s\n", entry->timestamp, entry->content);
       // Deactivate color mode
       wattroff(chatWin, COLOR_PAIR(userColor));
     break;
-    case kMessageTypeQuit:
-      // TODO: close the chat
-      break;
-    break;
     default:
       // Print up to byte_received from the server
-      wprintw(chatWin, "Received (%d bytes): %.*s\n", length, length, buffer);
+      wprintw(chatWin, "Received (%d bytes): %.*s\n", entry->length, entry->length, entry->content);
     break;
   }
   wrefresh(chatWin);
-  Message_free(&messageContent);
+
+  // Restore input window coordinates
   wmove(inputWin, y, x);
   wrefresh(inputWin);
+}
+
+/**
+ * Writes a message to the chat log window
+ */
+void UILogMessage(char *buffer, size_t length) {
+  // Process the server data into a temporary entry
+  ChatLogEntry *entry = ChatLogEntry_create(buffer, length);
+  if (entry != NULL) {
+
+    // Deal with server-issued /quit command
+    if (entry->type == kMessageTypeQuit) {
+      wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+      wprintw(chatWin, "[%s] [SERVER] You've been disconnected - %s\n", entry->timestamp, entry->content);
+      wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+      ChatLogEntry_free(&entry);
+      // Tells the user input loop to stop
+      pthread_kill(pthread_self(), SIGUSR1);
+      return;
+    }
+
+    // Append the entry to the buffer list
+    List_append(messages, entry, sizeof(ChatLogEntry));
+    // Delete the oldest node if we reach the max allowed buffer
+    if (messages->length > kMaxCachedLines) {
+      List_delete(messages, 0);
+    }
+
+    // Do actions based on entry content (e.g. deleting a user from the Hash list)
+
+    // Intercept user disconnection message to get user name from the message i
+    // and remove it from the users hash
+    if (entry->type == kMessageTypeLog && entry->username && strstr(entry->content, "left the chat") != NULL) {
+      if (!Hash_delete(users, entry->username)) {
+        // This is temporary and should be logged on file, the user shouldn't see it
+        wprintw(
+          chatWin,
+          "[%s] [SERVER] Unable to remove user '%s' from internal hash\n",
+          entry->timestamp,
+          entry->username
+        );
+      }
+    }
+
+    // Display the message on the log window if in 'follow' mode
+    UILogMessageDisplay(entry);
+
+    // Destroy the temporary entry
+    ChatLogEntry_free(&entry);
+  }
 }
 
 /**

@@ -17,9 +17,7 @@
 #include "socket/socket.h"
 #include "message/message.h"
 
-enum {
-  kBufferSize = 1024 ///< Max size of data that can be sent, including the NULL terminator
-};
+#include "../c2hat.h"
 
 /// Contains information on the current client application
 typedef struct _C2HatClient {

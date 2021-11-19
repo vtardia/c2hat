@@ -228,6 +228,30 @@ void UIColors() {
 }
 
 /**
+ * Fill the chat/log window with content from the buffer
+ */
+void UIDrawChatWinContent() {
+  if (messages && messages->length > 0) {
+    int maxY, maxX;
+    getmaxyx(chatWin, maxY, maxX);
+    (void)maxX;
+    int availableLines = maxY;
+    int start = 0;
+
+    if (chatWinStatus == kChatWinStatusLive) {
+      start = messages->length - availableLines - 1;
+      if (start < 0) start = 0;
+      for (int line = start; line < messages->length; line++) {
+        ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
+        if (entry != NULL) {
+          UILogMessageDisplay(entry);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Draws the chat/log window
  */
 void UIDrawChatWin() {
@@ -258,23 +282,7 @@ void UIDrawChatWin() {
   leaveok(chatWin, TRUE);
 
   // Draw the content inside the window, if present
-  if (messages && messages->length > 0) {
-    // TODO: this is good for live window status,
-    // needs to be reworked for browsing status,
-    // maybe package into a UIDrawChatLogContent()
-    int maxY, maxX;
-    getmaxyx(chatWin, maxY, maxX);
-    (void)maxX;
-    int availableLines = maxY;
-    int start = messages->length - availableLines - 1;
-    if (start < 0) start = 0;
-    for (int line = start; line < messages->length; line++) {
-      ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
-      if (entry != NULL) {
-        UILogMessageDisplay(entry);
-      }
-    }
-  }
+  UIDrawChatWinContent();
 }
 
 /**
@@ -359,10 +367,14 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     int res = get_wch(&ch);
     if (res == ERR) {
       // EINTR means a signal is received, for example resize (which we are ignoring here)
-      if (errno != EINTR) break;
+      if (errno != EINTR) {
+        // We may want to know what the error was (TODO: maybe use a logger here)
+        fprintf(stdout, "Error: %d - %s\n", errno, strerror(errno));
+        break;
+      }
 
       // We need to process the SIGUSR1 output that tells us to terminate
-      if (errno == EINTR && uiTerminate) {
+      if (/* errno == EINTR && */ uiTerminate) {
         sleep(2); // Allow the user to read the error message on the chat log
         break;
       }

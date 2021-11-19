@@ -74,7 +74,9 @@ void *App_listen(void *client) {
   while(!terminate) {
     if (!SOCKET_isValid(server)) break;
     if (select(server + 1, &reads, 0, 0, NULL) < 0) {
-      if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
+      // Ignore a signal received before timeout, will be managed by handler
+      if (SOCKET_getErrorNumber() == EINTR) continue;
+
       fprintf(stderr, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       terminate = true;
       break;

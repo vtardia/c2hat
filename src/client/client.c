@@ -180,6 +180,9 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
       return -1;
     }
     if (bytesReceived < 0) {
+      // Ignore a signal received before timeout, will be managed by handler
+      if (SOCKET_getErrorNumber() == EINTR) continue;
+
       fprintf(this->err, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
       // We don't care about partial read, it would be useless anyway
       return -1;

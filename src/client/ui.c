@@ -84,6 +84,7 @@ void UIDrawStatusBar();
 void UIDrawTermTooSmall();
 void UISetInputCounter(int, int);
 void UILogMessageDisplay(ChatLogEntry *entry);
+void UIDrawAll();
 
 /**
  * Get the number of available input lines
@@ -143,14 +144,6 @@ void UIInit() {
   // Initialise colors
   UIColors();
 
-  if (UITermIsBigEnough()) {
-    UIDrawChatWin();
-    UIDrawInputWin();
-    UIDrawStatusBar();
-  } else {
-    UIDrawTermTooSmall();
-  }
-
   // Initialise Users hash
   users = Hash_new();
   if (users == NULL) {
@@ -167,6 +160,9 @@ void UIInit() {
 
   // Initialises the random generator
   srand(time(NULL));
+
+  // Draw the interface (after all init)
+  UIDrawAll();
 }
 
 /**
@@ -739,6 +735,14 @@ void UIResizeHandler(int signal) {
   refresh();
   clear();
 
+  // Redraw the user interface
+  UIDrawAll();
+}
+
+/**
+ * Draws the whole interface
+ */
+void UIDrawAll() {
   if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();
@@ -752,3 +756,4 @@ void UIResizeHandler(int signal) {
   }
   UIDrawTermTooSmall();
 }
+

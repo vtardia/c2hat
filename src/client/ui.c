@@ -77,6 +77,9 @@ static bool uiTerminate = false;
 /// Keeps track of chat window status
 static enum chatWinStatusType chatWinStatus = kChatWinStatusLive;
 
+static int screenLines = 0;
+static int screenCols = 0;
+
 void UIColors();
 void UIDrawChatWin();
 void UIDrawInputWin();
@@ -91,7 +94,7 @@ void UIDrawAll();
  * based on the terminal width
  */
 int UIGetInputLines() {
-  return (COLS < kWideTerminalCols) ? 4  : 3;
+  return (screenCols < kWideTerminalCols) ? 4  : 3;
 }
 
 /**
@@ -100,8 +103,8 @@ int UIGetInputLines() {
  * characters in the input window
  */
 bool UITermIsBigEnough() {
-  int lines= UIGetInputLines();
-  return (LINES > kMinTerminalLines && COLS > kMinTerminalCols && ((COLS - 1) * lines) >= kMaxMessageLength);
+  int lines = UIGetInputLines();
+  return (screenLines > kMinTerminalLines && screenCols > kMinTerminalCols && ((screenCols - 1) * lines) >= kMaxMessageLength);
 }
 
 /**
@@ -123,6 +126,7 @@ void UIInit() {
     fprintf(stderr, "❌ Error: Unable to initialise the user interface\n%s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
+  getmaxyx(mainWin, screenLines, screenCols);
 
   // Read input one char at a time,
   // disable line buffering, keeping CTRL as default SIGINT
@@ -233,6 +237,7 @@ void UIDrawChatWinContent() {
     (void)maxX;
     int availableLines = maxY;
     int start = 0;
+    wmove(chatWin, 0, 0);
 
     if (chatWinStatus == kChatWinStatusLive) {
       start = messages->length - availableLines - 1;
@@ -253,10 +258,14 @@ void UIDrawChatWinContent() {
 void UIDrawChatWin() {
   // If the terminal is not wide enough we need a smaller chat and a bigger
   // input window
-  int chatWinBoxHeight = (COLS < kWideTerminalCols) ? (LINES - 7) : (LINES - 6);
+  int chatWinBoxHeight = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
 
   // Create the chat window container: 80% tall, 100% wide, starts at top left
-  chatWinBox = subwin(mainWin, chatWinBoxHeight, COLS, 0, 0);
+  if (chatWinBox != NULL) {
+    wresize(chatWinBox, chatWinBoxHeight, screenCols);
+  } else {
+    chatWinBox = subwin(mainWin, chatWinBoxHeight, screenCols, 0, 0);
+  }
 
   // Add border, just top and bottom to avoid breaking the layout
   // when the user inserts emojis
@@ -267,15 +276,20 @@ void UIDrawChatWin() {
   // Draw title
   const char *title = " C2Hat ";
   size_t titleLength = strlen(title);
-  mvwaddch(chatWinBox, 0, (COLS/2) - titleLength/2 - 1 , ACS_RTEE);
-  mvwaddstr(chatWinBox, 0, (COLS/2) - titleLength/2, title);
-  mvwaddch(chatWinBox, 0, (COLS/2) + titleLength/2 + 1, ACS_LTEE);
+  mvwaddch(chatWinBox, 0, (screenCols/2) - titleLength/2 - 1 , ACS_RTEE);
+  mvwaddstr(chatWinBox, 0, (screenCols/2) - titleLength/2, title);
+  mvwaddch(chatWinBox, 0, (screenCols/2) + titleLength/2 + 1, ACS_LTEE);
   wrefresh(chatWinBox);
 
   // Draw the scrollable chat log box, within the chat window
-  chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (COLS - 2), 1, 1);
+  if (chatWin != NULL) {
+    wresize(chatWin, (chatWinBoxHeight - 2), (screenCols - 2));
+  } else {
+    chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (screenCols - 2), 1, 1);
+  }
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
+  wrefresh(chatWin);
 
   // Draw the content inside the window, if present
   UIDrawChatWinContent();
@@ -287,16 +301,25 @@ void UIDrawChatWin() {
 void UIDrawInputWin() {
   // Set sizes: ith narrow terminals we need 4 lines to fit the whole message,
   // wider terminals are ok with 3 lines
-  int inputWinBoxHeight = (COLS < kWideTerminalCols) ? 6  : 5;
-  int inputWinBoxStart = (COLS < kWideTerminalCols) ? (LINES - 7) : (LINES - 6);
+  int inputWinBoxHeight = (screenCols < kWideTerminalCols) ? 6  : 5;
+  int inputWinBoxStart = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
 
   // Input box container: 20% tall, 100% wide, starts at the bottom of the chat box
-  inputWinBox = subwin(mainWin, inputWinBoxHeight, COLS, inputWinBoxStart, 0);
+  if (inputWinBox == NULL) {
+    inputWinBox = subwin(mainWin, inputWinBoxHeight, screenCols, inputWinBoxStart, 0);
+  } else {
+    wresize(inputWinBox, inputWinBoxHeight, screenCols);
+  }
   wborder(inputWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
   wrefresh(inputWinBox);
 
   // Input box, within the container
-  inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (COLS - 2), (inputWinBoxStart + 1), 1);
+  if (inputWin == NULL) {
+    inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (screenCols - 2), (inputWinBoxStart + 1), 1);
+  } else {
+    wresize(inputWin, (inputWinBoxHeight - 2), (screenCols - 2));
+  }
+  wrefresh(inputWin);
 }
 
 /**
@@ -304,7 +327,7 @@ void UIDrawInputWin() {
  */
 void UIDrawStatusBar() {
   // h, w, posY, posX
-  statusBarWin = subwin(mainWin, 1, COLS, LINES -1, 0);
+  statusBarWin = subwin(mainWin, 1, screenCols, screenLines -1, 0);
   leaveok(statusBarWin, TRUE);
   // Set window default background
   wbkgd(statusBarWin, COLOR_PAIR(kColorPairWhiteOnBlue));
@@ -672,11 +695,11 @@ void UILogMessage(char *buffer, size_t length) {
 void UISetStatusMessage(char *buffer, size_t length) {
   // Calculate the terminal size to be displayed at the bottom left
   char termSize[20] = {0};
-  snprintf(termSize, 19, "[%d,%d]", COLS, LINES);
+  snprintf(termSize, 19, "[%d,%d]", screenCols, screenLines);
   size_t termSizeLength = strlen(termSize);
 
   // Considers 80% of the status bar available, minus the term size message
-  size_t availableSpace = (COLS * 0.8) - termSizeLength;
+  size_t availableSpace = (screenCols * 0.8) - termSizeLength;
   size_t size = (length < availableSpace) ? length : (availableSpace - 1);
 
   // Display the term size
@@ -698,7 +721,7 @@ void UISetInputCounter(int current, int max) {
   getyx(inputWin, y, x);
   char text[20] = {0};
   size_t length = sprintf(text, "%4d/%d", current, max);
-  mvwprintw(statusBarWin, 0, (COLS - length - 1), "%s", text);
+  mvwprintw(statusBarWin, 0, (screenCols - length - 1), "%s", text);
   wrefresh(statusBarWin);
   wmove(inputWin, y, x);
   wrefresh(inputWin);
@@ -711,8 +734,8 @@ void UISetInputCounter(int current, int max) {
 void UIDrawTermTooSmall() {
   char *message = "Sorry, your terminal is too small!";
   size_t messageSize = strlen(message);
-  mvwprintw(mainWin, (LINES/2), (COLS/2 - messageSize/2), "%s", message);
-  mvwprintw(mainWin, (LINES/2 + 1), (COLS/2 - 3), "%dx%d", LINES, COLS);
+  mvwprintw(mainWin, (screenLines/2), (screenCols/2 - messageSize/2), "%s", message);
+  mvwprintw(mainWin, (screenLines/2 + 1), (screenCols/2 - 3), "%dx%d", screenLines, screenCols);
   wrefresh(mainWin);
 }
 
@@ -728,14 +751,17 @@ void UITerminate(int signal) {
  * Intercepts terminal resize events
  */
 void UIResizeHandler(int signal) {
-  fprintf(stderr, "Received %d\n", signal);
+  (void)signal;
+  //fprintf(stderr, "Received %d\n", signal);
 
-  // End current windows
+  // End current windows (temporary escape)
   endwin();
+  // Resume visual mode
   refresh();
   clear();
 
   // Redraw the user interface
+  getmaxyx(mainWin, screenLines, screenCols);
   UIDrawAll();
 }
 
@@ -743,6 +769,7 @@ void UIResizeHandler(int signal) {
  * Draws the whole interface
  */
 void UIDrawAll() {
+  wresize(mainWin, screenLines, screenCols);
   if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();

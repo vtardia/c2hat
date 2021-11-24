@@ -77,8 +77,20 @@ static bool uiTerminate = false;
 /// Keeps track of chat window status
 static enum chatWinStatusType chatWinStatus = kChatWinStatusLive;
 
+/// Available lines in the main window
 static int screenLines = 0;
+
+/// Available columns in the main window
 static int screenCols = 0;
+
+/// Available lines in the chat window
+static int chatWinLines = 0;
+
+/// Available columns in the chat window
+static int chatWinCols = 0;
+
+/// Keeps track of the current start line when in browse mode
+static int chatLogCurrentLine = 0;
 
 void UIColors();
 void UIDrawChatWin();
@@ -88,6 +100,37 @@ void UIDrawTermTooSmall();
 void UISetInputCounter(int, int);
 void UILogMessageDisplay(ChatLogEntry *entry);
 void UIDrawAll();
+
+/**
+ * Switches the chat window mode to Live
+ */
+void UISetChatModeLive() {
+  if (chatWinStatus != kChatWinStatusLive) {
+    chatWinStatus = kChatWinStatusLive;
+    if (messages && messages->length > 0) {
+      chatLogCurrentLine = messages->length -1;
+    }
+    // Update status bar
+    mvwprintw(statusBarWin, 0, 2, "%s", "C");
+    wrefresh(statusBarWin);
+    UILoopInit();
+  }
+}
+
+/**
+ * Switches the chat window mode to Browse
+ */
+void UISetChatModeBrowse() {
+  if (chatWinStatus != kChatWinStatusBrowse && messages && messages->length > chatWinLines) {
+    chatWinStatus = kChatWinStatusBrowse;
+    // Position the line pointer at the start ot the page
+    chatLogCurrentLine = messages->length - chatWinLines -1;
+    // Update status bar
+    mvwprintw(statusBarWin, 0, 2, "%s", "B");
+    wrefresh(statusBarWin);
+    UILoopInit();
+  }
+}
 
 /**
  * Get the number of available input lines
@@ -173,6 +216,7 @@ void UIInit() {
  * Destroys the given window object
  */
 void UIWindow_destroy(WINDOW *win) {
+  if (win == NULL) return;
   wborder(win, ' ', ' ', ' ',' ',' ',' ',' ',' ');
   wrefresh(win);
   delwin(win);
@@ -231,18 +275,27 @@ void UIColors() {
  * Fill the chat/log window with content from the buffer
  */
 void UIDrawChatWinContent() {
-  if (messages && messages->length > 0) {
-    int maxY, maxX;
-    getmaxyx(chatWin, maxY, maxX);
-    (void)maxX;
-    int availableLines = maxY;
+  if (chatWin && messages && messages->length > 0) {
+    int availableLines = chatWinLines;
     int start = 0;
+    wclear(chatWin);
     wmove(chatWin, 0, 0);
 
     if (chatWinStatus == kChatWinStatusLive) {
       start = messages->length - availableLines - 1;
       if (start < 0) start = 0;
       for (int line = start; line < messages->length; line++) {
+        ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
+        if (entry != NULL) {
+          UILogMessageDisplay(entry);
+        }
+      }
+    }
+    if (chatWinStatus == kChatWinStatusBrowse) {
+      // A page up/down key handler will manage the current line pointer
+      start = chatLogCurrentLine;
+      int end = start + availableLines;
+      for (int line = start; (line < messages->length && line < end); line++) {
         ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
         if (entry != NULL) {
           UILogMessageDisplay(entry);
@@ -260,12 +313,11 @@ void UIDrawChatWin() {
   // input window
   int chatWinBoxHeight = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
 
+  if (chatWin != NULL) UIWindow_destroy(chatWin);
+  if (chatWinBox != NULL) UIWindow_destroy(chatWinBox);
+
   // Create the chat window container: 80% tall, 100% wide, starts at top left
-  if (chatWinBox != NULL) {
-    wresize(chatWinBox, chatWinBoxHeight, screenCols);
-  } else {
-    chatWinBox = subwin(mainWin, chatWinBoxHeight, screenCols, 0, 0);
-  }
+  chatWinBox = subwin(mainWin, chatWinBoxHeight, screenCols, 0, 0);
 
   // Add border, just top and bottom to avoid breaking the layout
   // when the user inserts emojis
@@ -282,14 +334,11 @@ void UIDrawChatWin() {
   wrefresh(chatWinBox);
 
   // Draw the scrollable chat log box, within the chat window
-  if (chatWin != NULL) {
-    wresize(chatWin, (chatWinBoxHeight - 2), (screenCols - 2));
-  } else {
-    chatWin = subwin(chatWinBox, (chatWinBoxHeight - 2), (screenCols - 2), 1, 1);
-  }
+  chatWin = subwin(chatWinBox, (chatWinBoxHeight - 1), (screenCols - 2), 1, 1);
   scrollok(chatWin, TRUE);
   leaveok(chatWin, TRUE);
   wrefresh(chatWin);
+  getmaxyx(chatWin, chatWinLines, chatWinCols);
 
   // Draw the content inside the window, if present
   UIDrawChatWinContent();
@@ -304,21 +353,16 @@ void UIDrawInputWin() {
   int inputWinBoxHeight = (screenCols < kWideTerminalCols) ? 6  : 5;
   int inputWinBoxStart = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
 
+  if (inputWin != NULL) UIWindow_destroy(inputWin);
+  if (inputWinBox != NULL) UIWindow_destroy(inputWinBox);
+
   // Input box container: 20% tall, 100% wide, starts at the bottom of the chat box
-  if (inputWinBox == NULL) {
-    inputWinBox = subwin(mainWin, inputWinBoxHeight, screenCols, inputWinBoxStart, 0);
-  } else {
-    wresize(inputWinBox, inputWinBoxHeight, screenCols);
-  }
+  inputWinBox = subwin(mainWin, inputWinBoxHeight, screenCols, inputWinBoxStart, 0);
   wborder(inputWinBox, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
   wrefresh(inputWinBox);
 
   // Input box, within the container
-  if (inputWin == NULL) {
-    inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (screenCols - 2), (inputWinBoxStart + 1), 1);
-  } else {
-    wresize(inputWin, (inputWinBoxHeight - 2), (screenCols - 2));
-  }
+  inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (screenCols - 2), (inputWinBoxStart + 1), 1);
   wrefresh(inputWin);
 }
 
@@ -326,6 +370,8 @@ void UIDrawInputWin() {
  * Draws the status bar as last line of the screen
  */
 void UIDrawStatusBar() {
+  if (statusBarWin != NULL) UIWindow_destroy(statusBarWin);
+
   // h, w, posY, posX
   statusBarWin = subwin(mainWin, 1, screenCols, screenLines -1, 0);
   leaveok(statusBarWin, TRUE);
@@ -339,9 +385,11 @@ void UIDrawStatusBar() {
  * to the input window to receive input
  */
 void UILoopInit() {
-  wrefresh(chatWin);
-  wcursyncup(inputWin);
-  wrefresh(inputWin);
+  if (chatWin && inputWin) {
+    wrefresh(chatWin);
+    wcursyncup(inputWin);
+    wrefresh(inputWin);
+  }
 }
 
 /**
@@ -371,17 +419,20 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   *end = 0;
 
   // Initialise the input window and counters
-  wmove(inputWin, 0, 0);
-  wclear(inputWin);
-  wrefresh(inputWin);
-  getmaxyx(inputWin, maxY, maxX);
-  if (eob > (maxX * maxY)) {
-    eob = maxX * maxY;
+  if (inputWin) {
+    wmove(inputWin, 0, 0);
+    wclear(inputWin);
+    wrefresh(inputWin);
+    getmaxyx(inputWin, maxY, maxX);
+    if (eob > (maxX * maxY)) {
+      eob = maxX * maxY;
+    }
+    UISetInputCounter(eom, eob);
   }
-  UISetInputCounter(eom, eob);
 
   // Wait for input
   while (true) {
+    if (inputWin == NULL) continue;
     // Receives a Unicode character from the user
     int res = get_wch(&ch);
     if (res == ERR) {
@@ -402,6 +453,14 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     // Exit on F1
     if (ch == KEY_F(1)) break;
 
+    if (ch == KEY_F(2)) {
+      UISetChatModeBrowse();
+      continue;
+    }
+    if (ch == KEY_F(3)) {
+      UISetChatModeLive();
+      continue;
+    }
     // Ignore resize key
     if (ch == KEY_RESIZE) continue;
 
@@ -461,13 +520,18 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         }
       break;
       case kKeyESC:
-        // Cancel any operation and reset everything
-        wmove(inputWin, 0, 0);
-        wclear(inputWin);
-        wrefresh(inputWin);
-        cursor = 0;
-        eom = 0;
-        UISetInputCounter(eom, eob);
+        if (chatWinStatus == kChatWinStatusBrowse) {
+          // If in browse mode, exit and go live
+          UISetChatModeLive();
+        } else {
+          // If in Live mode, cancel any input operation and reset everything
+          wmove(inputWin, 0, 0);
+          wclear(inputWin);
+          wrefresh(inputWin);
+          cursor = 0;
+          eom = 0;
+          UISetInputCounter(eom, eob);
+        }
       break;
       case KEY_LEFT:
         // Advance the cursor if possible
@@ -518,6 +582,20 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
             cursor += maxX;
           }
         }
+      break;
+      case KEY_PPAGE:
+        // Set the chat window in Browse mode
+        // and display the previous screen
+        UISetChatModeBrowse();
+        chatLogCurrentLine -= chatWinLines;
+        UIDrawChatWinContent();
+      break;
+      case KEY_NPAGE:
+        // Set the chat window in Browse mode
+        // and display the next screen
+        UISetChatModeBrowse();
+        chatLogCurrentLine += chatWinLines;
+        UIDrawChatWinContent();
       break;
       default:
         // If we have space, AND the input character is not a control char,
@@ -595,10 +673,13 @@ int UIGetUserColor(char *userName) {
  */
 void UILogMessageDisplay(ChatLogEntry *entry) {
   if (chatWinStatus != kChatWinStatusLive) return;
+  if (chatWin == NULL) return;
+  if (entry == NULL || entry->length == 0) return;
+  *(entry->content + entry->length) = 0;
 
   // Backup input window coordinates
-  int y, x;
-  getyx(inputWin, y, x);
+  int y = 0, x = 0;
+  if (inputWin) getyx(inputWin, y, x);
 
   switch (entry->type) {
     case kMessageTypeErr:
@@ -635,8 +716,10 @@ void UILogMessageDisplay(ChatLogEntry *entry) {
   wrefresh(chatWin);
 
   // Restore input window coordinates
-  wmove(inputWin, y, x);
-  wrefresh(inputWin);
+  if (inputWin) {
+    wmove(inputWin, y, x);
+    wrefresh(inputWin);
+  }
 }
 
 /**
@@ -649,9 +732,11 @@ void UILogMessage(char *buffer, size_t length) {
 
     // Deal with server-issued /quit command
     if (entry->type == kMessageTypeQuit) {
-      wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
-      wprintw(chatWin, "[%s] [SERVER] You've been disconnected - %s\n", entry->timestamp, entry->content);
-      wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+      if (chatWin) {
+        wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+        wprintw(chatWin, "[%s] [SERVER] You've been disconnected - %s\n", entry->timestamp, entry->content);
+        wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
+      }
       ChatLogEntry_free(&entry);
       // Tells the user input loop to stop
       pthread_kill(pthread_self(), SIGUSR1);
@@ -693,20 +778,30 @@ void UILogMessage(char *buffer, size_t length) {
  * Updates the content of the status bar
  */
 void UISetStatusMessage(char *buffer, size_t length) {
+  if (statusBarWin == NULL) return;
+
   // Calculate the terminal size to be displayed at the bottom left
   char termSize[20] = {0};
   snprintf(termSize, 19, "[%d,%d]", screenCols, screenLines);
   size_t termSizeLength = strlen(termSize);
 
+  // Determine the current chat window mode
+  char chatWinMode[10] = {0};
+  snprintf(chatWinMode, 9, "[%s]", (chatWinStatus == kChatWinStatusBrowse ? "B" : "C"));
+  size_t chatWinModeLength = strlen(chatWinMode);
+
   // Considers 80% of the status bar available, minus the term size message
-  size_t availableSpace = (screenCols * 0.8) - termSizeLength;
+  size_t availableSpace = (screenCols * 0.8) - termSizeLength - chatWinModeLength;
   size_t size = (length < availableSpace) ? length : (availableSpace - 1);
 
+  // Display the chat win mode
+  mvwprintw(statusBarWin, 0, 1, "%s", chatWinMode);
+
   // Display the term size
-  mvwprintw(statusBarWin, 0, 1, "%s", termSize);
+  mvwprintw(statusBarWin, 0, chatWinModeLength + 2, "%s", termSize);
 
   // Display the provided message after the term size
-  if (mvwprintw(statusBarWin, 0, termSizeLength + 2, "%.*s", size, buffer) != ERR) {
+  if (mvwprintw(statusBarWin, 0, chatWinModeLength + termSizeLength + 3, "%.*s", size, buffer) != ERR) {
     wrefresh(statusBarWin);
     memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
   }
@@ -717,6 +812,8 @@ void UISetStatusMessage(char *buffer, size_t length) {
  * using the format <current char>/<max chars>
  */
 void UISetInputCounter(int current, int max) {
+  if (inputWin == NULL) return;
+
   int y, x;
   getyx(inputWin, y, x);
   char text[20] = {0};
@@ -752,7 +849,6 @@ void UITerminate(int signal) {
  */
 void UIResizeHandler(int signal) {
   (void)signal;
-  //fprintf(stderr, "Received %d\n", signal);
 
   // End current windows (temporary escape)
   endwin();
@@ -760,8 +856,10 @@ void UIResizeHandler(int signal) {
   refresh();
   clear();
 
-  // Redraw the user interface
   getmaxyx(mainWin, screenLines, screenCols);
+  wresize(mainWin, screenLines, screenCols);
+
+  // Redraw the user interface
   UIDrawAll();
 }
 
@@ -769,7 +867,6 @@ void UIResizeHandler(int signal) {
  * Draws the whole interface
  */
 void UIDrawAll() {
-  wresize(mainWin, screenLines, screenCols);
   if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();

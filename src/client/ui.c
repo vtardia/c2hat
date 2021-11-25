@@ -225,6 +225,7 @@ void UIInit() {
 void UIWindow_destroy(WINDOW *win) {
   if (win == NULL) return;
   wborder(win, ' ', ' ', ' ',' ',' ',' ',' ',' ');
+  wclear(win);
   wrefresh(win);
   delwin(win);
 }

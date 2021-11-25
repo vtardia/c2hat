@@ -92,6 +92,9 @@ static int chatWinCols = 0;
 /// Keeps track of the current start line when in browse mode
 static int chatLogCurrentLine = 0;
 
+// Mutex for message queue
+pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
+
 void UIColors();
 void UIDrawChatWin();
 void UIDrawInputWin();
@@ -106,6 +109,7 @@ void UIDrawAll();
  */
 void UISetChatModeLive() {
   if (chatWinStatus != kChatWinStatusLive) {
+    pthread_mutex_lock(&messagesLock);
     chatWinStatus = kChatWinStatusLive;
     if (messages && messages->length > 0) {
       chatLogCurrentLine = messages->length -1;
@@ -114,6 +118,7 @@ void UISetChatModeLive() {
     mvwprintw(statusBarWin, 0, 2, "%s", "C");
     wrefresh(statusBarWin);
     UILoopInit();
+    pthread_mutex_unlock(&messagesLock);
   }
 }
 
@@ -121,6 +126,7 @@ void UISetChatModeLive() {
  * Switches the chat window mode to Browse
  */
 void UISetChatModeBrowse() {
+  pthread_mutex_lock(&messagesLock);
   if (chatWinStatus != kChatWinStatusBrowse && messages && messages->length > chatWinLines) {
     chatWinStatus = kChatWinStatusBrowse;
     // Position the line pointer at the start ot the page
@@ -130,6 +136,7 @@ void UISetChatModeBrowse() {
     wrefresh(statusBarWin);
     UILoopInit();
   }
+  pthread_mutex_unlock(&messagesLock);
 }
 
 /**
@@ -275,6 +282,7 @@ void UIColors() {
  * Fill the chat/log window with content from the buffer
  */
 void UIDrawChatWinContent() {
+  pthread_mutex_lock(&messagesLock);
   if (chatWin && messages && messages->length > 0) {
     int availableLines = chatWinLines;
     int start = 0;
@@ -303,6 +311,7 @@ void UIDrawChatWinContent() {
       }
     }
   }
+  pthread_mutex_unlock(&messagesLock);
 }
 
 /**
@@ -675,7 +684,6 @@ void UILogMessageDisplay(ChatLogEntry *entry) {
   if (chatWinStatus != kChatWinStatusLive) return;
   if (chatWin == NULL) return;
   if (entry == NULL || entry->length == 0) return;
-  *(entry->content + entry->length) = 0;
 
   // Backup input window coordinates
   int y = 0, x = 0;
@@ -743,12 +751,14 @@ void UILogMessage(char *buffer, size_t length) {
       return;
     }
 
+    pthread_mutex_lock(&messagesLock);
     // Append the entry to the buffer list
     List_append(messages, entry, sizeof(ChatLogEntry));
     // Delete the oldest node if we reach the max allowed buffer
     if (messages->length > kMaxCachedLines) {
       List_delete(messages, 0);
     }
+    pthread_mutex_unlock(&messagesLock);
 
     // Do actions based on entry content (e.g. deleting a user from the Hash list)
 
@@ -857,7 +867,6 @@ void UIResizeHandler(int signal) {
   clear();
 
   getmaxyx(mainWin, screenLines, screenCols);
-  wresize(mainWin, screenLines, screenCols);
 
   // Redraw the user interface
   UIDrawAll();

@@ -8,7 +8,7 @@ VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
 # Note: on macOS you need to install the updated ncurses with Homebrew
 # then you can use $(ncursesw6-config --cflags --libs) to get the correct parameters
-CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -lncursesw -ltinfo -ldl
+CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -ldl -lncursesw
 TESTCONFIGLIBS =
 BINPREFIX = c2hat-
 
@@ -32,8 +32,10 @@ else
 		TESTCONFIGLIBS +=  -lrt
 	endif
 	ifeq ($(UNAME_S),Darwin)
-		OSFLAG += -D MACOS
+		OSFLAG += -D MACOS -D_XOPEN_SOURCE_EXTENDED -D_XOPEN_CURSES -D_DARWIN_C_SOURCE
 		VALGRIND =
+		INCFLAGS += -I/opt/homebrew/Cellar/ncurses/6.3/include/ncursesw -I/opt/homebrew/Cellar/ncurses/6.3/include
+		CLIENTLIBS += -L/opt/homebrew/Cellar/ncurses/6.3/lib -Wl,-search_paths_first
 	endif
 endif
 

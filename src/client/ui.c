@@ -620,7 +620,7 @@ void UILogMessageDisplay(ChatLogEntry *entry) {
       // The semicolon above prevents the
       // 'a label can only be part of a statement and a declaration is not a statement' error
       // Get/set color associated to user
-      int userColor = (entry->username) ? UIGetUserColor(entry->username) : kColorPairDefault;
+      int userColor = (strlen(entry->username)) ? UIGetUserColor(entry->username) : kColorPairDefault;
       // Activate color mode
       wattron(chatWin, COLOR_PAIR(userColor));
       wprintw(chatWin, "[%s] %s\n", entry->timestamp, entry->content);
@@ -629,7 +629,7 @@ void UILogMessageDisplay(ChatLogEntry *entry) {
     break;
     default:
       // Print up to byte_received from the server
-      wprintw(chatWin, "Received (%d bytes): %.*s\n", entry->length, entry->length, entry->content);
+      wprintw(chatWin, "Received (%zu bytes): %.*s\n", entry->length, (int) entry->length, entry->content);
     break;
   }
   wrefresh(chatWin);
@@ -669,7 +669,7 @@ void UILogMessage(char *buffer, size_t length) {
 
     // Intercept user disconnection message to get user name from the message i
     // and remove it from the users hash
-    if (entry->type == kMessageTypeLog && entry->username && strstr(entry->content, "left the chat") != NULL) {
+    if (entry->type == kMessageTypeLog && strlen(entry->username) && strstr(entry->content, "left the chat") != NULL) {
       if (!Hash_delete(users, entry->username)) {
         // This is temporary and should be logged on file, the user shouldn't see it
         wprintw(
@@ -706,7 +706,7 @@ void UISetStatusMessage(char *buffer, size_t length) {
   mvwprintw(statusBarWin, 0, 1, "%s", termSize);
 
   // Display the provided message after the term size
-  if (mvwprintw(statusBarWin, 0, termSizeLength + 2, "%.*s", size, buffer) != ERR) {
+  if (mvwprintw(statusBarWin, 0, termSizeLength + 2, "%.*s", (int)size, buffer) != ERR) {
     wrefresh(statusBarWin);
     memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
   }

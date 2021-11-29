@@ -13,6 +13,7 @@
 #include <locale.h>
 #include <getopt.h>
 #include <libgen.h>
+#include <wchar.h>
 
 #include "ui.h"
 #include "client.h"

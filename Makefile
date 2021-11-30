@@ -8,7 +8,7 @@ VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
 # Note: on macOS you need to install the updated ncurses with Homebrew
 # then you can use $(ncursesw6-config --cflags --libs) to get the correct parameters
-CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -ldl -lncursesw
+CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -lqueue -ldl -lncursesw
 TESTCONFIGLIBS =
 BINPREFIX = c2hat-
 
@@ -30,6 +30,7 @@ else
 		OSFLAG += -D LINUX -D _GNU_SOURCE -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600
 		SERVERLIBS +=  -lrt
 		TESTCONFIGLIBS +=  -lrt
+		CLIENTLIBS += -ltinfo
 	endif
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS -D_XOPEN_SOURCE_EXTENDED -D_XOPEN_CURSES -D_DARWIN_C_SOURCE
@@ -122,7 +123,7 @@ obj/lib/validate.o: prereq src/lib/validate/validate.c
 
 
 # Client final binary
-client: prereq libsocket libhash libwtrim libmessage liblist obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o obj/client/uilog.o
+client: prereq libsocket libhash libwtrim libmessage liblist libqueue obj/client/app.o obj/client/main.o obj/client/client.o obj/client/ui.o obj/client/uilog.o
 	$(CC) $(CFLAGS) obj/client/*.o $(LDFLAGS) $(CLIENTLIBS) -o bin/$(BINPREFIX)cli
 
 

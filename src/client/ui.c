@@ -20,6 +20,7 @@
 #include "message/message.h"
 #include "hash/hash.h"
 #include "list/list.h"
+#include "queue/queue.h"
 #include "uilog.h"
 
 enum keys {
@@ -71,6 +72,9 @@ static Hash *users = NULL;
 /// Dynamic list that caches the chatlog content
 static List *messages = NULL;
 
+/// Dynamic queue for message events
+static Queue *events = NULL;
+
 /// Flag used by the user input loop to jump out of get_wch()
 static bool uiTerminate = false;
 
@@ -92,8 +96,14 @@ static int chatWinCols = 0;
 /// Keeps track of the current start line when in browse mode
 static int chatLogCurrentLine = 0;
 
-// Mutex for message queue
+// Mutex for message buffer
 pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
+
+// Mutex for events queue
+pthread_mutex_t eventsLock = PTHREAD_MUTEX_INITIALIZER;
+
+// Mutex for the UI
+pthread_mutex_t uiLock = PTHREAD_MUTEX_INITIALIZER;
 
 void UIColors();
 void UIDrawChatWin();
@@ -212,6 +222,13 @@ void UIInit() {
     exit(EXIT_FAILURE);
   }
 
+  // Initialise events queue
+  events = Queue_new();
+  if (events == NULL) {
+    fprintf(stderr, "❌ Error: Unable to initialise the events queue\n%s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
   // Initialises the random generator
   srand(time(NULL));
 
@@ -246,6 +263,7 @@ void UIClean() {
   // Free user list and message buffer
   Hash_free(&users);
   List_free(&messages);
+  Queue_free(&events);
 }
 
 void UIColors() {
@@ -285,6 +303,7 @@ void UIColors() {
 void UIDrawChatWinContent() {
   pthread_mutex_lock(&messagesLock);
   if (chatWin && messages && messages->length > 0) {
+    pthread_mutex_lock(&uiLock);
     int availableLines = chatWinLines;
     int start = 0;
     wclear(chatWin);
@@ -311,6 +330,7 @@ void UIDrawChatWinContent() {
         }
       }
     }
+    pthread_mutex_unlock(&uiLock);
   }
   pthread_mutex_unlock(&messagesLock);
 }
@@ -322,6 +342,8 @@ void UIDrawChatWin() {
   // If the terminal is not wide enough we need a smaller chat and a bigger
   // input window
   int chatWinBoxHeight = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
+
+  pthread_mutex_lock(&uiLock);
 
   if (chatWin != NULL) UIWindow_destroy(chatWin);
   if (chatWinBox != NULL) UIWindow_destroy(chatWinBox);
@@ -350,6 +372,7 @@ void UIDrawChatWin() {
   wrefresh(chatWin);
   getmaxyx(chatWin, chatWinLines, chatWinCols);
 
+  pthread_mutex_unlock(&uiLock);
   // Draw the content inside the window, if present
   UIDrawChatWinContent();
 }
@@ -363,6 +386,8 @@ void UIDrawInputWin() {
   int inputWinBoxHeight = (screenCols < kWideTerminalCols) ? 6  : 5;
   int inputWinBoxStart = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
 
+  pthread_mutex_lock(&uiLock);
+
   if (inputWin != NULL) UIWindow_destroy(inputWin);
   if (inputWinBox != NULL) UIWindow_destroy(inputWinBox);
 
@@ -374,12 +399,14 @@ void UIDrawInputWin() {
   // Input box, within the container
   inputWin = subwin(inputWinBox, (inputWinBoxHeight - 2), (screenCols - 2), (inputWinBoxStart + 1), 1);
   wrefresh(inputWin);
+  pthread_mutex_unlock(&uiLock);
 }
 
 /**
  * Draws the status bar as last line of the screen
  */
 void UIDrawStatusBar() {
+  pthread_mutex_lock(&uiLock);
   if (statusBarWin != NULL) UIWindow_destroy(statusBarWin);
 
   // h, w, posY, posX
@@ -388,6 +415,7 @@ void UIDrawStatusBar() {
   // Set window default background
   wbkgd(statusBarWin, COLOR_PAIR(kColorPairWhiteOnBlue));
   wrefresh(statusBarWin);
+  pthread_mutex_unlock(&uiLock);
 }
 
 /**
@@ -395,11 +423,13 @@ void UIDrawStatusBar() {
  * to the input window to receive input
  */
 void UILoopInit() {
+  pthread_mutex_lock(&uiLock);
   if (chatWin && inputWin) {
     wrefresh(chatWin);
     wcursyncup(inputWin);
     wrefresh(inputWin);
   }
+  pthread_mutex_unlock(&uiLock);
 }
 
 /**
@@ -429,6 +459,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   *end = 0;
 
   // Initialise the input window and counters
+  pthread_mutex_lock(&uiLock);
   if (inputWin) {
     wmove(inputWin, 0, 0);
     wclear(inputWin);
@@ -437,8 +468,9 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     if (eob > (maxX * maxY)) {
       eob = maxX * maxY;
     }
-    UISetInputCounter(eom, eob);
   }
+  pthread_mutex_unlock(&uiLock);
+  UISetInputCounter(eom, eob);
 
   // Wait for input
   while (true) {
@@ -475,8 +507,10 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     if (ch == KEY_RESIZE) continue;
 
     // Fetch the current cursor position and window size
-    getyx(inputWin, y, x);
-    getmaxyx(inputWin, maxY, maxX);
+    if (inputWin) {
+      getyx(inputWin, y, x);
+      getmaxyx(inputWin, maxY, maxX);
+    }
 
     // Process the input character
     switch(ch) {
@@ -496,7 +530,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
             newY = y;
             newX = x - 1;
           }
-          if (mvwdelch(inputWin, newY, newX) != ERR) {
+          if (inputWin && mvwdelch(inputWin, newY, newX) != ERR) {
             cursor--;
             eom--;
             wrefresh(inputWin);
@@ -514,15 +548,18 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
           // mvwinnwstr() reads only one line at a time so we need a loop
           for (int i = 0; i < maxY; i++) {
             // eob - (cur - buffer) = remaning available unread bytes in the buffer
+            if (!inputWin) break;
             int read = mvwinnwstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
             if (read != ERR) {
               cur += read;
             }
           }
           // Once the input message is collected, clean the window
-          wmove(inputWin, 0, 0);
-          wclear(inputWin);
-          wrefresh(inputWin);
+          if (inputWin) {
+            wmove(inputWin, 0, 0);
+            wclear(inputWin);
+            wrefresh(inputWin);
+          }
           // ...and return it to the caller
           if ((cur - buffer) > 0) {
             return wcslen(buffer) + 1;
@@ -535,9 +572,11 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
           UISetChatModeLive();
         } else {
           // If in Live mode, cancel any input operation and reset everything
-          wmove(inputWin, 0, 0);
-          wclear(inputWin);
-          wrefresh(inputWin);
+          if (inputWin) {
+            wmove(inputWin, 0, 0);
+            wclear(inputWin);
+            wrefresh(inputWin);
+          }
           cursor = 0;
           eom = 0;
           UISetInputCounter(eom, eob);
@@ -548,14 +587,14 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         if (y > 0 && x == 0) {
           // The text cursor is at the beginning of line 2+,
           // move at the end of the previous line
-          if (wmove(inputWin, y - 1, maxX - 1) != ERR) {
+          if (inputWin && wmove(inputWin, y - 1, maxX - 1) != ERR) {
             wrefresh(inputWin);
             if (cursor > 0) cursor--;
           }
         } else if (x > 0) {
           // The text cursor is in the middle of a line,
           // just move to the left by one step
-          if (wmove(inputWin, y, x - 1) != ERR) {
+          if (inputWin && wmove(inputWin, y, x - 1) != ERR) {
             wrefresh(inputWin);
             if (cursor > 0) cursor--;
           }
@@ -566,7 +605,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         // Move the cursor back, if possible
         // We can move to the right only of there is already text
         if (eom > ((y * maxX) + x)) {
-          if (wmove(inputWin, y, x + 1) != ERR) {
+          if (inputWin && wmove(inputWin, y, x + 1) != ERR) {
             wrefresh(inputWin);
             cursor++;
             // Cursor cannot be greater than the end of message
@@ -577,7 +616,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
       case KEY_UP:
         // Move the cursor to the line above, if possible
         if (y > 0) {
-          if (wmove(inputWin, y - 1, x) != ERR) {
+          if (inputWin && wmove(inputWin, y - 1, x) != ERR) {
             wrefresh(inputWin);
             cursor -= maxX;
           }
@@ -587,7 +626,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         // Move the cursor to the line below,
         // but only if there is enough text in the line below
         if (y < (maxY - 1) && eom >= (maxX + x)) {
-          if (wmove(inputWin, y + 1, x) != ERR) {
+          if (inputWin && wmove(inputWin, y + 1, x) != ERR) {
             wrefresh(inputWin);
             cursor += maxX;
           }
@@ -612,22 +651,22 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         // add the new character to the message window
         if (cursor < eob && !iswcntrl(ch)) {
           // Appending content to the end of the line
-          if (cursor == eom && (wprintw(inputWin, "%lc", ch) != ERR)) {
+          if (inputWin && cursor == eom && (wprintw(inputWin, "%lc", ch) != ERR)) {
             cursor++;
             eom++;
           }
           // Inserting content in the middle of a line
-          if (cursor < eom && (winsch(inputWin, ch) != ERR)) {
+          if (inputWin && cursor < eom && (winsch(inputWin, ch) != ERR)) {
             if (x < maxX && wmove(inputWin, y, x + 1) != ERR) {
               cursor++;
               eom++;
-            } else if (wmove(inputWin, y + 1, 0) != ERR) {
+            } else if (inputWin && wmove(inputWin, y + 1, 0) != ERR) {
               cursor++;
               eom++;
             }
             // Don't update the cursor if you can't move
           }
-          wrefresh(inputWin);
+          if (inputWin) wrefresh(inputWin);
           UISetInputCounter(eom, eob);
         }
       break;
@@ -635,8 +674,10 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   }
   // An input error happened, cleanup and return error
   memset(buffer, 0, length * sizeof(wchar_t));
-  wclear(inputWin);
-  wrefresh(inputWin);
+  if (inputWin) {
+    wclear(inputWin);
+    wrefresh(inputWin);
+  }
   return -1;
 }
 
@@ -738,7 +779,7 @@ void UILogMessage(char *buffer, size_t length) {
   // Process the server data into a temporary entry
   ChatLogEntry *entry = ChatLogEntry_create(buffer, length);
   if (entry != NULL) {
-
+    pthread_mutex_lock(&uiLock);
     // Deal with server-issued /quit command
     if (entry->type == kMessageTypeQuit) {
       if (chatWin) {
@@ -780,6 +821,8 @@ void UILogMessage(char *buffer, size_t length) {
     // Display the message on the log window if in 'follow' mode
     UILogMessageDisplay(entry);
 
+    pthread_mutex_unlock(&uiLock);
+
     // Destroy the temporary entry
     ChatLogEntry_free(&entry);
   }
@@ -808,6 +851,7 @@ void UISetStatusMessage(char *buffer, size_t length) {
   // Display the chat win mode
   mvwprintw(statusBarWin, 0, 1, "%s", chatWinMode);
 
+  pthread_mutex_lock(&uiLock);
   // Display the term size
   mvwprintw(statusBarWin, 0, chatWinModeLength + 2, "%s", termSize);
 
@@ -816,6 +860,7 @@ void UISetStatusMessage(char *buffer, size_t length) {
     wrefresh(statusBarWin);
     memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
   }
+  pthread_mutex_unlock(&uiLock);
 }
 
 /**
@@ -824,6 +869,7 @@ void UISetStatusMessage(char *buffer, size_t length) {
  */
 void UISetInputCounter(int current, int max) {
   if (inputWin == NULL) return;
+  pthread_mutex_lock(&uiLock);
 
   int y, x;
   getyx(inputWin, y, x);
@@ -833,6 +879,7 @@ void UISetInputCounter(int current, int max) {
   wrefresh(statusBarWin);
   wmove(inputWin, y, x);
   wrefresh(inputWin);
+  pthread_mutex_unlock(&uiLock);
 }
 
 /**
@@ -848,11 +895,29 @@ void UIDrawTermTooSmall() {
 }
 
 /**
- * Handles custom USR* signals
+ * Handles custom USR1 signals (close UI)
  */
 void UITerminate(int signal) {
   (void) signal;
   uiTerminate = true;
+}
+
+/**
+ * Handles custom USR2 signals (new message in queue)
+ */
+void UIQueueHandler(int signal) {
+  (void) signal;
+  QueueData *item = NULL;
+  if (!Queue_empty(events)) {
+    do {
+      pthread_mutex_lock(&eventsLock);
+      item = Queue_dequeue(events);
+      pthread_mutex_unlock(&eventsLock);
+      if (item == NULL) break;
+      UILogMessage((char*)item->content, item->length);
+      QueueData_free(&item);
+    } while(!Queue_empty(events));
+  }
 }
 
 /**
@@ -889,5 +954,14 @@ void UIDrawAll() {
     return;
   }
   UIDrawTermTooSmall();
+}
+
+/**
+ * Pushes a server message in the queue
+ */
+void UIPushMessage(char *buffer, size_t length) {
+  pthread_mutex_lock(&eventsLock);
+  Queue_enqueue(events, buffer, length);
+  pthread_mutex_unlock(&eventsLock);
 }
 

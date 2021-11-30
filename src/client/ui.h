@@ -16,6 +16,9 @@
   // Intercepts terminal resize events
   void UIResizeHandler(int signal);
 
+  // Intercepts queue events
+  void UIQueueHandler(int signal);
+
   // Intercepts UI close events to unlock the input loop
   void UITerminate(int signal);
 
@@ -27,6 +30,9 @@
 
   // Displays output from the server in he chat log
   void UILogMessage(char *buffer, size_t length);
+
+  // Push the received message in the message queue
+  void UIPushMessage(char *buffer, size_t length);
 
   // Displays a message in the status bar
   void UISetStatusMessage(char *buffer, size_t length);

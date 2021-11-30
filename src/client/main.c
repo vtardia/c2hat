@@ -134,6 +134,7 @@ int main(int argc, ARGV argv) {
   App_catch(SIGTERM, App_terminate);
   App_catch(SIGWINCH, UIResizeHandler);
   App_catch(SIGUSR1, UITerminate);
+  App_catch(SIGUSR2, UIQueueHandler);
 
   // Start a new thread that listens for messages from the server
   // and updates the chat log window

@@ -93,7 +93,8 @@ void *App_listen(void *client) {
       // and display it
       // UILogMessage should: create an entry, append it and send SIGUSR2
       // with a pointer to that entry
-      UILogMessage(buffer, received);
+      UIPushMessage(buffer, received);
+      pthread_kill(mainThreadID, SIGUSR2);
     }
     // Sleep for a bit,
     // enough for the termination signal to be recognised

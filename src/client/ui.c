@@ -570,6 +570,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         if (chatWinStatus == kChatWinStatusBrowse) {
           // If in browse mode, exit and go live
           UISetChatModeLive();
+          UIDrawChatWinContent();
         } else {
           // If in Live mode, cancel any input operation and reset everything
           if (inputWin) {

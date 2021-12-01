@@ -65,7 +65,7 @@ void* RunBot(void* data) {
 
   // Choose your nickname
   char nickname[50] = {0};
-  sprintf(nickname, "Bot %d", *id);
+  sprintf(nickname, "Bot@%d", *id);
 
   printf("Starting Bot thread %d: %lu\n", *id, (unsigned long)pthread_self());
 

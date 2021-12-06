@@ -88,12 +88,9 @@ void *App_listen(void *client) {
         terminate = true;
         break;
       }
-      // TODO: this must not access the UI on the other thread
-      // send a SIGUSR2 and he handler should package log entry
-      // and display it
-      // UILogMessage should: create an entry, append it and send SIGUSR2
-      // with a pointer to that entry
+      // Push the message to be read by the main thread
       UIPushMessage(buffer, received);
+      // Alert the main thread that there are messages to read
       pthread_kill(mainThreadID, SIGUSR2);
     }
     // Sleep for a bit,

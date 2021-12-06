@@ -111,7 +111,7 @@ void UIDrawInputWin();
 void UIDrawStatusBar();
 void UIDrawTermTooSmall();
 void UISetInputCounter(int, int);
-void UILogMessageDisplay(ChatLogEntry *entry);
+void UILogMessageDisplay(ChatLogEntry *entry, bool refresh);
 void UIDrawAll();
 
 /**
@@ -140,7 +140,7 @@ void UISetChatModeBrowse() {
   if (chatWinStatus != kChatWinStatusBrowse && messages && messages->length > chatWinLines) {
     chatWinStatus = kChatWinStatusBrowse;
     // Position the line pointer at the start ot the page
-    chatLogCurrentLine = messages->length - chatWinLines -1;
+    chatLogCurrentLine = messages->length - chatWinLines;
     // Update status bar
     mvwprintw(statusBarWin, 0, 2, "%s", "B");
     wrefresh(statusBarWin);
@@ -242,6 +242,7 @@ void UIInit() {
 void UIWindow_destroy(WINDOW *win) {
   if (win == NULL) return;
   wborder(win, ' ', ' ', ' ',' ',' ',' ',' ',' ');
+  wbkgd(win, COLOR_PAIR(kColorPairDefault));
   wclear(win);
   wrefresh(win);
   delwin(win);
@@ -304,32 +305,36 @@ void UIDrawChatWinContent() {
   pthread_mutex_lock(&messagesLock);
   if (chatWin && messages && messages->length > 0) {
     pthread_mutex_lock(&uiLock);
-    int availableLines = chatWinLines;
+    // Writing on the last line will make the window scroll
+    int availableLines = chatWinLines -1;
     int start = 0;
     wclear(chatWin);
     wmove(chatWin, 0, 0);
 
     if (chatWinStatus == kChatWinStatusLive) {
-      start = messages->length - availableLines - 1;
+      start = messages->length - availableLines;
       if (start < 0) start = 0;
       for (int line = start; line < messages->length; line++) {
         ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
         if (entry != NULL) {
-          UILogMessageDisplay(entry);
+          UILogMessageDisplay(entry, false);
         }
       }
-    }
-    if (chatWinStatus == kChatWinStatusBrowse) {
+    } else if (chatWinStatus == kChatWinStatusBrowse) {
       // A page up/down key handler will manage the current line pointer
       start = chatLogCurrentLine;
       int end = start + availableLines;
-      for (int line = start; (line < messages->length && line < end); line++) {
+      if (end >= messages->length) end = messages->length;
+      int line = start;
+      while (line < end) {
         ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
         if (entry != NULL) {
-          UILogMessageDisplay(entry);
+          UILogMessageDisplay(entry, false);
         }
+        line++;
       }
     }
+    wrefresh(chatWin);
     pthread_mutex_unlock(&uiLock);
   }
   pthread_mutex_unlock(&messagesLock);
@@ -371,6 +376,8 @@ void UIDrawChatWin() {
   leaveok(chatWin, TRUE);
   wrefresh(chatWin);
   getmaxyx(chatWin, chatWinLines, chatWinCols);
+
+  // TODO Make chatAvailableLines global, update here
 
   pthread_mutex_unlock(&uiLock);
   // Draw the content inside the window, if present
@@ -495,14 +502,6 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     // Exit on F1
     if (ch == KEY_F(1)) break;
 
-    if (ch == KEY_F(2)) {
-      UISetChatModeBrowse();
-      continue;
-    }
-    if (ch == KEY_F(3)) {
-      UISetChatModeLive();
-      continue;
-    }
     // Ignore resize key
     if (ch == KEY_RESIZE) continue;
 
@@ -634,18 +633,25 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         }
       break;
       case KEY_PPAGE:
-        // Set the chat window in Browse mode
-        // and display the previous screen
         UISetChatModeBrowse();
-        chatLogCurrentLine -= chatWinLines;
-        UIDrawChatWinContent();
+        if (chatWinStatus == kChatWinStatusBrowse) {
+          // Display the previous screen
+          chatLogCurrentLine -= (chatWinLines - 1);
+          if (chatLogCurrentLine < 0) chatLogCurrentLine = 0;
+          UIDrawChatWinContent();
+          if (inputWin) wrefresh(inputWin);
+        }
       break;
       case KEY_NPAGE:
-        // Set the chat window in Browse mode
-        // and display the next screen
-        UISetChatModeBrowse();
-        chatLogCurrentLine += chatWinLines;
-        UIDrawChatWinContent();
+        if (chatWinStatus == kChatWinStatusBrowse) {
+          // Display the next screen
+          if (chatLogCurrentLine < (messages->length - (chatWinLines - 1))) {
+            chatLogCurrentLine += (chatWinLines - 1);
+            if (chatLogCurrentLine > messages->length) chatLogCurrentLine -= messages->length - 1;
+            UIDrawChatWinContent();
+            if (inputWin) wrefresh(inputWin);
+          }
+        }
       break;
       default:
         // If we have space, AND the input character is not a control char,
@@ -723,14 +729,13 @@ int UIGetUserColor(char *userName) {
 /**
  * Displays a log entry in the chat log window
  */
-void UILogMessageDisplay(ChatLogEntry *entry) {
-  if (chatWinStatus != kChatWinStatusLive) return;
+void UILogMessageDisplay(ChatLogEntry *entry, bool refresh) {
   if (chatWin == NULL) return;
   if (entry == NULL || entry->length == 0) return;
 
   // Backup input window coordinates
   int y = 0, x = 0;
-  if (inputWin) getyx(inputWin, y, x);
+  if (inputWin && refresh) getyx(inputWin, y, x);
 
   switch (entry->type) {
     case kMessageTypeErr:
@@ -764,10 +769,10 @@ void UILogMessageDisplay(ChatLogEntry *entry) {
       wprintw(chatWin, "Received (%zu bytes): %.*s\n", entry->length, (int) entry->length, entry->content);
     break;
   }
-  wrefresh(chatWin);
+  if (refresh) wrefresh(chatWin);
 
   // Restore input window coordinates
-  if (inputWin) {
+  if (inputWin && refresh) {
     wmove(inputWin, y, x);
     wrefresh(inputWin);
   }
@@ -807,7 +812,8 @@ void UILogMessage(char *buffer, size_t length) {
 
     // Intercept user disconnection message to get user name from the message i
     // and remove it from the users hash
-    if (entry->type == kMessageTypeLog && strlen(entry->username) && strstr(entry->content, "left the chat") != NULL) {
+    if (entry->type == kMessageTypeLog && strlen(entry->username)
+      && strstr(entry->content, "left the chat") != NULL) {
       if (!Hash_delete(users, entry->username)) {
         // This is temporary and should be logged on file, the user shouldn't see it
         wprintw(
@@ -820,7 +826,7 @@ void UILogMessage(char *buffer, size_t length) {
     }
 
     // Display the message on the log window if in 'follow' mode
-    UILogMessageDisplay(entry);
+    if (chatWinStatus == kChatWinStatusLive) UILogMessageDisplay(entry, true);
 
     pthread_mutex_unlock(&uiLock);
 

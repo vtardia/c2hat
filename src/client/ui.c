@@ -87,11 +87,14 @@ static int screenLines = 0;
 /// Available columns in the main window
 static int screenCols = 0;
 
-/// Available lines in the chat window
+/// Total lines in the chat window
 static int chatWinLines = 0;
 
-/// Available columns in the chat window
+/// Total columns in the chat window
 static int chatWinCols = 0;
+
+/// Available lines in the chat window (usually lines -1)
+static int chatWinPageSize = 0;
 
 /// Keeps track of the current start line when in browse mode
 static int chatLogCurrentLine = 0;
@@ -306,13 +309,12 @@ void UIDrawChatWinContent() {
   if (chatWin && messages && messages->length > 0) {
     pthread_mutex_lock(&uiLock);
     // Writing on the last line will make the window scroll
-    int availableLines = chatWinLines -1;
     int start = 0;
     wclear(chatWin);
     wmove(chatWin, 0, 0);
 
     if (chatWinStatus == kChatWinStatusLive) {
-      start = messages->length - availableLines;
+      start = messages->length - chatWinPageSize;
       if (start < 0) start = 0;
       for (int line = start; line < messages->length; line++) {
         ChatLogEntry *entry = (ChatLogEntry *) List_item(messages, line);
@@ -323,7 +325,7 @@ void UIDrawChatWinContent() {
     } else if (chatWinStatus == kChatWinStatusBrowse) {
       // A page up/down key handler will manage the current line pointer
       start = chatLogCurrentLine;
-      int end = start + availableLines;
+      int end = start + chatWinPageSize;
       if (end >= messages->length) end = messages->length;
       int line = start;
       while (line < end) {
@@ -377,7 +379,9 @@ void UIDrawChatWin() {
   wrefresh(chatWin);
   getmaxyx(chatWin, chatWinLines, chatWinCols);
 
-  // TODO Make chatAvailableLines global, update here
+  // Available display lines
+  // (writing on the last line will make the window scroll)
+  chatWinPageSize = chatWinLines - 1;
 
   pthread_mutex_unlock(&uiLock);
   // Draw the content inside the window, if present
@@ -636,7 +640,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         UISetChatModeBrowse();
         if (chatWinStatus == kChatWinStatusBrowse) {
           // Display the previous screen
-          chatLogCurrentLine -= (chatWinLines - 1);
+          chatLogCurrentLine -= chatWinPageSize;
           if (chatLogCurrentLine < 0) chatLogCurrentLine = 0;
           UIDrawChatWinContent();
           if (inputWin) wrefresh(inputWin);
@@ -645,8 +649,8 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
       case KEY_NPAGE:
         if (chatWinStatus == kChatWinStatusBrowse) {
           // Display the next screen
-          if (chatLogCurrentLine < (messages->length - (chatWinLines - 1))) {
-            chatLogCurrentLine += (chatWinLines - 1);
+          if (chatLogCurrentLine < (messages->length - chatWinPageSize)) {
+            chatLogCurrentLine += chatWinPageSize;
             if (chatLogCurrentLine > messages->length) chatLogCurrentLine -= messages->length - 1;
             UIDrawChatWinContent();
             if (inputWin) wrefresh(inputWin);

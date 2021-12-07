@@ -2,9 +2,7 @@
  * Copyright (C) 2021 Vito Tardia
  */
 
-// TODO: 1) extract window sizes var as static global and
-// initialise them within the init routine
-// 2) try to extract the message char counter as well
+// TODO: extract the message char counter out of the UserInputLoop
 
 #include <stdlib.h>
 #include <errno.h>
@@ -87,6 +85,9 @@ static int screenLines = 0;
 /// Available columns in the main window
 static int screenCols = 0;
 
+/// Height of the chat window container
+static int chatWinBoxHeight = 0;
+
 /// Total lines in the chat window
 static int chatWinLines = 0;
 
@@ -98,6 +99,12 @@ static int chatWinPageSize = 0;
 
 /// Keeps track of the current start line when in browse mode
 static int chatLogCurrentLine = 0;
+
+/// Height of the input window container
+static int inputWinBoxHeight = 0;
+
+/// Y coordinate start for the input window container
+static int inputWinBoxStart = 0;
 
 // Mutex for message buffer
 pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
@@ -346,10 +353,6 @@ void UIDrawChatWinContent() {
  * Draws the chat/log window
  */
 void UIDrawChatWin() {
-  // If the terminal is not wide enough we need a smaller chat and a bigger
-  // input window
-  int chatWinBoxHeight = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
-
   pthread_mutex_lock(&uiLock);
 
   if (chatWin != NULL) UIWindow_destroy(chatWin);
@@ -392,11 +395,6 @@ void UIDrawChatWin() {
  * Draws the chat input window
  */
 void UIDrawInputWin() {
-  // Set sizes: ith narrow terminals we need 4 lines to fit the whole message,
-  // wider terminals are ok with 3 lines
-  int inputWinBoxHeight = (screenCols < kWideTerminalCols) ? 6  : 5;
-  int inputWinBoxStart = (screenCols < kWideTerminalCols) ? (screenLines - 7) : (screenLines - 6);
-
   pthread_mutex_lock(&uiLock);
 
   if (inputWin != NULL) UIWindow_destroy(inputWin);
@@ -953,6 +951,15 @@ void UIResizeHandler(int signal) {
  * Draws the whole interface
  */
 void UIDrawAll() {
+  // Set the sizes of container windows based on the current terminal
+  // With narrow terminals we need 4 input lines to fit the whole message
+  // so the chat log will be smaller. With wider terminals we can get away
+  // with 3 lines for the input and leave the rest for the chat log
+  inputWinBoxHeight = (screenCols < kWideTerminalCols) ? 6  : 5;
+  // The upper border requires 1 line
+  inputWinBoxStart = screenLines - (inputWinBoxHeight + 1);
+  chatWinBoxHeight = inputWinBoxStart;
+
   if (UITermIsBigEnough()) {
     UIDrawChatWin();
     UIDrawInputWin();

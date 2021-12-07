@@ -2,8 +2,6 @@
  * Copyright (C) 2021 Vito Tardia
  */
 
-// TODO: extract the message char counter out of the UserInputLoop
-
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -105,6 +103,13 @@ static int inputWinBoxHeight = 0;
 
 /// Y coordinate start for the input window container
 static int inputWinBoxStart = 0;
+
+/// Variable pointer that point to the end of the typed message
+static int inputWinEom = 0;
+
+/// Keeps track of character limit for the input message,
+/// starts at 0 and it's normally messageLength -1
+static int inputWinEob = 0;
 
 // Mutex for message buffer
 pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
@@ -455,14 +460,12 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   // Variable pointer that follow the cursor on the window
   int cursor = 0;
 
-  // Variable pointer that point to the end of the typed message
-  int eom = 0;
-
-  // Keeps track of character limit
-  int eob = length -1;
+  // Keeps track of character limit and ensures we have
+  // the last character as NULL terminator
+  inputWinEob = length -1;
 
   // Fixed pointer to the very end of the buffer
-  wchar_t *end = buffer + eob;
+  wchar_t *end = buffer + inputWinEob;
 
   // Add a safe NULL terminator at the end of buffer
   *end = 0;
@@ -474,12 +477,12 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
     wclear(inputWin);
     wrefresh(inputWin);
     getmaxyx(inputWin, maxY, maxX);
-    if (eob > (maxX * maxY)) {
-      eob = maxX * maxY;
+    if (inputWinEob > (maxX * maxY)) {
+      inputWinEob = maxX * maxY;
     }
   }
   pthread_mutex_unlock(&uiLock);
-  UISetInputCounter(eom, eob);
+  UISetInputCounter(inputWinEom, inputWinEob);
 
   // Wait for input
   while (true) {
@@ -533,10 +536,10 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
           }
           if (inputWin && mvwdelch(inputWin, newY, newX) != ERR) {
             cursor--;
-            eom--;
+            inputWinEom--;
             wrefresh(inputWin);
           }
-          UISetInputCounter(eom, eob);
+          UISetInputCounter(inputWinEom, inputWinEob);
         }
       break;
       case kKeyEnter:
@@ -548,9 +551,9 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
           wchar_t *cur = buffer;
           // mvwinnwstr() reads only one line at a time so we need a loop
           for (int i = 0; i < maxY; i++) {
-            // eob - (cur - buffer) = remaning available unread bytes in the buffer
+            // inputWinEob - (cur - buffer) = remaning available unread bytes in the buffer
             if (!inputWin) break;
-            int read = mvwinnwstr(inputWin, i, 0, cur, (eob - (cur - buffer)));
+            int read = mvwinnwstr(inputWin, i, 0, cur, (inputWinEob - (cur - buffer)));
             if (read != ERR) {
               cur += read;
             }
@@ -580,8 +583,8 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
             wrefresh(inputWin);
           }
           cursor = 0;
-          eom = 0;
-          UISetInputCounter(eom, eob);
+          inputWinEom = 0;
+          UISetInputCounter(inputWinEom, inputWinEob);
         }
       break;
       case KEY_LEFT:
@@ -601,17 +604,17 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
             if (cursor > 0) cursor--;
           }
         }
-        UISetInputCounter(eom, eob);
+        UISetInputCounter(inputWinEom, inputWinEob);
       break;
       case KEY_RIGHT:
         // Move the cursor back, if possible
         // We can move to the right only of there is already text
-        if (eom > ((y * maxX) + x)) {
+        if (inputWinEom > ((y * maxX) + x)) {
           if (inputWin && wmove(inputWin, y, x + 1) != ERR) {
             wrefresh(inputWin);
             cursor++;
             // Cursor cannot be greater than the end of message
-            if (cursor > eom) cursor = eom;
+            if (cursor > inputWinEom) cursor = inputWinEom;
           }
         }
       break;
@@ -627,7 +630,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
       case KEY_DOWN:
         // Move the cursor to the line below,
         // but only if there is enough text in the line below
-        if (y < (maxY - 1) && eom >= (maxX + x)) {
+        if (y < (maxY - 1) && inputWinEom >= (maxX + x)) {
           if (inputWin && wmove(inputWin, y + 1, x) != ERR) {
             wrefresh(inputWin);
             cursor += maxX;
@@ -658,25 +661,25 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
       default:
         // If we have space, AND the input character is not a control char,
         // add the new character to the message window
-        if (cursor < eob && !iswcntrl(ch)) {
+        if (cursor < inputWinEob && !iswcntrl(ch)) {
           // Appending content to the end of the line
-          if (inputWin && cursor == eom && (wprintw(inputWin, "%lc", ch) != ERR)) {
+          if (inputWin && cursor == inputWinEom && (wprintw(inputWin, "%lc", ch) != ERR)) {
             cursor++;
-            eom++;
+            inputWinEom++;
           }
           // Inserting content in the middle of a line
-          if (inputWin && cursor < eom && (winsch(inputWin, ch) != ERR)) {
+          if (inputWin && cursor < inputWinEom && (winsch(inputWin, ch) != ERR)) {
             if (x < maxX && wmove(inputWin, y, x + 1) != ERR) {
               cursor++;
-              eom++;
+              inputWinEom++;
             } else if (inputWin && wmove(inputWin, y + 1, 0) != ERR) {
               cursor++;
-              eom++;
+              inputWinEom++;
             }
             // Don't update the cursor if you can't move
           }
           if (inputWin) wrefresh(inputWin);
-          UISetInputCounter(eom, eob);
+          UISetInputCounter(inputWinEom, inputWinEob);
         }
       break;
     }
@@ -841,6 +844,10 @@ void UILogMessage(char *buffer, size_t length) {
  * Updates the content of the status bar
  */
 void UISetStatusMessage(char *buffer, size_t length) {
+  // Save the message even if the status bar does not exist yet
+  // (i.e. client started on a small terminal)
+  memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
+
   if (statusBarWin == NULL) return;
 
   // Calculate the terminal size to be displayed at the bottom left
@@ -865,9 +872,12 @@ void UISetStatusMessage(char *buffer, size_t length) {
   mvwprintw(statusBarWin, 0, chatWinModeLength + 2, "%s", termSize);
 
   // Display the provided message after the term size
-  if (mvwprintw(statusBarWin, 0, chatWinModeLength + termSizeLength + 3, "%.*s", (int)size, buffer) != ERR) {
+  if (mvwprintw(
+        statusBarWin,
+        0, chatWinModeLength + termSizeLength + 3,
+        "%.*s", (int)size, currentStatusBarMessage
+      ) != ERR) {
     wrefresh(statusBarWin);
-    memcpy(currentStatusBarMessage, buffer, ((length < 512) ? length : 512));
   }
   pthread_mutex_unlock(&uiLock);
 }
@@ -967,6 +977,8 @@ void UIDrawAll() {
     if (strlen(currentStatusBarMessage) > 0) {
       UISetStatusMessage(currentStatusBarMessage, strlen(currentStatusBarMessage));
     }
+    inputWinEom = 0;
+    UISetInputCounter(inputWinEom, inputWinEob);
     // Refresh and move cursor to the input window
     UILoopInit();
     return;

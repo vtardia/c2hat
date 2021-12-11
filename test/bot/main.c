@@ -206,21 +206,17 @@ int main(int argc, char const *argv[]) {
 
   printf("Terminating...\n");
 
-  // Wait for all the threads to finish and close
-  // TODO: if some threads are already terminated,
-  // trying to join them by passing a pointer causes a segmentation fault:
-  // try to use a COMPLETE flag so that we can only join running threads
+  // Wait for all the threads to finish and close.
+  // Note: if some threads are already terminated (e.g. connection denied),
+  // trying to join them by passing a pointer causes a segmentation fault.
   for(int j = 0; j < kMaxBots; j++) {
-    // int *id = NULL;
-    // int res = pthread_join(threadId[j], (void**)&id);
     int res = pthread_join(threadId[j], NULL);
     switch(res) {
       case 0:
-        // printf("Joined %d, (%d)\n", j, *id);
         printf("Bot %d joined!\n", j);
       break;
       case EINVAL:
-        fprintf(stderr, "Unable to join Bot %d: thread not joinable\n", j);
+        fprintf(stderr, "Unable to join Bot %d: thread not join able\n", j);
       break;
       case ESRCH:
         fprintf(stderr, "Unable to join Bot %d: thread not found\n", j);

@@ -93,7 +93,7 @@ void usage(const char *program);
  */
 void clean() {
   Info("Cleaning up...");
-  // Remove PID file only if it was created by a successul server start
+  // Remove PID file only if it was created by a successful server start
   if (serverStartedSuccessfully) {
     if (currentPIDFilePath != NULL) {
       if (remove(currentPIDFilePath) < 0) {
@@ -254,7 +254,7 @@ char *GetPIDFilePath() {
 
 /**
  * Clean facility called by STATUS and STOP commands
- * to clean the leftofers
+ * to clean the leftovers
  */
 void cleanup() {
   if (currentPIDFilePath != NULL) {
@@ -291,7 +291,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
       currentConfig->host, currentConfig->port, LOCALE, serverPID
     );
   } else {
-    pid_t sessionID = 0;
+    pid_t sessionID;
     pid_t serverPID = fork();
     if (serverPID > 0) {
       // First fork, close the parent
@@ -354,7 +354,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     currentConfig->host, currentConfig->port, currentConfig->maxConnections
   );
 
-  // Init PID file (after server creation so we don't create on failure)
+  // Init PID file (after server creation, so we don't create on failure)
   currentPIDFilePath = GetPIDFilePath();
   if (currentPIDFilePath == NULL) {
     Error("Unable to initialise PID file '%s'", currentPIDFilePath);
@@ -440,8 +440,8 @@ int CMD_runStop() {
   }
 
   // Error checking PID
-  // We don't delete the PID file or shared memory because it may be
-  // that the current user has not access to the PID
+  // We don't delete the PID file or shared memory because
+  // the current user may not have access permissions the PID file
   if (pidStatus < 0 ) {
     printf("Error while checking for PID %d: %s\n", currentConfig->pid, strerror(errno));
     result = EXIT_FAILURE;
@@ -475,7 +475,7 @@ int CMD_runStatus() {
   currentPIDFilePath = strdup(currentConfig->pidFilePath);
   int result;
   switch (pidStatus) {
-    // The process esists
+    // The process exists
     case 1:
       printf("\nThe server is running with the following configuration:\n");
       printf("         PID: %d\n", currentConfig->pid);
@@ -489,7 +489,7 @@ int CMD_runStatus() {
       result = EXIT_SUCCESS;
     break;
 
-    // The process does not esists
+    // The process does not exist
     case 0:
       printf("Unable to check for PID %d: the server may not be running\n", currentConfig->pid);
       // Enable cleaning the shared memory and PID file

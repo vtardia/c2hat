@@ -97,7 +97,7 @@ bool Server_authenticate(SOCKET client);
  * Creates and initialises the server object
  * @param[in] host The listening IP address
  * @param[in] portNumber The listening TCP port
- * @param[in] maxConnections The maximum number of client connetions
+ * @param[in] maxConnections The maximum number of client connections
  */
 Server *Server_init(const char *host, int portNumber, int maxConnections) {
   if (server != NULL) {
@@ -138,7 +138,7 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
 
   Socket_bind(server->socket, bindAddress->ai_addr, bindAddress->ai_addrlen);
 
-  // Note: if the bind fails here (eg server is already running),
+  // Note: if the bind fails here (e.g. server is already running),
   // the memory allocated for the server and bindAddress vars will not be freed
 
   // We don't need bindAddress anymore
@@ -385,7 +385,7 @@ void Server_dropClient(SOCKET client) {
   pthread_mutex_lock(&clientsLock);
   int index = List_search(clients, &clientThreadID, sizeof(Client), Client_findByThreadID);
   if (index >= 0) {
-    // Close client socket here or it will hang during broadcast
+    // Close client socket here, or it will hang during broadcast
     // with a bad file descriptor error
     SOCKET_close(client);
     if (!List_delete(clients, index)) {
@@ -783,7 +783,6 @@ void* Server_handleBroadcast(void* data) {
   }
   Info("Closing broadcast thread %lu", me);
   pthread_exit(data);
-  return NULL;
 }
 
 /**

@@ -562,7 +562,10 @@ bool Server_authenticate(SOCKET client) {
             if (clientInfo != NULL) {
               // Update client entry
               snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
-              Info("User %s (%d bytes) authenticated successfully!", clientInfo->nickname, strlen(clientInfo->nickname));
+              Info(
+                "User %s (%d bytes) authenticated successfully!",
+                clientInfo->nickname, strlen(clientInfo->nickname)
+              );
               Message_free(&nick);
               return true;
             }
@@ -576,7 +579,10 @@ bool Server_authenticate(SOCKET client) {
 
     // Client socket has an error
     if (FD_ISSET(client, &errors)) {
-      Error("Client socket failed during authentication (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      Error(
+        "Client socket failed during authentication (%d): %s",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       break;
     }
 
@@ -657,7 +663,10 @@ void* Server_handleClient(void* socket) {
 
     // Timeout expired
     if (rc == 0) {
-      Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Connection timed out, you've been disconnected!");
+      Message_format(
+        kMessageTypeErr, messageBuffer, kBufferSize,
+        "Connection timed out, you've been disconnected!"
+      );
       Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
       break;
     }
@@ -699,7 +708,10 @@ void* Server_handleClient(void* socket) {
               if (Server_send(*client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
 
               // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-              Message_format(kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize, "[%s] %s", clientInfo->nickname, messageContent);
+              Message_format(
+                kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize,
+                "[%s] %s", clientInfo->nickname, messageContent
+              );
               Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
               Message_free(&messageContent);
             }

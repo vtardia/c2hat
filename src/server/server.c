@@ -37,6 +37,7 @@ typedef struct {
   struct sockaddr_storage address; ///< Binary IP address
   socklen_t length; ///< Length of the binary IP address
   char host[kMaxClientHostLength]; ///< IP address in pretty string format
+  /* SSL *ssl; ///< SSL connection handle */
 } Client;
 
 /// This is the singleton instance for our server
@@ -45,6 +46,7 @@ struct Server {
   int port;   ///< Inbound TCP port
   int maxConnections; ///< Maximum number of connections accepted
   SOCKET socket; ///< Stores the server socket
+  /* SSL_CTX *ssl; ///< SSL context */
 };
 static Server *server = NULL;
 
@@ -69,8 +71,8 @@ int Server_catch(int sig, void (*handler)(int));
 void Server_stop(int signal);
 
 // Send and receive data from client sockets
-int Server_send(SOCKET client, const char* message, size_t length);
-int Server_receive(SOCKET client, char *buffer, size_t length);
+int Server_send(Client *client, const char* message, size_t length);
+int Server_receive(Client *client, char *buffer, size_t length);
 
 // Manages a client's thread
 void* Server_handleClient(void* data);
@@ -80,7 +82,7 @@ void* Server_handleBroadcast(void* data);
 void Server_broadcast(char *message, size_t length);
 
 // Closes a client connection and related thread
-void Server_dropClient(SOCKET client);
+void Server_dropClient(Client *client);
 
 // Find a Client object in the list given a nickname or a thread id
 Client *Server_getClientInfoForThread(pthread_t clientThreadID);
@@ -91,7 +93,7 @@ int Client_findByThreadID(const ListData *a, const ListData *b, size_t size);
 int Client_findByNickname(const ListData *a, const ListData *b, size_t size);
 
 // Authenticate a client connection using a nickname
-bool Server_authenticate(SOCKET client);
+bool Server_authenticate(Client *client);
 
 /**
  * Creates and initialises the server object
@@ -129,8 +131,29 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
     Fatal("Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
   }
 
-  server = (Server *)calloc(sizeof(Server), 1);
+  // Initialise OpenSSL
+  /* SSL_library_init(); */
+  /* OpenSSL_add_all_algorithms(); */
+  /* SSL_load_error_strings(); */
 
+  /* SSL_CTX *sslContext = SSL_CTX_new(TLS_server_method()); */
+  /* if (!sslContext) { */
+  /*   Fatal("SSL_CTX_new() failed: cannot create SSL context"); */
+  /* } */
+
+  // TODO: move these to configuration files
+  /* const char *certPath = "/etc/letsencrypt/live/tardia.dev/cert.pem"; */
+  /* const char *keyPath = "/etc/letsencrypt/live/tardia.dev/privkey.pem"; */
+  /* if (!SSL_CTX_use_certificate_file(ctx, certPath, SSL_FILETYPE_PEM) */
+  /*   || !SSL_CTX_use_PrivateKey_file(ctx, keyPath, SSL_FILETYPE_PEM)) { */
+  /*   ERR_print_errors_fp(stderr); */
+  /*   SSL_CTX_free(sslContext); */
+  /*   Fatal("SSL_CTX_use_certificate_file() failed"); */
+  /* } */
+
+  // Create a server instance
+  server = (Server *)calloc(sizeof(Server), 1);
+  /* server->ssl = sslContext; */
   server->socket = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
   Socket_unsetIPV6Only(server->socket);
   Socket_setReusableAddress(server->socket);
@@ -159,6 +182,7 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
 void Server_free(Server **this) {
   if (this != NULL) {
     free((*this)->host);
+    /* SSL_CTX_free((*this)->ssl); */
     memset(*this, 0, sizeof(Server));
     free(*this);
     *this = NULL;
@@ -261,6 +285,21 @@ void Server_start(Server *this) {
         continue;
       }
 
+      // Try to start an SSL connection
+      /* client.ssl = SSL_new(server->ssl); */
+      /* if (!client.ssl) { */
+      /*   Error("SSL_new() failed: cannot open an SSL client connection"); */
+      /*   continue; */
+      /* } */
+      /* SSL_set_fd(client.ssl, client.socket); */
+      /* if (SSL_accept(client.ssl) != 1) { */
+      /*   ERR_print_errors_fp(stderr); */
+      /*   SSL_shutdown(client.ssl); */
+      /*   SOCKET_close(client.socket); */
+      /*   SSL_free(client.ssl); */
+      /*   continue; */
+      /* } */
+
       // A client has connected, log the client info
       getnameinfo(
         (struct sockaddr*)&(client).address,
@@ -269,6 +308,7 @@ void Server_start(Server *this) {
         NI_NUMERICHOST
       );
       Info("New connection from %s", client.host);
+      /* Info("SSL connection using %s", SSL_get_cipher(client.ssl)); */
 
       pthread_t clientThreadID = 0;
       if (clients->length < kMaxClientConnections) {
@@ -283,12 +323,15 @@ void Server_start(Server *this) {
         Client *last = (Client *)List_last(clients);
 
         // Start client thread
-        pthread_create(&clientThreadID, NULL, Server_handleClient, &(last->socket));
+        pthread_create(&clientThreadID, NULL, Server_handleClient, last);
         last->threadID = clientThreadID; // Update client list item
         pthread_mutex_unlock(&clientsLock);
         pthread_detach(clientThreadID);
       } else {
         Info("Connection limits reached");
+        /* SSL_shutdown(client.ssl); */
+        /* SOCKET_close(client.socket); */
+        /* SSL_free(client.ssl); */
       }
     }
 
@@ -304,6 +347,9 @@ void Server_start(Server *this) {
   Client *client;
   while ((client = (Client *)List_next(clients)) != NULL) {
     pthread_join(client->threadID, NULL);
+    /* SSL_shutdown(client->ssl); */
+    /* SOCKET_close(client->socket); */
+    /* SSL_free(client->ssl); */
   }
   // Destroy client list
   List_free(&clients);
@@ -321,16 +367,16 @@ void Server_start(Server *this) {
 
 /**
  * Sends data to a socket using a loop to ensure all data is sent
- * @param[in] client The client socket
+ * @param[in] client The Client object containing a valid socket
  * @param[in] message The message to send
  * @param[in] length The length of the message to send
  */
-int Server_send(SOCKET client, const char* message, size_t length) {
+int Server_send(Client *client, const char* message, size_t length) {
   size_t sentTotal = 0;
   char *data = (char*)message; // points to the beginning of the message
   do {
-    if (!SOCKET_isValid(client)) return -1;
-    int sent = send(client, data, length - sentTotal, MSG_NOSIGNAL);
+    if (!SOCKET_isValid(client->socket)) return -1;
+    int sent = send(client->socket, data, length - sentTotal, MSG_NOSIGNAL);
     if (sent < 0) {
       Error(
         "send() failed: (%d): %s",
@@ -375,10 +421,10 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
 /**
  * Removes a client object from the list of connected clients
  * and closes the connection
- * @param[in] client The client's socket to close
+ * @param[in] client The client structure that contains the socket
  */
-void Server_dropClient(SOCKET client) {
-  pthread_t clientThreadID = pthread_self();
+void Server_dropClient(Client *client) {
+  pthread_t clientThreadID = client->threadID;
 
   // Drop client from the clients list
   // We need to pass sizeof(Client) as size or the item will not be compared
@@ -387,7 +433,7 @@ void Server_dropClient(SOCKET client) {
   if (index >= 0) {
     // Close client socket here, or it will hang during broadcast
     // with a bad file descriptor error
-    SOCKET_close(client);
+    SOCKET_close(client->socket);
     if (!List_delete(clients, index)) {
       Warn("Unable to drop client %d with thread ID %lu", index, clientThreadID);
     }
@@ -434,17 +480,17 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
 /**
  * Receives a message from a connected client until
  * a null terminator is found or the buffer is full
- * @param[in] client Socket to receive from
+ * @param[in] client Client struct containing the socket to receive from
  * @param[in] buffer Char buffer to store the received data
  * @param[in] length Length of the char buffer
  * @param[out] The number of bytes received
  */
-int Server_receive(SOCKET client, char *buffer, size_t length) {
+int Server_receive(Client *client, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
   char cursor[1] = {0};
   do {
-    int bytesReceived = recv(client, cursor, 1, 0);
+    int bytesReceived = recv(client->socket, cursor, 1, 0);
 
     // The remote client closed the connection
     if (bytesReceived == 0) return 0;
@@ -491,10 +537,10 @@ bool Client_nicknameIsValid(const char *username) {
  * Authenticates a client connection
  * Currently it only ensures that another client is not already connected
  * using the same nickname, and the client entry is in the clients list
- * @param[in] client Socket to communicate with
+ * @param[in] client Client object containing a socket to communicate with
  * @param[out] Success or failure
  */
-bool Server_authenticate(SOCKET client) {
+bool Server_authenticate(Client *client) {
   char request[kBufferSize] = {0};
   char response[kBufferSize] = {0};
   struct timeval timeout;
@@ -506,21 +552,24 @@ bool Server_authenticate(SOCKET client) {
   fd_set errors;
   FD_ZERO(&reads);
   FD_ZERO(&errors);
-  FD_SET(client, &reads);
-  FD_SET(client, &errors);
-  SOCKET maxSocket = client;
+  FD_SET(client->socket, &reads);
+  FD_SET(client->socket, &errors);
+  SOCKET maxSocket = client->socket;
 
   timeout.tv_sec  = kAuthenticationTimeout;
   timeout.tv_usec = 0;
 
   while(true) {
-    int rc = select(maxSocket+1, &reads, 0, &errors, &timeout);
+    int rc = select(maxSocket + 1, &reads, 0, &errors, &timeout);
     if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
         // System interrupt signal
         Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
-        Error("select() failed on authentication (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        Error(
+          "select() failed on authentication (%d): %s",
+          SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+        );
       }
       continue;
     }
@@ -534,7 +583,7 @@ bool Server_authenticate(SOCKET client) {
     }
 
     // Socket ready to receive
-    if (FD_ISSET(client, &reads)) {
+    if (FD_ISSET(client->socket, &reads)) {
       int received = Server_receive(client, response, kBufferSize);
       if (received > 0) {
         if (kMessageTypeNick == Message_getType(response)) {
@@ -559,7 +608,7 @@ bool Server_authenticate(SOCKET client) {
             // The user's nickname is unique
             // Lookup client by thread
             clientInfo = Server_getClientInfoForThread(pthread_self());
-            if (clientInfo != NULL) {
+            if (clientInfo != NULL && clientInfo == client) {
               // Update client entry
               snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
               Info(
@@ -578,7 +627,7 @@ bool Server_authenticate(SOCKET client) {
     }
 
     // Client socket has an error
-    if (FD_ISSET(client, &errors)) {
+    if (FD_ISSET(client->socket, &errors)) {
       Error(
         "Client socket failed during authentication (%d): %s",
         SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
@@ -586,7 +635,7 @@ bool Server_authenticate(SOCKET client) {
       break;
     }
 
-    if (!SOCKET_isValid(client)) break;
+    if (!SOCKET_isValid(client->socket)) break;
   }
   // We leave error management or client disconnection to the calling function
   return false;
@@ -596,52 +645,52 @@ bool Server_authenticate(SOCKET client) {
 /**
  * Handles communications with a single client, it is spawned
  * on a new thread for every connected client
- * @param[in] socket Pointer to a client socket
+ * @param[in] data Pointer to a Client structure
  */
-void* Server_handleClient(void* socket) {
+void* Server_handleClient(void* data) {
+  // This should be = to client->threadID
   pthread_t me = pthread_self();
-  SOCKET *client = (SOCKET *)socket;
+  Client *client = (Client *)data;
+  if (me != client->threadID) {
+    Error("Client thread id mismatch (client: %lu, me: %lu)", client->threadID, me);
+    Server_dropClient(client);
+  }
   char messageBuffer[kBufferSize] = {0};
 
-  Info("Starting new client thread %lu", me);
+  Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
   memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Welcome to C2hat!");
   // Using strlen() +1 ensures the NULL terminator is sent
-  Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
+  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Ask for a nickname
-  if (!Server_authenticate(*client)) {
-    Info("Authentication failed for client thread %lu", me);
+  if (!Server_authenticate(client)) {
+    Info("Authentication failed for client thread %lu", client->threadID);
     memset(messageBuffer, '\0', kBufferSize);
     Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Authentication failed");
-    Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
-    Server_dropClient(*client);
+    Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+    Server_dropClient(client);
   }
 
   // Say Hello to the new user
-  Client *clientInfo = Server_getClientInfoForThread(me);
-  if (clientInfo == NULL) {
-    Error("Client info not found for client %lu", me);
-    Server_dropClient(*client);
-  }
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Hello %s!", clientInfo->nickname);
-  Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
+  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Hello %s!", client->nickname);
+  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Broadcast that a new client has joined
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just joined the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just joined the chat", client->nickname);
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   fd_set reads;
   fd_set errors;
   FD_ZERO(&reads);
   FD_ZERO(&errors);
-  FD_SET(*client, &reads);
-  FD_SET(*client, &errors);
-  SOCKET maxSocket = *client;
+  FD_SET(client->socket, &reads);
+  FD_SET(client->socket, &errors);
+  SOCKET maxSocket = client->socket;
   struct timeval timeout;
   timeout.tv_sec  = kChatTimeout;
   timeout.tv_usec = 0;
@@ -651,7 +700,7 @@ void* Server_handleClient(void* socket) {
     // Initialise buffer for client data
     memset(messageBuffer, '\0', kBufferSize);
 
-    int rc = select(maxSocket+1, &reads, 0, &errors, &timeout);
+    int rc = select(maxSocket + 1, &reads, 0, &errors, &timeout);
     if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
         Info("%s", strerror(SOCKET_getErrorNumber()));
@@ -667,15 +716,15 @@ void* Server_handleClient(void* socket) {
         kMessageTypeErr, messageBuffer, kBufferSize,
         "Connection timed out, you've been disconnected!"
       );
-      Server_send(*client, messageBuffer, strlen(messageBuffer) + 1);
+      Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
       break;
     }
 
     // Main socket is ready to read
-    if (FD_ISSET(*client, &reads)) {
+    if (FD_ISSET(client->socket, &reads)) {
 
       // Listen for data
-      int received = Server_receive(*client, messageBuffer, kBufferSize);
+      int received = Server_receive(client, messageBuffer, kBufferSize);
       if (received < 0) {
         if (SOCKET_getErrorNumber() == 0) {
           Info("Connection closed by remote client (1) %d", ECONNRESET);
@@ -705,12 +754,12 @@ void* Server_handleClient(void* socket) {
               // Send /ok to the client to acknowledge the correct message
               memset(messageBuffer, '\0', kBufferSize);
               Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
-              if (Server_send(*client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
+              if (Server_send(client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
 
               // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
               Message_format(
                 kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize,
-                "[%s] %s", clientInfo->nickname, messageContent
+                "[%s] %s", client->nickname, messageContent
               );
               Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
               Message_free(&messageContent);
@@ -723,22 +772,22 @@ void* Server_handleClient(void* socket) {
     }
 
     // Client socket has an error
-    if (FD_ISSET(*client, &errors)) {
+    if (FD_ISSET(client->socket, &errors)) {
       Error("Client socket failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
     }
 
-    if (!SOCKET_isValid(*client)) break;
+    if (!SOCKET_isValid(client->socket)) break;
   }
 
   // Broadcast that client has left
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just left the chat", clientInfo->nickname);
+  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just left the chat", client->nickname);
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Close the connection
-  Server_dropClient(*client);
-  FD_CLR(*client, &reads);
-  FD_CLR(*client, &errors);
+  Server_dropClient(client);
+  FD_CLR(client->socket, &reads);
+  FD_CLR(client->socket, &errors);
 
   return NULL;
 }
@@ -783,8 +832,8 @@ void* Server_handleBroadcast(void* data) {
         // The client may have been disconnected with a /quit message
         // the server will hang if tries to send a message
         if (SOCKET_isValid(client->socket)) {
-          int sent = Server_send(client->socket, (char*)item->content, item->length);
-          if (sent <= 0) Server_dropClient(client->socket);
+          int sent = Server_send(client, (char*)item->content, item->length);
+          if (sent <= 0) Server_dropClient(client);
         }
       }
       QueueData_free(&item);

@@ -29,6 +29,9 @@
   // Receives data through the client's socket
   int Client_receive(const C2HatClient *client, char *buffer, size_t length);
 
+  // Safely disconnects a client instance
+  void Client_disconnect(C2HatClient *this);
+
   // Destroys a network client
   void Client_destroy(C2HatClient **client);
 #endif

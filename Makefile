@@ -5,10 +5,11 @@ AR = ar rcs
 LDFLAGS = -L lib
 INCFLAGS = -I src/lib
 VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
-SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig
+# You need to install libssl-dev in order to compile with TLS support
+SERVERLIBS = -lpthread -llogger -lsocket -lpid -lqueue -llist -lmessage -lconfig -lssl -lcrypto
 # Note: on macOS you need to install the updated ncurses with Homebrew
 # then you can use $(ncursesw6-config --cflags --libs) to get the correct parameters
-CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -lqueue -ldl -lncursesw
+CLIENTLIBS = -lsocket -lpthread -lmessage -lhash -lwtrim -llist -lqueue -ldl -lncursesw -lssl -lcrypto
 TESTCONFIGLIBS =
 BINPREFIX = c2hat-
 

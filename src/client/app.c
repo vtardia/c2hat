@@ -77,7 +77,10 @@ void *App_listen(void *client) {
       // Ignore a signal received before timeout, will be managed by handler
       if (SOCKET_getErrorNumber() == EINTR) continue;
 
-      fprintf(stderr, "select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fprintf(
+        stderr, "select() failed. (%d): %s\n",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       terminate = true;
       break;
     }
@@ -100,7 +103,7 @@ void *App_listen(void *client) {
 
   // Clear file descriptors and close the socket
   FD_CLR(server, &reads);
-  SOCKET_close(server);
+  SOCKET_close(server); // Or Client_disconnect()?
 
   // Tell the main thread that it needs to close the UI
   pthread_kill(mainThreadID, SIGUSR1);

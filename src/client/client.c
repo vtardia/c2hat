@@ -14,6 +14,12 @@
 #include <stdbool.h>
 #include <signal.h>
 
+#include <openssl/crypto.h>
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 #include "socket/socket.h"
 #include "message/message.h"
 
@@ -21,11 +27,29 @@
 
 /// Contains information on the current client application
 typedef struct _C2HatClient {
-  SOCKET server; ///< Connection socket resource
-  FILE *in;      ///< Input stream (currently unused)
-  FILE *out;     ///< Output stream
-  FILE *err;     ///< Error stream
+  SOCKET server;         ///< Connection socket resource
+  FILE *in;              ///< Input stream (currently unused)
+  FILE *out;             ///< Output stream
+  FILE *err;             ///< Error stream
+  SSL_CTX *sslContext;   ///< SSL context resource
+  SSL *ssl;              ///< SSL connection handle
+  STACK_OF(X509) *chain; ///< SSL certificate chain from the server
 } C2HatClient;
+
+/// Keeps track of SSL initialisation that should happen only once
+static bool sslInit = false;
+
+/**
+ * Initialises the OpenSSL library functions
+ */
+void Client_ssl_init() {
+  if (!sslInit) {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    sslInit = true;
+  }
+}
 
 /**
  * Creates a new connected network chat client
@@ -41,7 +65,70 @@ C2HatClient *Client_create() {
   client->in = stdin;
   client->out = stdout;
   client->err = stderr;
+
+  Client_ssl_init();
+
+  // Create SSL context for the client
+  client->sslContext = SSL_CTX_new(TLS_client_method());
+  if (!client->sslContext) {
+    fprintf(stderr, "❌ Error: SSL_CTX_new() failed.\n");
+    Client_destroy(&client);
+    return NULL;
+  }
   return client;
+}
+
+/**
+ * Validates an X509 certificate
+ */
+bool Client_validateCertificate(X509 *cert, STACK_OF(X509) *chain, char *error, size_t length) {
+  char * storePath = "/etc/ssl/certs/"; // TODO: This is Linux only, make it configurable
+
+  // Create an empty certificate store
+  X509_STORE *store = X509_STORE_new();
+  if (!store) {
+    strncpy(error, "Unable to create new X509 store", length);
+    goto error;
+  }
+
+  // Set CA certificates location to load into the store (store, CAFile, CADir)
+  int rc = X509_STORE_load_locations(store, NULL, storePath);
+  if (rc != 1) {
+    snprintf(error, length, "Unable to load certificates at %s to store", storePath);
+    goto error;
+  }
+
+  // Create a new store context
+  X509_STORE_CTX *ctx = X509_STORE_CTX_new();
+  if (!ctx) {
+    strncpy(error, "Unable to create store context", length);
+    goto error;
+  }
+
+  // Initialise the context using the current store,
+  // the target certificate, and the certificate chain
+  if (X509_STORE_CTX_init(ctx, store, cert, chain) != 1) {
+    strncpy(error, "Unable to initialise store context", length);
+    goto error;
+  }
+
+  // Ask the context to validate the certificate
+  rc = X509_verify_cert(ctx);
+  if (rc == 1) {
+    // OK - The certificate is valid
+    X509_STORE_free(store);
+    X509_STORE_CTX_free(ctx);
+    return true;
+  }
+
+  // Verification failed
+  strncpy(error, X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx)), length);
+
+  // Any other intermediate error
+error:
+  if (store) X509_STORE_free(store);
+  if (ctx) X509_STORE_CTX_free(ctx);
+  return false;
 }
 
 /**
@@ -60,7 +147,10 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   struct addrinfo *bindAddress;
   options.ai_socktype = SOCK_STREAM;
   if (getaddrinfo(host, port, &options, &bindAddress)) {
-    fprintf(this->err, "❌ Invalid IP/port configuration: %s\n", gai_strerror(SOCKET_getErrorNumber()));
+    fprintf(
+      this->err, "❌ Invalid IP/port configuration: %s\n",
+      gai_strerror(SOCKET_getErrorNumber())
+    );
     return false;
   }
 
@@ -73,7 +163,10 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     serviceBuffer, sizeof(serviceBuffer),
     NI_NUMERICHOST | NI_NUMERICSERV
   )) {
-    fprintf(this->err, "getnameinfo() failed (%d): %s\n", SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber()));
+    fprintf(
+      this->err, "getnameinfo() failed (%d): %s\n",
+      SOCKET_getErrorNumber(), gai_strerror(SOCKET_getErrorNumber())
+    );
     return false;
   }
 
@@ -82,18 +175,75 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol
   );
   if (!SOCKET_isValid(this->server)) {
-    fprintf(this->err, "socket() failed (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    fprintf(
+      this->err, "socket() failed (%d): %s\n",
+      SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+    );
     return false;
   }
 
   // Try to connect
   fprintf(this->err, "Connecting to %s:%s...", addressBuffer, serviceBuffer);
   if (connect(this->server, bindAddress->ai_addr, bindAddress->ai_addrlen)) {
-    fprintf(this->err, "FAILED!\n❌ Error: %d - %s\nCheck that the host name and port number are correct\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+    fprintf(
+      this->err,
+      "FAILED!\n❌ Error: %d - %s\nCheck that the host name and port number are correct\n",
+      SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+    );
     return false;
   }
   freeaddrinfo(bindAddress); // We don't need it anymore
-  fprintf(this->err, "OK!\n");
+
+  // Wrap the connection into an SSL tunnel
+  this->ssl = SSL_new(this->sslContext);
+  if (!this->ssl) {
+    fprintf(this->err, "❌ Error: SSL_new() failed.\n");
+    return false;
+  }
+  SSL_set_fd(this->ssl, this->server);
+  if (SSL_connect(this->ssl) == -1) {
+    fprintf(this->err, "❌ Error: SSL_connect() failed.\n");
+    ERR_print_errors_fp(this->err);
+    return false;
+  }
+  fprintf(this->err, "OK!\n\n");
+  fprintf(this->err, "🔐 SSL/TLS using %s\n", SSL_get_cipher(this->ssl));
+
+  // Download certificate
+  X509 *cert = SSL_get_peer_certificate(this->ssl);
+  if (cert) {
+    // Download certificate chain
+    this->chain = SSL_get_peer_cert_chain(this->ssl);
+    if (this->chain == NULL) {
+      this->chain = sk_X509_new_null();
+      sk_X509_push(this->chain, cert);
+    }
+
+    // Display certificate details
+    char *tmp;
+    if ((tmp = X509_NAME_oneline(X509_get_subject_name(cert),0,0))) {
+      fprintf(this->err, "   ⁃subject: %s\n", tmp);
+      OPENSSL_free(tmp);
+    }
+    if ((tmp = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0))) {
+      fprintf(this->err, "   ⁃issuer : %s\n", tmp);
+      OPENSSL_free(tmp);
+    }
+
+    // Validate certificate
+    char certError[100] = {0};
+    if (!Client_validateCertificate(cert, this->chain, certError, 100)) {
+      X509_free(cert);
+      fprintf(this->err, "   ❌ Certificate validation failed: %s\n", certError);
+      return false;
+    }
+
+    // Cleanup
+    X509_free(cert);
+  } else {
+    fprintf(this->err, "   ❌ SSL_get_peer_certificate() failed.\n");
+    return false;
+  }
 
   // Wait for the OK signal from the server
   // We are using select() with a timeout here, because if the server
@@ -111,34 +261,31 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     int result = select(this->server + 1, &reads, 0, 0, &timeout);
     if (result < 0) {
       if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
-      fprintf(this->err, "Client select() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
-      //fflush(this->err);
+      fprintf(
+        this->err, "Client select() failed. (%d): %s\n",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       return false;
     }
     if (result == 0) {
       fprintf(this->err, "Client timeout expired\n");
-      //fflush(this->err);
       return false;
     }
 
     if (FD_ISSET(this->server, &reads)) {
       int received = Client_receive(this, buffer, kBufferSize);
       if (received < 0) {
-        SOCKET_close(this->server);
         return false;
       }
       // At this point the server will only send /ok or /err messages
       if (Message_getType(buffer) != kMessageTypeOk) {
         fprintf(this->err, "❌ Error: Connection refused by the chat server\n");
-        //fflush(this->err);
-        SOCKET_close(this->server);
         return false;
       }
       // Display the server welcome message
       char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
       if (strlen(messageContent) > 0) {
         fprintf(this->err, "\n💬 %s\n", messageContent);
-        //fflush(this->err);
       }
       Message_free(&messageContent);
       break;
@@ -174,7 +321,7 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
   // Reading 1 byte at a time, until either the NULL terminator is found
   // or the given length is reached
   do {
-    int bytesReceived = recv(this->server, cursor, 1, 0);
+    int bytesReceived = SSL_read(this->ssl, cursor, 1);
     if (bytesReceived == 0) {
       fprintf(this->err, "Connection closed by remote server\n");
       return -1;
@@ -183,7 +330,10 @@ int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
       // Ignore a signal received before timeout, will be managed by handler
       if (SOCKET_getErrorNumber() == EINTR) continue;
 
-      fprintf(this->err, "recv() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fprintf(
+        this->err, "recv() failed. (%d): %s\n",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       // We don't care about partial read, it would be useless anyway
       return -1;
     }
@@ -218,9 +368,12 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
 
   // Keep sending data until the buffer is empty
   do {
-    int bytesSent = send(this->server, data, length - total, MSG_NOSIGNAL);
+    int bytesSent = SSL_write(this->ssl, data, length - total);
     if (bytesSent < 0) {
-      fprintf(this->err, "send() failed. (%d): %s\n", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fprintf(
+        this->err, "send() failed. (%d): %s\n",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       return -1;
     }
     // Ignoring socket closed (byteSent == 0) on send, will be caught by recv()
@@ -246,9 +399,11 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
 bool Client_authenticate(C2HatClient *this, const char *username) {
   // Minimal validation: ensure that at least two characters are entered
   if (strlen(username) < 2) {
-    fprintf(this->err, "❌ Error: Invalid user nickname\nNicknames must be at least 2 characters long\n");
-    //fflush(this->err);
-    SOCKET_close(this->server);
+    fprintf(
+      this->err,
+      "❌ Error: Invalid user nickname\nNicknames must be at least 2 characters long\n"
+    );
+    Client_disconnect(this);
     return false;
   }
   // Wait for the AUTH signal from the server,
@@ -257,13 +412,15 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   char buffer[kBufferSize] = {0};
   int received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
-    SOCKET_close(this->server);
+    Client_disconnect(this);
     return false;
   }
   if (Message_getType(buffer) != kMessageTypeNick) {
-    fprintf(this->err, "❌ Error: Unable to authenticate\nUnknown server response\n");
-    //fflush(this->err);
-    SOCKET_close(this->server);
+    fprintf(
+      this->err,
+      "❌ Error: Unable to authenticate\nUnknown server response\n"
+    );
+    Client_disconnect(this);
     return false;
   }
 
@@ -272,9 +429,11 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
-    fprintf(this->err, "❌ Error: Unable to authenticate\nCannot send data to the server, please retry later\n");
-    //fflush(this->err);
-    SOCKET_close(this->server);
+    fprintf(
+      this->err,
+      "❌ Error: Unable to authenticate\nCannot send data to the server, please retry later\n"
+    );
+    Client_disconnect(this);
     return false;
   }
 
@@ -282,9 +441,11 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   memset(buffer, 0, kBufferSize);
   received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
-    fprintf(this->err, "❌ Error: Authentication failed\nCannot receive a response from the server\n");
-    //fflush(this->err);
-    SOCKET_close(this->server);
+    fprintf(
+      this->err,
+      "❌ Error: Authentication failed\nCannot receive a response from the server\n"
+    );
+    Client_disconnect(this);
     return false;
   }
 
@@ -292,16 +453,31 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   if (messageType != kMessageTypeOk) {
     if (messageType == kMessageTypeErr) {
       char *errorMessage = Message_getContent(buffer, kMessageTypeErr, kBufferSize);
-      fprintf(this->err, "❌ [Server Error] Authentication failed\n%s\n", errorMessage);
+      fprintf(
+        this->err, "❌ [Server Error] Authentication failed\n%s\n",
+        errorMessage
+      );
       Message_free(&errorMessage);
     } else {
-      fprintf(this->err, "❌ Error: Authentication failed\nInvalid response from the server\n");
+      fprintf(
+        this->err,
+        "❌ Error: Authentication failed\nInvalid response from the server\n"
+      );
     }
-    //fflush(this->err);
-    SOCKET_close(this->server);
+    Client_disconnect(this);
     return false;
   }
   return true;
+}
+
+void Client_disconnect(C2HatClient *this) {
+  // Close SSL connection first, then close socket and free memory
+  if (this->ssl != NULL) {
+    SSL_shutdown(this->ssl);
+    if (SOCKET_isValid(this->server)) SOCKET_close(this->server);
+    SSL_free(this->ssl);
+    this->ssl = NULL;
+  }
 }
 
 /**
@@ -311,13 +487,13 @@ void Client_destroy(C2HatClient **this) {
   if (this != NULL) {
     // Check if we need to close the socket
     if (*this != NULL) {
-      C2HatClient *client = *this;
-      if (SOCKET_isValid(client->server)) SOCKET_close(client->server);
-      client = NULL;
+      Client_disconnect(*this);
+      SSL_CTX_free((*this)->sslContext);
+      if ((*this)->chain != NULL) sk_X509_pop_free((*this)->chain, X509_free);
+      // Erase the used memory
+      memset(*this, 0, sizeof(C2HatClient));
+      free(*this);
+      *this = NULL;
     }
-    // Erase the used memory
-    memset(*this, 0, sizeof(C2HatClient));
-    free(*this);
-    *this = NULL;
   }
 }

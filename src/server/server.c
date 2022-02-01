@@ -9,6 +9,12 @@
 #include <pthread.h>
 #include <wchar.h>
 
+#include <openssl/crypto.h>
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 enum {
   kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
@@ -37,7 +43,7 @@ typedef struct {
   struct sockaddr_storage address; ///< Binary IP address
   socklen_t length; ///< Length of the binary IP address
   char host[kMaxClientHostLength]; ///< IP address in pretty string format
-  /* SSL *ssl; ///< SSL connection handle */
+  SSL *ssl; ///< SSL connection handle
 } Client;
 
 /// This is the singleton instance for our server
@@ -46,7 +52,7 @@ struct Server {
   int port;   ///< Inbound TCP port
   int maxConnections; ///< Maximum number of connections accepted
   SOCKET socket; ///< Stores the server socket
-  /* SSL_CTX *ssl; ///< SSL context */
+  SSL_CTX *ssl; ///< SSL context
 };
 static Server *server = NULL;
 
@@ -132,28 +138,28 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   }
 
   // Initialise OpenSSL
-  /* SSL_library_init(); */
-  /* OpenSSL_add_all_algorithms(); */
-  /* SSL_load_error_strings(); */
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  SSL_load_error_strings();
 
-  /* SSL_CTX *sslContext = SSL_CTX_new(TLS_server_method()); */
-  /* if (!sslContext) { */
-  /*   Fatal("SSL_CTX_new() failed: cannot create SSL context"); */
-  /* } */
+  SSL_CTX *sslContext = SSL_CTX_new(TLS_server_method());
+  if (!sslContext) {
+    Fatal("SSL_CTX_new() failed: cannot create SSL context");
+  }
 
   // TODO: move these to configuration files
-  /* const char *certPath = "/etc/letsencrypt/live/tardia.dev/cert.pem"; */
-  /* const char *keyPath = "/etc/letsencrypt/live/tardia.dev/privkey.pem"; */
-  /* if (!SSL_CTX_use_certificate_file(ctx, certPath, SSL_FILETYPE_PEM) */
-  /*   || !SSL_CTX_use_PrivateKey_file(ctx, keyPath, SSL_FILETYPE_PEM)) { */
-  /*   ERR_print_errors_fp(stderr); */
-  /*   SSL_CTX_free(sslContext); */
-  /*   Fatal("SSL_CTX_use_certificate_file() failed"); */
-  /* } */
+  const char *certPath = "/etc/letsencrypt/live/tardia.dev/fullchain.pem";
+  const char *keyPath = "/etc/letsencrypt/live/tardia.dev/privkey.pem";
+  if (!SSL_CTX_use_certificate_chain_file(sslContext, certPath)
+    || !SSL_CTX_use_PrivateKey_file(sslContext, keyPath, SSL_FILETYPE_PEM)) {
+    ERR_print_errors_fp(stderr);
+    SSL_CTX_free(sslContext);
+    Fatal("SSL_CTX_use_certificate_file() failed");
+  }
 
   // Create a server instance
   server = (Server *)calloc(sizeof(Server), 1);
-  /* server->ssl = sslContext; */
+  server->ssl = sslContext;
   server->socket = Socket_new(bindAddress->ai_family, bindAddress->ai_socktype, bindAddress->ai_protocol);
   Socket_unsetIPV6Only(server->socket);
   Socket_setReusableAddress(server->socket);
@@ -182,7 +188,7 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
 void Server_free(Server **this) {
   if (this != NULL) {
     free((*this)->host);
-    /* SSL_CTX_free((*this)->ssl); */
+    SSL_CTX_free((*this)->ssl);
     memset(*this, 0, sizeof(Server));
     free(*this);
     *this = NULL;
@@ -286,19 +292,19 @@ void Server_start(Server *this) {
       }
 
       // Try to start an SSL connection
-      /* client.ssl = SSL_new(server->ssl); */
-      /* if (!client.ssl) { */
-      /*   Error("SSL_new() failed: cannot open an SSL client connection"); */
-      /*   continue; */
-      /* } */
-      /* SSL_set_fd(client.ssl, client.socket); */
-      /* if (SSL_accept(client.ssl) != 1) { */
-      /*   ERR_print_errors_fp(stderr); */
-      /*   SSL_shutdown(client.ssl); */
-      /*   SOCKET_close(client.socket); */
-      /*   SSL_free(client.ssl); */
-      /*   continue; */
-      /* } */
+      client.ssl = SSL_new(server->ssl);
+      if (!client.ssl) {
+        Error("SSL_new() failed: cannot open an SSL client connection");
+        continue;
+      }
+      SSL_set_fd(client.ssl, client.socket);
+      if (SSL_accept(client.ssl) != 1) {
+        ERR_print_errors_fp(stderr);
+        SSL_shutdown(client.ssl);
+        SOCKET_close(client.socket);
+        SSL_free(client.ssl);
+        continue;
+      }
 
       // A client has connected, log the client info
       getnameinfo(
@@ -308,7 +314,7 @@ void Server_start(Server *this) {
         NI_NUMERICHOST
       );
       Info("New connection from %s", client.host);
-      /* Info("SSL connection using %s", SSL_get_cipher(client.ssl)); */
+      Info("SSL connection using %s", SSL_get_cipher(client.ssl));
 
       pthread_t clientThreadID = 0;
       if (clients->length < kMaxClientConnections) {
@@ -329,9 +335,9 @@ void Server_start(Server *this) {
         pthread_detach(clientThreadID);
       } else {
         Info("Connection limits reached");
-        /* SSL_shutdown(client.ssl); */
-        /* SOCKET_close(client.socket); */
-        /* SSL_free(client.ssl); */
+        SSL_shutdown(client.ssl);
+        SOCKET_close(client.socket);
+        SSL_free(client.ssl);
       }
     }
 
@@ -347,9 +353,6 @@ void Server_start(Server *this) {
   Client *client;
   while ((client = (Client *)List_next(clients)) != NULL) {
     pthread_join(client->threadID, NULL);
-    /* SSL_shutdown(client->ssl); */
-    /* SOCKET_close(client->socket); */
-    /* SSL_free(client->ssl); */
   }
   // Destroy client list
   List_free(&clients);
@@ -376,9 +379,9 @@ int Server_send(Client *client, const char* message, size_t length) {
   char *data = (char*)message; // points to the beginning of the message
   do {
     if (!SOCKET_isValid(client->socket)) return -1;
-    int sent = send(client->socket, data, length - sentTotal, MSG_NOSIGNAL);
+    int sent = SSL_write(client->ssl, data, length - sentTotal);
     if (sent < 0) {
-      Error(
+      if (0 != SOCKET_getErrorNumber()) Error(
         "send() failed: (%d): %s",
         SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
       );
@@ -433,7 +436,9 @@ void Server_dropClient(Client *client) {
   if (index >= 0) {
     // Close client socket here, or it will hang during broadcast
     // with a bad file descriptor error
+    SSL_shutdown(client->ssl);
     SOCKET_close(client->socket);
+    SSL_free(client->ssl);
     if (!List_delete(clients, index)) {
       Warn("Unable to drop client %d with thread ID %lu", index, clientThreadID);
     }
@@ -490,7 +495,7 @@ int Server_receive(Client *client, char *buffer, size_t length) {
   size_t total = 0;
   char cursor[1] = {0};
   do {
-    int bytesReceived = recv(client->socket, cursor, 1, 0);
+    int bytesReceived = SSL_read(client->ssl, cursor, 1);
 
     // The remote client closed the connection
     if (bytesReceived == 0) return 0;

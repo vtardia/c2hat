@@ -43,34 +43,55 @@ static bool sslInit = false;
  * Initialises the OpenSSL library functions
  */
 SSL_CTX *Client_ssl_init(char *error, size_t length) {
+  // Initialise the OpenSSL library, must be done once
   if (!sslInit) {
     SSL_library_init();
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
     sslInit = true;
   }
+
   // Create SSL context for the client
   SSL_CTX * context = SSL_CTX_new(TLS_client_method());
   if (!context) {
     strncpy(error, "SSL_CTX_new() failed.", length);
     return NULL;
   }
+
+  // Set context options: minimum protocol version
+  // Note: options set for the context are inherited by all SSL
+  // connections created with this context and can be overridden
+  // for each connection if needed
   if (!SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION)) {
     strncpy(error, "Cannot set minimum TLS protocol version.", length);
     return NULL;
   }
+
+  // Set context options: use all possible bug fixes
   SSL_CTX_set_options(context, SSL_OP_ALL | SSL_OP_NO_RENEGOTIATION);
+
+  // Set context operating mode
   SSL_CTX_set_mode(
     context,
     SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
   );
+
+  // Use the most up to date cipher list
   SSL_CTX_set_cipher_list(
     context,
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
   );
-  // TODO In order to set SSL_VERIFY_PEER we need to load the CA stuff at this stage
-  // which is also a good thing
-  SSL_CTX_set_verify(context, SSL_VERIFY_NONE, NULL);
+
+  // Load CA certificates locations
+  // TODO this works on Linux, find a way to make it configurable for Mac and Win
+  char * caCertDir = "/etc/ssl/certs/";
+  char * caCertFile = "/etc/ssl/certs/ca-certificates.crt";
+  if (!SSL_CTX_load_verify_locations(context, caCertFile, caCertDir)) {
+    strncpy(error, "Unable to load CA locations", length);
+    return NULL;
+  }
+  // Tell OpenSSL to autometically check the server certificate or fail
+  SSL_CTX_set_verify(context, SSL_VERIFY_PEER, NULL);
   return context;
 }
 
@@ -97,60 +118,6 @@ C2HatClient *Client_create() {
     return NULL;
   }
   return client;
-}
-
-/**
- * Validates an X509 certificate
- */
-bool Client_validateCertificate(X509 *cert, STACK_OF(X509) *chain, char *error, size_t length) {
-  char * caCertDir = "/etc/ssl/certs/"; // TODO: This is Linux only, make it configurable
-  char * caCertFile = "/etc/ssl/certs/ca-certificates.crt";
-
-  // Create an empty certificate store
-  X509_STORE *store = X509_STORE_new();
-  if (!store) {
-    strncpy(error, "Unable to create new X509 store", length);
-    goto error;
-  }
-
-  // Set CA certificates location to load into the store (store, CAFile, CADir)
-  int rc = X509_STORE_load_locations(store, caCertFile, caCertDir);
-  if (rc != 1) {
-    snprintf(error, length, "Unable to load certificates at %s to store", caCertDir);
-    goto error;
-  }
-
-  // Create a new store context
-  X509_STORE_CTX *ctx = X509_STORE_CTX_new();
-  if (!ctx) {
-    strncpy(error, "Unable to create store context", length);
-    goto error;
-  }
-
-  // Initialise the context using the current store,
-  // the target certificate, and the certificate chain
-  if (X509_STORE_CTX_init(ctx, store, cert, chain) != 1) {
-    strncpy(error, "Unable to initialise store context", length);
-    goto error;
-  }
-
-  // Ask the context to validate the certificate
-  rc = X509_verify_cert(ctx);
-  if (rc == 1) {
-    // OK - The certificate is valid
-    X509_STORE_free(store);
-    X509_STORE_CTX_free(ctx);
-    return true;
-  }
-
-  // Verification failed
-  strncpy(error, X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx)), length);
-
-  // Any other intermediate error
-error:
-  if (store) X509_STORE_free(store);
-  if (ctx) X509_STORE_CTX_free(ctx);
-  return false;
 }
 
 /**
@@ -223,9 +190,10 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     return false;
   }
   SSL_set_fd(this->ssl, this->server);
-  if (SSL_connect(this->ssl) == -1) {
-    fprintf(this->err, "❌ Error: SSL_connect() failed.\n");
-    ERR_print_errors_fp(this->err);
+  if (SSL_connect(this->ssl) < 0) {
+    char error[256] = {0};
+    ERR_error_string_n(ERR_get_error(), error, 256);
+    fprintf(this->err, "FAILED!\n ❌ SSL_connect() failed: %s\n", error);
     return false;
   }
   fprintf(this->err, "OK!\n\n");
@@ -234,32 +202,16 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // Download certificate
   X509 *cert = SSL_get_peer_certificate(this->ssl);
   if (cert) {
-    // Download certificate chain
-    this->chain = SSL_get_peer_cert_chain(this->ssl);
-    if (this->chain == NULL) {
-      this->chain = sk_X509_new_null();
-      sk_X509_push(this->chain, cert);
-    }
-
     // Display certificate details
-    char *tmp;
-    if ((tmp = X509_NAME_oneline(X509_get_subject_name(cert),0,0))) {
-      fprintf(this->err, "   ⁃subject: %s\n", tmp);
-      OPENSSL_free(tmp);
+    char *cInfo;
+    if ((cInfo = X509_NAME_oneline(X509_get_subject_name(cert),0,0))) {
+      fprintf(this->err, "   ⁃subject: %s\n", cInfo);
+      OPENSSL_free(cInfo);
     }
-    if ((tmp = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0))) {
-      fprintf(this->err, "   ⁃issuer : %s\n", tmp);
-      OPENSSL_free(tmp);
+    if ((cInfo = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0))) {
+      fprintf(this->err, "   ⁃issuer : %s\n", cInfo);
+      OPENSSL_free(cInfo);
     }
-
-    // Validate certificate
-    char certError[100] = {0};
-    if (!Client_validateCertificate(cert, this->chain, certError, 100)) {
-      X509_free(cert);
-      fprintf(this->err, "   ❌ Certificate validation failed: %s\n", certError);
-      return false;
-    }
-
     // Cleanup
     X509_free(cert);
   } else {

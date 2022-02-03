@@ -146,6 +146,31 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   if (!sslContext) {
     Fatal("SSL_CTX_new() failed: cannot create SSL context");
   }
+  // Set minimum protocol to TLS 1.2, recommended for internal or buiness apps
+  // Use TLS 1.0 or 1.1 for wider compatibility while still keeping
+  // a good level of security
+  // See also https://developers.cloudflare.com/ssl/edge-certificates/additional-options/minimum-tls
+  if (!SSL_CTX_set_min_proto_version(sslContext, TLS1_2_VERSION)) {
+    SSL_CTX_free(sslContext);
+    Fatal("Cannot set minimum TLS protocol version");
+  }
+  // See https://www.openssl.org/docs/man3.0/man3/SSL_CTX_set_options.html
+  SSL_CTX_set_options(sslContext, SSL_OP_ALL | SSL_OP_NO_RENEGOTIATION);
+  // See https://www.openssl.org/docs/man3.0/man3/SSL_CTX_set_mode.html
+  SSL_CTX_set_mode(
+    sslContext,
+    SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
+  );
+  // Set verification rules
+  // SSL_VERIFY_NONE on server means that the client will not be required
+  // to send a client certificate
+  // See https://www.openssl.org/docs/man3.0/man3/SSL_CTX_set_verify.html
+  SSL_CTX_set_verify(sslContext, SSL_VERIFY_NONE, NULL);
+  // See https://www.openssl.org/docs/man3.0/man3/SSL_CTX_set_cipher_list.html
+  SSL_CTX_set_cipher_list(
+    sslContext,
+    "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
+  );
 
   // TODO: move these to configuration files
   const char *certPath = "/etc/letsencrypt/live/tardia.dev/fullchain.pem";
@@ -155,6 +180,10 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
     ERR_print_errors_fp(stderr);
     SSL_CTX_free(sslContext);
     Fatal("SSL_CTX_use_certificate_file() failed");
+  }
+  if (!SSL_CTX_check_private_key(sslContext)) {
+    SSL_CTX_free(sslContext);
+    Fatal("Private key does not match the public certificate");
   }
 
   // Create a server instance

@@ -75,6 +75,23 @@ C2HatClient *Client_create() {
     Client_destroy(&client);
     return NULL;
   }
+  if (!SSL_CTX_set_min_proto_version(client->sslContext, TLS1_2_VERSION)) {
+    fprintf(stderr, "❌ Error: Cannot set minimum TLS protocol version.\n");
+    Client_destroy(&client);
+    return NULL;
+  }
+  SSL_CTX_set_options(client->sslContext, SSL_OP_ALL | SSL_OP_NO_RENEGOTIATION);
+  SSL_CTX_set_mode(
+    client->sslContext,
+    SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
+  );
+  SSL_CTX_set_cipher_list(
+    client->sslContext,
+    "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
+  );
+  // TODO In order to set SSL_VERIFY_PEER we need to load the CA stuff at this stage
+  // which is also a good thing
+  SSL_CTX_set_verify(client->sslContext, SSL_VERIFY_NONE, NULL);
   return client;
 }
 
@@ -82,7 +99,8 @@ C2HatClient *Client_create() {
  * Validates an X509 certificate
  */
 bool Client_validateCertificate(X509 *cert, STACK_OF(X509) *chain, char *error, size_t length) {
-  char * storePath = "/etc/ssl/certs/"; // TODO: This is Linux only, make it configurable
+  char * caCertDir = "/etc/ssl/certs/"; // TODO: This is Linux only, make it configurable
+  char * caCertFile = "/etc/ssl/certs/ca-certificates.crt";
 
   // Create an empty certificate store
   X509_STORE *store = X509_STORE_new();
@@ -92,9 +110,9 @@ bool Client_validateCertificate(X509 *cert, STACK_OF(X509) *chain, char *error, 
   }
 
   // Set CA certificates location to load into the store (store, CAFile, CADir)
-  int rc = X509_STORE_load_locations(store, NULL, storePath);
+  int rc = X509_STORE_load_locations(store, caCertFile, caCertDir);
   if (rc != 1) {
-    snprintf(error, length, "Unable to load certificates at %s to store", storePath);
+    snprintf(error, length, "Unable to load certificates at %s to store", caCertDir);
     goto error;
   }
 

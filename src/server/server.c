@@ -177,9 +177,10 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
   const char *keyPath = "/etc/letsencrypt/live/tardia.dev/privkey.pem";
   if (!SSL_CTX_use_certificate_chain_file(sslContext, certPath)
     || !SSL_CTX_use_PrivateKey_file(sslContext, keyPath, SSL_FILETYPE_PEM)) {
-    ERR_print_errors_fp(stderr);
+    char error[256] = {0};
+    ERR_error_string_n(ERR_get_error(), error, 256);
     SSL_CTX_free(sslContext);
-    Fatal("SSL_CTX_use_certificate_file() failed");
+    Fatal("SSL_CTX_use_certificate_file() failed: %s", error);
   }
   if (!SSL_CTX_check_private_key(sslContext)) {
     SSL_CTX_free(sslContext);
@@ -328,7 +329,9 @@ void Server_start(Server *this) {
       }
       SSL_set_fd(client.ssl, client.socket);
       if (SSL_accept(client.ssl) != 1) {
-        ERR_print_errors_fp(stderr);
+        char error[256] = {0};
+        ERR_error_string_n(ERR_get_error(), error, 256);
+        Error("SSL_accept() failed: %s", error);
         SSL_shutdown(client.ssl);
         SOCKET_close(client.socket);
         SSL_free(client.ssl);

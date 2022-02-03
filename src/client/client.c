@@ -42,13 +42,36 @@ static bool sslInit = false;
 /**
  * Initialises the OpenSSL library functions
  */
-void Client_ssl_init() {
+SSL_CTX *Client_ssl_init(char *error, size_t length) {
   if (!sslInit) {
     SSL_library_init();
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
     sslInit = true;
   }
+  // Create SSL context for the client
+  SSL_CTX * context = SSL_CTX_new(TLS_client_method());
+  if (!context) {
+    strncpy(error, "SSL_CTX_new() failed.", length);
+    return NULL;
+  }
+  if (!SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION)) {
+    strncpy(error, "Cannot set minimum TLS protocol version.", length);
+    return NULL;
+  }
+  SSL_CTX_set_options(context, SSL_OP_ALL | SSL_OP_NO_RENEGOTIATION);
+  SSL_CTX_set_mode(
+    context,
+    SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
+  );
+  SSL_CTX_set_cipher_list(
+    context,
+    "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
+  );
+  // TODO In order to set SSL_VERIFY_PEER we need to load the CA stuff at this stage
+  // which is also a good thing
+  SSL_CTX_set_verify(context, SSL_VERIFY_NONE, NULL);
+  return context;
 }
 
 /**
@@ -66,32 +89,13 @@ C2HatClient *Client_create() {
   client->out = stdout;
   client->err = stderr;
 
-  Client_ssl_init();
-
-  // Create SSL context for the client
-  client->sslContext = SSL_CTX_new(TLS_client_method());
+  char error[100] = {0};
+  client->sslContext = Client_ssl_init(error, 100);
   if (!client->sslContext) {
-    fprintf(stderr, "❌ Error: SSL_CTX_new() failed.\n");
+    fprintf(stderr, "❌ Error: %s\n", error);
     Client_destroy(&client);
     return NULL;
   }
-  if (!SSL_CTX_set_min_proto_version(client->sslContext, TLS1_2_VERSION)) {
-    fprintf(stderr, "❌ Error: Cannot set minimum TLS protocol version.\n");
-    Client_destroy(&client);
-    return NULL;
-  }
-  SSL_CTX_set_options(client->sslContext, SSL_OP_ALL | SSL_OP_NO_RENEGOTIATION);
-  SSL_CTX_set_mode(
-    client->sslContext,
-    SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
-  );
-  SSL_CTX_set_cipher_list(
-    client->sslContext,
-    "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
-  );
-  // TODO In order to set SSL_VERIFY_PEER we need to load the CA stuff at this stage
-  // which is also a good thing
-  SSL_CTX_set_verify(client->sslContext, SSL_VERIFY_NONE, NULL);
   return client;
 }
 

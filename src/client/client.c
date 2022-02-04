@@ -194,6 +194,8 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS disallows *www or www* certificate DN
   // X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS disallows one.two.mydomain.com
   // while allowing first level subdomains like sub.mydomain.com
+  // See also https://www.openssl.org/docs/man3.0/man3/SSL_set_hostflags.html
+  // and https://wiki.openssl.org/index.php/Hostname_validation
   bool isLocalHost = (strcmp(addressBuffer, "127.0.0.1") == 0 || strcmp(addressBuffer, "::1") == 0);
   if (!isLocalHost) {
     SSL_set_hostflags(

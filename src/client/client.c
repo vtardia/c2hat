@@ -16,6 +16,7 @@
 
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -188,6 +189,21 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   if (!this->ssl) {
     fprintf(this->err, "❌ Error: SSL_new() failed.\n");
     return false;
+  }
+  // Set up host validation for server other than localhost
+  // X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS disallows *www or www* certificate DN
+  // X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS disallows one.two.mydomain.com
+  // while allowing first level subdomains like sub.mydomain.com
+  bool isLocalHost = (strcmp(addressBuffer, "127.0.0.1") == 0 || strcmp(addressBuffer, "::1") == 0);
+  if (!isLocalHost) {
+    SSL_set_hostflags(
+      this->ssl,
+      X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS | X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS
+    );
+    if (!SSL_set1_host(this->ssl, host)) {
+      fprintf(this->err, "❌ Error: SSL_set1_host() failed.\n");
+      return false;
+    }
   }
   SSL_set_fd(this->ssl, this->server);
   if (SSL_connect(this->ssl) < 0) {

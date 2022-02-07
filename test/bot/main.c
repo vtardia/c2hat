@@ -13,7 +13,7 @@
 
 static bool terminate = false;
 
-enum {kBufferSize = 1024};
+enum { kBufferSize = 1024 };
 
 const int kMaxBots = 7;
 
@@ -22,7 +22,9 @@ char *port = NULL;
 
 char messages[1024][100];
 
-// Called within a thread function, hides that thread from signals
+/**
+ * Called within a thread function, hides that thread from signals
+ */
 void maskSignal() {
   sigset_t mask;
   sigemptyset(&mask);
@@ -34,7 +36,10 @@ void maskSignal() {
 
 void Bot_stop(int signal) {
   terminate = true;
-  printf("Received signal %d in thread %lu\n", signal, (unsigned long)pthread_self());
+  printf(
+    "Received signal %d in thread %lu\n",
+    signal, (unsigned long)pthread_self()
+  );
 }
 
 // Catch interrupt signals
@@ -96,13 +101,19 @@ void* RunBot(void* data) {
     int result = select(server + 1, &reads, 0, 0, &timeout);
     if (result < 0) {
       if (SOCKET_getErrorNumber() == EINTR) break; // Signal received before timeout
-      fprintf(stderr, "[%s] select() failed. (%d): %s\n", nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fprintf(
+        stderr, "[%s] select() failed. (%d): %s\n",
+        nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       break;
     }
 
     // Server didn't respond on time
     if (result == 0) {
-      fprintf(stderr, "[%s] select() timeout expired. (%d): %s\n", nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      fprintf(
+        stderr, "[%s] select() timeout expired. (%d): %s\n",
+        nickname, SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
       break;
     }
 
@@ -125,7 +136,10 @@ void* RunBot(void* data) {
       snprintf(message, 1023, "/msg %s", messages[messageID]);
       int sent = Client_send(bot, message, strlen(message) + 1);
       if (sent <= 0) {
-        fprintf(stderr, "[%s] Unable to send message: %s\n", nickname, strerror(errno));
+        fprintf(
+          stderr, "[%s] Unable to send message: %s\n",
+          nickname, strerror(errno)
+        );
       }
     }
     sleep(1);
@@ -135,7 +149,10 @@ void* RunBot(void* data) {
   printf("[%s] Closing connection...\n", nickname);
   int sent = Client_send(bot, "/quit", strlen("/quit") + 1);
   if (sent <= 0) {
-    fprintf(stderr, "[%s] Unable close connection: %s\n", nickname, strerror(errno));
+    fprintf(
+      stderr, "[%s] Unable close connection: %s\n",
+      nickname, strerror(errno)
+    );
   }
   FD_CLR(server, &reads);
   Client_destroy(&bot);

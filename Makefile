@@ -166,7 +166,7 @@ obj/client/uilog.o: src/client/uilog.c
 # Test Bot
 bot: prereq libsocket libmessage obj/test/bot/main.o obj/client/client.o
 	mkdir -p bin/test
-	$(CC) $(CFLAGS) obj/test/bot/main.o obj/client/client.o $(LDFLAGS) -lsocket -lpthread -lmessage -o bin/test/bot
+	$(CC) $(CFLAGS) obj/test/bot/main.o obj/client/client.o $(LDFLAGS) -lsocket -lpthread -lmessage -lssl -lcrypto -o bin/test/bot
 
 obj/test/bot/main.o: test/bot/main.c
 	mkdir -p obj/test/bot bin/test

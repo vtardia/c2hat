@@ -332,9 +332,7 @@ void Server_start(Server *this) {
         char error[256] = {0};
         ERR_error_string_n(ERR_get_error(), error, 256);
         Error("SSL_accept() failed: %s", error);
-        SSL_shutdown(client.ssl);
-        SOCKET_close(client.socket);
-        SSL_free(client.ssl);
+        Server_dropClient(&client);
         continue;
       }
 
@@ -366,10 +364,10 @@ void Server_start(Server *this) {
         pthread_mutex_unlock(&clientsLock);
         pthread_detach(clientThreadID);
       } else {
-        Info("Connection limits reached");
-        SSL_shutdown(client.ssl);
-        SOCKET_close(client.socket);
-        SSL_free(client.ssl);
+        char *err = "/err connection limits reached";
+        Server_send(&client, err, strlen(err) + 1);
+        Info("Connection limits reached", err);
+        Server_dropClient(&client);
       }
     }
 
@@ -459,6 +457,18 @@ int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
  * @param[in] client The client structure that contains the socket
  */
 void Server_dropClient(Client *client) {
+  if (!client->threadID) {
+    // The client doesn't have a thread, which means
+    //  - the SSL connection was denied by some error
+    //  - there are no available connections
+    Info("Dropping threadless client");
+    SSL_shutdown(client->ssl);
+    SOCKET_close(client->socket);
+    SSL_free(client->ssl);
+    return;
+  }
+
+  // The client is a regularly authenticated client
   pthread_t clientThreadID = client->threadID;
 
   // Drop client from the clients list

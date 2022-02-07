@@ -271,7 +271,9 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
       }
       // At this point the server will only send /ok or /err messages
       if (Message_getType(buffer) != kMessageTypeOk) {
-        fprintf(this->err, "❌ Error: Connection refused by the chat server\n");
+        char *serverErrorMessage = Message_getContent(buffer, kMessageTypeErr, received);
+        fprintf(this->err, "❌ Error: Connection refused: %s\n", serverErrorMessage);
+        Message_free(&serverErrorMessage);
         return false;
       }
       // Display the server welcome message

@@ -132,6 +132,8 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
   struct option options[] = {
     {"host", required_argument, NULL, 'h'},
     {"port", required_argument, NULL, 'p'},
+    {"ssl-cert", required_argument, NULL, 's'}, // leaving c for config
+    {"ssl-key", required_argument, NULL, 'k'},
     {"max-clients", required_argument, NULL, 'm'},
     {"foreground", no_argument, NULL, 'f'},
     { NULL, 0, NULL, 0}
@@ -156,6 +158,12 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
       break;
       case 'f':
         runServerInForeground = true;
+      break;
+      case 's':
+        memcpy(currentConfig->sslCertFilePath, optarg, strlen(optarg));
+      break;
+      case 'k':
+        memcpy(currentConfig->sslKeyFilePath, optarg, strlen(optarg));
       break;
       default:
         valid = false;
@@ -285,6 +293,15 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     return EXIT_FAILURE;
   }
 
+  if (strlen(currentConfig->sslCertFilePath) == 0) {
+    fprintf(stderr, "SSL certificate file path missing: use --ssl-cert=/path/to/cert.pem\n");
+    return EXIT_FAILURE;
+  }
+  if (strlen(currentConfig->sslKeyFilePath) == 0) {
+    fprintf(stderr, "SSL private key file path missing: use --ssl-key=/path/to/key.pem\n");
+    return EXIT_FAILURE;
+  }
+
   if (runServerInForeground) {
     pid_t serverPID = getpid();
     fprintf(stdout, "Starting foreground server on %s:%d with locale '%s' and PID %d\n",
@@ -351,7 +368,8 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
 
   // Initialise the chat server
   Server *server = Server_init(
-    currentConfig->host, currentConfig->port, currentConfig->maxConnections
+    currentConfig->host, currentConfig->port, currentConfig->maxConnections,
+    currentConfig->sslCertFilePath, currentConfig->sslKeyFilePath
   );
 
   // Init PID file (after server creation, so we don't create on failure)
@@ -483,6 +501,8 @@ int CMD_runStatus() {
       printf("    PID file: %s\n", currentConfig->pidFilePath);
       printf("        Host: %s\n", currentConfig->host);
       printf("        Port: %d\n", currentConfig->port);
+      printf("    SSL cert: %s\n", currentConfig->sslCertFilePath);
+      printf("     SSL key: %s\n", currentConfig->sslKeyFilePath);
       printf("      Locale: %s\n", currentConfig->locale);
       printf(" Max Clients: %d\n", currentConfig->maxConnections);
       printf("\n");
@@ -517,7 +537,7 @@ int CMD_runStatus() {
  * Displays program usage
  */
 void usage(const char *program) {
-  fprintf(stderr, "Usage: %s [start [-h <host>] [-p <port>] [-m <max-clients>] [--foreground]|stop|status]\n", program);
+  fprintf(stderr, "Usage: %s [start --ssl-cert=</path/to/cert.pem> --ssl-key=</path/to/key.pem> [-h <host>] [-p <port>] [-m <max-clients>] [--foreground]|stop|status]\n", program);
 }
 
 /**

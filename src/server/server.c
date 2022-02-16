@@ -68,7 +68,10 @@ pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
 
 // Initialise, start and destroy the server object
-Server *Server_init(const char *host, int portNumber, int maxConnections);
+Server *Server_init(
+  const char *host, int portNumber, int maxConnections,
+  const char *sslCertFile, const char *sslKeyFile
+);
 void Server_start(Server *);
 void Server_free(Server **);
 
@@ -107,7 +110,10 @@ bool Server_authenticate(Client *client);
  * @param[in] portNumber The listening TCP port
  * @param[in] maxConnections The maximum number of client connections
  */
-Server *Server_init(const char *host, int portNumber, int maxConnections) {
+Server *Server_init(
+  const char *host, int portNumber, int maxConnections,
+  const char *sslCertFile, const char *sslKeyFile
+) {
   if (server != NULL) {
     Fatal("The server process is already running");
   }
@@ -172,11 +178,8 @@ Server *Server_init(const char *host, int portNumber, int maxConnections) {
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
   );
 
-  // TODO: move these to configuration files
-  const char *certPath = "/etc/letsencrypt/live/tardia.dev/fullchain.pem";
-  const char *keyPath = "/etc/letsencrypt/live/tardia.dev/privkey.pem";
-  if (!SSL_CTX_use_certificate_chain_file(sslContext, certPath)
-    || !SSL_CTX_use_PrivateKey_file(sslContext, keyPath, SSL_FILETYPE_PEM)) {
+  if (!SSL_CTX_use_certificate_chain_file(sslContext, sslCertFile)
+    || !SSL_CTX_use_PrivateKey_file(sslContext, sslKeyFile, SSL_FILETYPE_PEM)) {
     char error[256] = {0};
     ERR_error_string_n(ERR_get_error(), error, 256);
     SSL_CTX_free(sslContext);

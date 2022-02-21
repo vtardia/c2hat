@@ -30,7 +30,8 @@ typedef char * const * ARGV;
 enum {
   kMaxHostnameSize = 128,
   kMaxPortSize = 6,
-  kMaxStatusMessageSize = kMaxHostnameSize + kMaxPortSize + 50
+  kMaxStatusMessageSize = kMaxHostnameSize + kMaxPortSize + 50,
+  kMaxFilePath = 4096
 };
 
 /// Contains the client startup parameters
@@ -38,9 +39,13 @@ typedef struct _options {
   char user[kMaxNicknameSize];
   char host[kMaxHostnameSize];
   char port[kMaxPortSize];
+  char caCertFilePath[kMaxFilePath];
+  char caCertDirPath[kMaxFilePath];
 } Options;
 
 static const char *kC2HatClientVersion = "1.0";
+static const char *kDefaultCACertFilePath = ".local/share/c2hat/ssl/cacert.pem";
+static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
 
 void usage(const char *program);
 void help(const char *program);
@@ -75,7 +80,7 @@ int main(int argc, ARGV argv) {
   App_init();
 
   // Create chat client
-  C2HatClient *app = Client_create();
+  C2HatClient *app = Client_create(options.caCertFilePath, options.caCertDirPath);
   if (app == NULL) {
     fprintf(stderr, "Chat client creation failed\n");
     return App_cleanup(EXIT_FAILURE);
@@ -201,6 +206,11 @@ void help(const char *program) {
 "\n"
 "Current options include:\n"
 "   -u, --user      specify a user's nickname before connecting;\n"
+"       --cacert    specify a CA certificate to verify with;\n"
+"       --capath    specify a directory where trusted CA certificates\n"
+"                   are stored; if neither cacert and capath are\n"
+"                   specified, the default path will be used:\n"
+"                   $HOME/.local/share/c2hat/ssl\n"
 "   -v, --version   display the current program version;\n"
 "   -h, --help      display this help message;\n"
 "\n", basename((char *)program), kC2HatClientVersion);
@@ -222,10 +232,16 @@ void parseOptions(int argc, ARGV argv, Options *params) {
   // Build the options list
   struct option options[] = {
     {"user", required_argument, NULL, 'u'},
+    {"cacert", required_argument, NULL, 'f'},
+    {"capath", required_argument, NULL, 'd'},
     {"help", no_argument, NULL, 'h'},
     {"version", no_argument, NULL, 'v'},
     { NULL, 0, NULL, 0}
   };
+
+  // Setup default SSL config
+  snprintf(params->caCertFilePath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
+  snprintf(params->caCertDirPath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
 
   // Parse the command line arguments into options
   char ch;
@@ -243,6 +259,12 @@ void parseOptions(int argc, ARGV argv, Options *params) {
       break;
       case 'u': // User passed a nickname
         strncpy(params->user, optarg, kMaxNicknameSize - 1);
+      break;
+      case 'f': // User passed a CA certificate file
+        strncpy(params->caCertFilePath, optarg, kMaxFilePath - 1);
+      break;
+      case 'd': // User passed a CA directory path
+        strncpy(params->caCertDirPath, optarg, kMaxFilePath - 1);
       break;
     }
   }

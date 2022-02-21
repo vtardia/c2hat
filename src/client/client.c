@@ -43,7 +43,7 @@ static bool sslInit = false;
 /**
  * Initialises the OpenSSL library functions
  */
-SSL_CTX *Client_ssl_init(char *error, size_t length) {
+SSL_CTX *Client_ssl_init(const char *caCert, const char *caPath, char *error, size_t length) {
   // Initialise the OpenSSL library, must be done once
   if (!sslInit) {
     SSL_library_init();
@@ -83,10 +83,17 @@ SSL_CTX *Client_ssl_init(char *error, size_t length) {
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
   );
 
+  // Check that the CA file and dir path exist
+  char *caCertFile = NULL;
+  char *caCertDir = NULL;
+  if(access(caCert, R_OK ) != -1) {
+    caCertFile = (char*)caCert;
+  }
+  if(access(caPath, R_OK ) != -1) {
+    caCertDir = (char*)caPath;
+  }
+
   // Load CA certificates locations
-  // TODO this works on Linux, find a way to make it configurable for Mac and Win
-  char * caCertDir = "/etc/ssl/certs/";
-  char * caCertFile = "/etc/ssl/certs/ca-certificates.crt";
   if (!SSL_CTX_load_verify_locations(context, caCertFile, caCertDir)) {
     strncpy(error, "Unable to load CA locations", length);
     return NULL;
@@ -99,9 +106,11 @@ SSL_CTX *Client_ssl_init(char *error, size_t length) {
 /**
  * Creates a new connected network chat client
  *
+ * @param[in]  caCert Path to the CA certificate file
+ * @param[in]  caPath Path to a directory that stores CA files
  * @param[out] A new C2HatClient instance or NULL on failure
  */
-C2HatClient *Client_create() {
+C2HatClient *Client_create(const char *caCert, const char *caPath) {
   C2HatClient *client = calloc(sizeof(C2HatClient), 1);
   if (client == NULL) {
     fprintf(stderr, "❌ Error: %d - Unable to create network client\n%s\n", errno, strerror(errno));
@@ -112,7 +121,7 @@ C2HatClient *Client_create() {
   client->err = stderr;
 
   char error[100] = {0};
-  client->sslContext = Client_ssl_init(error, 100);
+  client->sslContext = Client_ssl_init(caCert, caPath, error, 100);
   if (!client->sslContext) {
     fprintf(stderr, "❌ Error: %s\n", error);
     Client_destroy(&client);

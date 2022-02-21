@@ -12,7 +12,7 @@
   typedef struct _C2HatClient C2HatClient;
 
   // Creates a connected network client object
-  C2HatClient *Client_create();
+  C2HatClient *Client_create(const char *caCert, const char *caPath);
 
   // Tries to connect a client to the network
   bool Client_connect(C2HatClient *this, const char *host, const char *port);

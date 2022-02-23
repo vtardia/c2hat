@@ -179,7 +179,7 @@ void usage(const char *program) {
 "Usage: %1$s [options] <host> <port>\n"
 "       %1$s [-u YourNickname] <host> <port>\n"
 "\n"
-"For a listing of options, use c2hat-cli --help."
+"For a listing of options, use %1$s --help."
 "\n", basename((char *)program));
 }
 

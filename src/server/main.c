@@ -14,6 +14,9 @@
 #define LOCALE "en_GB.UTF-8"
 #endif
 
+/// Current version
+static const char *kC2HatServerVersion = "1.0";
+
 /// Default connection limit
 const int kDefaultMaxClients = 5;
 
@@ -537,7 +540,28 @@ int CMD_runStatus() {
  * Displays program usage
  */
 void usage(const char *program) {
-  fprintf(stderr, "Usage: %s [start --ssl-cert=</path/to/cert.pem> --ssl-key=</path/to/key.pem> [-h <host>] [-p <port>] [-m <max-clients>] [--foreground]|stop|status]\n", program);
+  fprintf(stderr,
+"%1$s - Free TCP Chat Server [version %2$s]\n"
+"\n"
+"Usage: %1$s <command> [options]\n"
+"       %1$s start --ssl-cert=</path/to/cert.pem> --ssk-key=</path/to/key.pem>\n"
+"                    [--foreground] [-h <host>] [-p <port>] [-m <max-clients>]\n"
+"       %1$s stop\n"
+"       %1$s status\n"
+"\n"
+"Current available commands are:\n"
+"       start          start the chat server;\n"
+"       stop           stop the chat server, if running in background;\n"
+"       status         display the chat server status and configuration;\n"
+"\n"
+"Current start options include:\n"
+"       --ssl-cert     specify the path for the server TLS certificate;\n"
+"       --ssl-key      specify the path for the server private key\n"
+"   -h, --host         specify the listening host name or IP (default = localhost);\n"
+"   -p, --host         specify the listening TCP port number (default = 10000);\n"
+"   -m, --max-clients  specify the maximum number of connections (default = 5);\n"
+"       --foreground   run the server in foreground;\n"
+"\n", basename((char *)program), kC2HatServerVersion);
 }
 
 /**

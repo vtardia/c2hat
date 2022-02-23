@@ -8,19 +8,42 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
+#include <getopt.h>
 
 #include "client.h"
 
+/// ARGV wrapper for options parsing
+typedef char * const * ARGV;
+
+enum {
+  kMaxBots = 7,
+  kMaxHostnameSize = 128,
+  kMaxPortSize = 6,
+  kMaxFilePath = 4096,
+  kBufferSize = 1024
+};
+
+/// Contains the client startup parameters
+typedef struct _options {
+  size_t maxBots;
+  char   host[kMaxHostnameSize];
+  char   port[kMaxPortSize];
+  char   caCertFilePath[kMaxFilePath];
+  char   caCertDirPath[kMaxFilePath];
+} Options;
+
+static const char *kDefaultCACertFilePath = ".local/share/c2hat/ssl/cacert.pem";
+static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
+
 static bool terminate = false;
 
-enum { kBufferSize = 1024 };
+Options options = {0};
 
-const int kMaxBots = 7;
+char messages[1024][100] = {0};
 
-char *host = NULL;
-char *port = NULL;
-
-char messages[1024][100];
+void usage(const char *program);
+void help(const char *program);
+void parseOptions(int argc, ARGV argv, Options *params);
 
 /**
  * Called within a thread function, hides that thread from signals
@@ -55,14 +78,14 @@ void* RunBot(void* data) {
   int *id = (int *)data;
 
   // Create a chat client
-  C2HatClient *bot = Client_create();
+  C2HatClient *bot = Client_create(options.caCertFilePath, options.caCertDirPath);
   if (bot == NULL) {
     fprintf(stderr, "[%d] Bot client creation failed\n", *id);
     return NULL;
   }
 
   // Try to connect
-  if (!Client_connect(bot, host, port)) {
+  if (!Client_connect(bot, options.host, options.port)) {
     fprintf(stderr, "[%d] Connection failed\n", *id);
     Client_destroy(&bot);
     return NULL;
@@ -194,27 +217,22 @@ int BotCleanup(int result) {
   return result;
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, ARGV argv) {
+  // Check command line options and arguments
+  parseOptions(argc, argv, &options);
+
   BotInit();
-
-  if (argc < 3) {
-    fprintf(stderr, "Usage: %s hostname port\n", argv[0]);
-    return 1;
-  }
-
-  host = (char *)argv[1];
-  port = (char *)argv[2];
 
   LoadMessages();
 
   Bot_catch(SIGINT, Bot_stop);
   Bot_catch(SIGTERM, Bot_stop);
 
-  pthread_t threadId[kMaxBots];
-  int values[kMaxBots];
+  pthread_t threadId[options.maxBots];
+  int values[options.maxBots];
 
   // Start new threads to process, each with a different input value
-  for(int i = 0; i < kMaxBots; i++) {
+  for(size_t i = 0; i < options.maxBots; i++) {
     values[i] = i;
     pthread_create(&threadId[i], NULL, RunBot, &values[i]);
   }
@@ -226,23 +244,23 @@ int main(int argc, char const *argv[]) {
   // Wait for all the threads to finish and close.
   // Note: if some threads are already terminated (e.g. connection denied),
   // trying to join them by passing a pointer causes a segmentation fault.
-  for(int j = 0; j < kMaxBots; j++) {
+  for(size_t j = 0; j < options.maxBots; j++) {
     int res = pthread_join(threadId[j], NULL);
     switch(res) {
       case 0:
-        printf("Bot %d joined!\n", j);
+        printf("Bot %ld joined!\n", j);
       break;
       case EINVAL:
-        fprintf(stderr, "Unable to join Bot %d: thread not join able\n", j);
+        fprintf(stderr, "Unable to join Bot %ld: thread not join able\n", j);
       break;
       case ESRCH:
-        fprintf(stderr, "Unable to join Bot %d: thread not found\n", j);
+        fprintf(stderr, "Unable to join Bot %ld: thread not found\n", j);
       break;
       case EDEADLK:
-        fprintf(stderr, "Unable to join Bot %d: possible deadlock\n", j);
+        fprintf(stderr, "Unable to join Bot %ld: possible deadlock\n", j);
       break;
       default:
-        fprintf(stderr, "Unable to join Bot %d: %s\n", j, strerror(errno));
+        fprintf(stderr, "Unable to join Bot %ld: %s\n", j, strerror(errno));
       break;
     }
   }
@@ -250,3 +268,98 @@ int main(int argc, char const *argv[]) {
   printf("Bye!\n");
   return BotCleanup(EXIT_SUCCESS);
 }
+
+/**
+ * Displays program usage
+ */
+void usage(const char *program) {
+  fprintf(stderr,
+"Usage: %1$s [options] <host> <port>\n"
+"       %1$s [-n HowManyBots] <host> <port>\n"
+"\n"
+"For a listing of options, use %1$s --help."
+"\n", basename((char *)program));
+}
+
+/**
+ * Parses command line options
+ * @param[in] argc The number of arguments
+ * @param[in] argv The array of arguments
+ * @param[in] options Pointer to a configuration structure
+ */
+void parseOptions(int argc, ARGV argv, Options *params) {
+  // Check that we have the minimum required command line args
+  if (argc < 2) {
+    usage(argv[0]);
+    exit(EXIT_FAILURE);
+  }
+
+  // Build the options list
+  struct option options[] = {
+    {"num-bots", required_argument, NULL, 'n'},
+    {"cacert", required_argument, NULL, 'f'},
+    {"capath", required_argument, NULL, 'd'},
+    {"help", no_argument, NULL, 'h'},
+    { NULL, 0, NULL, 0}
+  };
+
+  // Default bots
+  params->maxBots = kMaxBots;
+
+  // Setup default SSL config
+  snprintf(params->caCertFilePath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
+  snprintf(params->caCertDirPath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
+
+  // Parse the command line arguments into options
+  char ch;
+  while (true) {
+    ch = getopt_long(argc, argv, "n:h", options, NULL);
+    if( (signed char)ch == -1 ) break; // No more options available
+    switch (ch) {
+      case 'h': // User requested help, display it and exit
+        help(argv[0]);
+        exit(EXIT_SUCCESS);
+      break;
+      case 'n': // User passed a number of desired bots
+        params->maxBots = atoi(optarg);
+      break;
+      case 'f': // User passed a CA certificate file
+        strncpy(params->caCertFilePath, optarg, kMaxFilePath - 1);
+      break;
+      case 'd': // User passed a CA directory path
+        strncpy(params->caCertDirPath, optarg, kMaxFilePath - 1);
+      break;
+    }
+  }
+
+  // We need at least 2 arguments left: host and port
+  if ((argc - optind) < 2) {
+    usage(argv[0]);
+    exit(EXIT_FAILURE);
+  }
+  // Copy host and port into the options struct
+  strncpy(params->host, argv[optind++], kMaxHostnameSize - 1);
+  strncpy(params->port, argv[optind], kMaxPortSize - 1);
+}
+
+/**
+ * Displays program help
+ */
+void help(const char *program) {
+  fprintf(stderr,
+"%1$s - commandline C2Hat Bot utility\n"
+"\n"
+"Usage: %1$s [options] <host> <port>\n"
+"       %1$s [-n HowManyBots] <host> <port>\n"
+"\n"
+"Current options include:\n"
+"   -n, --num-bots  specify how many bot threads to use;\n"
+"       --cacert    specify a CA certificate to verify with;\n"
+"       --capath    specify a directory where trusted CA certificates\n"
+"                   are stored; if neither cacert and capath are\n"
+"                   specified, the default path will be used:\n"
+"                   $HOME/.local/share/c2hat/ssl\n"
+"   -h, --help      display this help message;\n"
+"\n", basename((char *)program));
+}
+

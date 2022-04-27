@@ -3,7 +3,7 @@
  */
 
 #include "socket.h"
-#include "logger/logger.h"
+#include "logger/vlogger.h"
 
 SOCKET Socket_new(int domain, int type, int protocol) {
   SOCKET this = socket(domain, type, protocol);

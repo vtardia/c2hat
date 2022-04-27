@@ -354,7 +354,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
   close(STDIN_FILENO);
   close(STDOUT_FILENO);
   currentLogFilePath = GetLogFilePath(); // Can take arguments in the future, like use stdin/out
-  if (LogInit(L_INFO, stderr, currentLogFilePath) < 0) {
+  if (!vLogInit(LOG_INFO, currentLogFilePath)) {
     fprintf(stderr, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
     fprintf(stdout, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
     exit(EXIT_FAILURE);
@@ -388,16 +388,11 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
 
   // Update the configuration and write it to a shared memory location
   currentConfig->pid = pid;
-  if (currentLogFilePath == NULL) {
-    memcpy(currentConfig->logFilePath, "STDOUT", strlen("STDOUT"));
-  } else {
-    memcpy(currentConfig->logFilePath, currentLogFilePath, strlen(currentLogFilePath));
-  }
-  memcpy(currentConfig->pidFilePath, currentPIDFilePath, strlen(currentPIDFilePath));
-
   if (currentLogFilePath != NULL) {
+    memcpy(currentConfig->logFilePath, currentLogFilePath, strlen(currentLogFilePath));
     free(currentLogFilePath);
   }
+  memcpy(currentConfig->pidFilePath, currentPIDFilePath, strlen(currentPIDFilePath));
 
   if (!Config_save(currentConfig, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
     return EXIT_FAILURE;

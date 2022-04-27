@@ -41,7 +41,7 @@
 #include <stdbool.h>
 #include <signal.h>
 
-#include "logger/logger.h"
+#include "logger/vlogger.h"
 #include "pid.h"
 #include "message/message.h"
 #include "socket/socket.h"

@@ -51,6 +51,9 @@ prereq:
 prereq/debug:
 	$(eval CFLAGS += -g)
 
+prereq/tests:
+	$(eval CFLAGS += -DTest_operations)
+
 # Server final binary
 server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig obj/server/main.o obj/server/server.o obj/lib/validate.o
 	$(CC) $(CFLAGS) obj/server/main.o obj/server/server.o obj/lib/validate.o $(LDFLAGS) $(SERVERLIBS) -o bin/$(BINPREFIX)server
@@ -87,8 +90,8 @@ libsocket: prereq obj/lib/socket.o
 	$(AR) lib/libsocket.a obj/lib/socket.o
 
 # Logger static library
-obj/lib/logger.o: src/lib/logger/logger.c
-	$(CC) $(CFLAGS) -c src/lib/logger/logger.c -o obj/lib/logger.o $(OSFLAG)
+obj/lib/logger.o: src/lib/logger/vlogger.c
+	$(CC) $(CFLAGS) -c $< -o $@ $(OSFLAG)
 
 liblogger: prereq obj/lib/logger.o
 	$(AR) lib/liblogger.a obj/lib/logger.o
@@ -203,10 +206,9 @@ test/message: prereq/debug libmessage
 	$(CC) $(CFLAGS) obj/test/message/main.o obj/test/message/message_tests.o $(LDFLAGS) -lmessage -o bin/test/message
 	$(VALGRIND) bin/test/message
 
-test/logger: prereq/debug liblogger
+test/logger: prereq/tests prereq/debug obj/lib/logger.o
 	mkdir -p obj/test/logger bin/test
-	$(CC) $(CFLAGS) -c test/logger/main.c $(INCFLAGS) -o obj/test/logger/main.o $(OSFLAG)
-	$(CC) $(CFLAGS) obj/test/logger/main.o $(LDFLAGS) -llogger -o bin/test/logger
+	$(CC) $(CFLAGS) -o bin/test/logger $(OSFLAG) -lpthread obj/lib/logger.o
 	$(VALGRIND) bin/test/logger
 
 test/pid: prereq/debug libpid liblogger

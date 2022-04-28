@@ -18,15 +18,18 @@ static FILE *pidFile = NULL;
  * @param[in] pidFilePath The full PID file path
  */
 pid_t PID_init(const char *pidFilePath) {
-  if(access(pidFilePath, F_OK ) != -1) {
-    // PID file already exists
-    Fatal("A PID file (%s) already exists", pidFilePath);
-  }
+  FatalIf(
+    (access(pidFilePath, F_OK ) != -1), // PID file already exists
+    "A PID file (%s) already exists", pidFilePath
+  );
+
   pid_t my_pid;
   pidFile = fopen(pidFilePath, "w");
-  if (!pidFile) {
-    Fatal("Unable to open PID file '%s': %s", pidFilePath, strerror(errno));
-  }
+  FatalIf(
+    (!pidFile),
+    "Unable to open PID file '%s': %s", pidFilePath, strerror(errno)
+  );
+
   my_pid = getpid();
   fprintf(pidFile, "%d", my_pid);
   fclose(pidFile);
@@ -41,9 +44,11 @@ pid_t PID_init(const char *pidFilePath) {
 pid_t PID_load(const char *pidFilePath) {
   char buffer[100] = {0};
   pidFile = fopen(pidFilePath, "r");
-  if (!pidFile) {
-    Fatal("Unable to open PID file: %s", strerror(errno));
-  }
+  FatalIf(
+    (!pidFile),
+    "Unable to open PID file: %s", strerror(errno)
+  );
+
   fgets(buffer, 100, pidFile);
   fclose(pidFile);
   return atoi(buffer);
@@ -55,11 +60,11 @@ pid_t PID_load(const char *pidFilePath) {
  * @param[in] pidFilePath The full PID file path to check
  */
 void PID_check(const char *pidFilePath) {
-  if(access(pidFilePath, F_OK ) == -1) {
-    // There is no PID file
-    printf("Unable to find PID file (%s): the process may not be running\n", pidFilePath);
-    exit(EXIT_FAILURE);
-  }
+  FatalIf(
+    (access(pidFilePath, F_OK ) == -1), // There is no PID file
+    "Unable to find PID file (%s): the process may not be running",
+    pidFilePath
+  );
 }
 
 /**
@@ -81,5 +86,4 @@ int PID_exists(pid_t pid) {
   // Other error
   return -1;
 }
-
 

@@ -23,10 +23,7 @@
   } ServerConfigInfo;
 
   // Create a server for the given host/port combination
-  Server *Server_init(
-    const char *host, const int port, const int maxConnections,
-    const char *sslCertFile, const char *sslKeyFile
-  );
+  Server *Server_init(ServerConfigInfo *);
 
   // Start the server on the given socket
   void Server_start(Server *);

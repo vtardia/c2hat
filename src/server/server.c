@@ -67,14 +67,6 @@ pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
 // Mutex for message queue
 pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
 
-// Initialise, start and destroy the server object
-Server *Server_init(
-  const char *host, int portNumber, int maxConnections,
-  const char *sslCertFile, const char *sslKeyFile
-);
-void Server_start(Server *);
-void Server_free(Server **);
-
 // Signal handling
 int Server_catch(int sig, void (*handler)(int));
 void Server_stop(int signal);
@@ -106,14 +98,9 @@ bool Server_authenticate(Client *client);
 
 /**
  * Creates and initialises the server object
- * @param[in] host The listening IP address
- * @param[in] portNumber The listening TCP port
- * @param[in] maxConnections The maximum number of client connections
+ * @param[in] config A valid ServerConfigInfo structure
  */
-Server *Server_init(
-  const char *host, int portNumber, int maxConnections,
-  const char *sslCertFile, const char *sslKeyFile
-) {
+Server *Server_init(ServerConfigInfo *config) {
   if (server != NULL) {
     Fatal("The server process is already running");
   }
@@ -127,7 +114,7 @@ Server *Server_init(
 
   // Hold the server port number as string
   char serverPort[6] = {0};
-  sprintf(serverPort, "%d", portNumber);
+  sprintf(serverPort, "%d", config->port);
 
   // AF_INET = accepts only IPv4 host values
   // AF_INET6 = accepts only IPv6 host values
@@ -139,7 +126,7 @@ Server *Server_init(
   options.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
 
   // Returns a binary IP address representation for bind()
-  if (getaddrinfo(host, serverPort, &options, &bindAddress)) {
+  if (getaddrinfo(config->host, serverPort, &options, &bindAddress)) {
     Fatal("Invalid IP/port configuration: %s", gai_strerror(SOCKET_getErrorNumber()));
   }
 
@@ -178,8 +165,8 @@ Server *Server_init(
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
   );
 
-  if (!SSL_CTX_use_certificate_chain_file(sslContext, sslCertFile)
-    || !SSL_CTX_use_PrivateKey_file(sslContext, sslKeyFile, SSL_FILETYPE_PEM)) {
+  if (!SSL_CTX_use_certificate_chain_file(sslContext, config->sslCertFilePath)
+    || !SSL_CTX_use_PrivateKey_file(sslContext, config->sslKeyFilePath, SSL_FILETYPE_PEM)) {
     char error[256] = {0};
     ERR_error_string_n(ERR_get_error(), error, 256);
     SSL_CTX_free(sslContext);
@@ -206,10 +193,10 @@ Server *Server_init(
   // We don't need bindAddress anymore
   freeaddrinfo(bindAddress);
 
-  Socket_listen(server->socket, maxConnections);
-  server->host = strdup(host);
-  server->port = portNumber;
-  server->maxConnections = maxConnections;
+  Socket_listen(server->socket, config->maxConnections);
+  server->host = strdup(config->host);
+  server->port = config->port;
+  server->maxConnections = config->maxConnections;
 
   return server;
 }

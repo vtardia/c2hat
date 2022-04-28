@@ -380,10 +380,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
 #endif
 
   // Initialise the chat server
-  Server *server = Server_init(
-    currentConfig->host, currentConfig->port, currentConfig->maxConnections,
-    currentConfig->sslCertFilePath, currentConfig->sslKeyFilePath
-  );
+  Server *server = Server_init(currentConfig);
 
   // Init PID file (after server creation, so we don't create on failure)
   currentPIDFilePath = GetPIDFilePath();

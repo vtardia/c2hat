@@ -24,19 +24,10 @@ const int kDefaultMaxClients = 5;
 const int kDefaultServerPort = 10000;
 
 /// Default server host
-const char *kDefaultServerHost = "localhost";
+#define kDefaultServerHost "localhost"
 
 /// Max length of a server command
 const int kMaxCommandSize = 10;
-
-/// ID string for the START command
-const char *kCommandStart = "start";
-
-/// ID string for the STOP command
-const char *kCommandStop = "stop";
-
-/// ID string for the STATUS command
-const char *kCommandStatus = "status";
 
 /// Shared memory handle that stores the configuration data
 const char *kServerSharedMemPath = "/c2hat";
@@ -44,6 +35,13 @@ const char *kServerSharedMemPath = "/c2hat";
 /// Size of the shared memory
 const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
 
+/// Command identifiers
+typedef enum Command {
+  kCommandUnknown = -1,
+  kCommandStart = 0,
+  kCommandStop = 1,
+  kCommandStatus = 2
+} Command;
 
 /**
  * PID File
@@ -113,15 +111,27 @@ void clean() {
 /**
  * Parses the server command
  * Available commands are: start, stop, status
- * @param[out] dest Contains the parsed command
- * @param[in] arg The first argument from the ARGV array
+ * @param[in] argc The number of arguments for validation
+ * @param[in] arg  The first argument from the ARGV array
+ * @param[out]     The parsed command value
  */
-void parseCommand(char *dest, const char *arg) {
-  strncpy(dest, arg, kMaxCommandSize -1);
-  for (int i = 0; i < kMaxCommandSize; ++i) {
-    dest[i] = tolower(dest[i]);
+Command parseCommand(int argc, const char *arg) {
+  int result = kCommandUnknown;
+  char *command = strndup(arg, kMaxCommandSize);
+  for (char *c = command; *c != '\0'; c++) {
+    *c = tolower(*c);
   }
-  dest[kMaxCommandSize - 1] = '\0';
+  if (strcmp("start", command) == 0 && argc <= 9) {
+    result = kCommandStart;
+  }
+  if (strcmp("stop", command) == 0 && argc == 2) {
+    result = kCommandStop;
+  }
+  if (strcmp("status", command) == 0 && argc == 2) {
+    result = kCommandStatus;
+  }
+  free(command);
+  return result;
 }
 
 /**
@@ -563,22 +573,22 @@ void usage(const char *program) {
  * Main server entry point
  */
 int main(int argc, ARGV argv) {
+  // At least a command is required
   if (argc < 2) {
     usage(argv[0]);
     exit(EXIT_FAILURE);
   }
 
-  char command[10] = {0};
-  parseCommand(command, argv[1]);
+  Command command = parseCommand(argc, argv[1]);
 
-  if (strcmp(kCommandStart, command) == 0 && argc <= 9) {
+  if (kCommandStart == command) {
     // Initialise a default configuration
-    ServerConfigInfo currentConfig;
-    memset(&currentConfig, 0, sizeof(ServerConfigInfo));
-    memcpy(&(currentConfig.host), kDefaultServerHost, strlen(kDefaultServerHost));
-    currentConfig.port = kDefaultServerPort;
-    currentConfig.maxConnections = kDefaultMaxClients;
-    memcpy(&(currentConfig.locale), LOCALE, strlen(LOCALE));
+    ServerConfigInfo currentConfig = {
+      .host = kDefaultServerHost,
+      .port = kDefaultServerPort,
+      .maxConnections = kDefaultMaxClients,
+      .locale = LOCALE
+    };
     if (parseOptions(argc, argv, &currentConfig)) {
       return CMD_runStart(&currentConfig);
     }
@@ -586,11 +596,11 @@ int main(int argc, ARGV argv) {
     return EXIT_FAILURE;
   }
 
-  if (strcmp(kCommandStatus, command) == 0 && argc == 2) return CMD_runStatus();
+  if (kCommandStatus == command) return CMD_runStatus();
 
-  if (strcmp(kCommandStop, command) == 0 && argc == 2) return CMD_runStop();
+  if (kCommandStop == command) return CMD_runStop();
 
-  fprintf(stderr, "Unknown command: '%s'\n", command);
+  fprintf(stderr, "Unknown command: '%s'\n", argv[1]);
   usage(argv[0]);
   return EXIT_FAILURE;
 }

@@ -16,10 +16,6 @@ BINPREFIX = c2hat-
 # Default Hash size
 HASH_SIZE = 128
 
-# Default locale for unicode chars
-# Use 'make -e LOCALE=<YourLocale>' to override
-LOCALE = en_GB.UTF-8
-
 # OS detection
 OSFLAG :=
 ifeq ($(OS), Windows_NT)
@@ -62,7 +58,7 @@ server: prereq liblogger libsocket libpid liblist libqueue libmessage libconfig 
 # Server dependencies
 
 obj/server/main.o: src/server/main.c
-	$(CC) $(CFLAGS) -c src/server/main.c -D LOCALE='"$(LOCALE)"' $(INCFLAGS) -o obj/server/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c src/server/main.c $(INCFLAGS) -o obj/server/main.o $(OSFLAG)
 
 obj/server/server.o: src/server/server.c
 	$(CC) $(CFLAGS) -c src/server/server.c $(INCFLAGS) -o obj/server/server.o $(OSFLAG)
@@ -152,7 +148,7 @@ libhash: prereq obj/lib/hash.o
 	$(AR) lib/libhash.a obj/lib/hash.o
 
 obj/client/main.o: src/client/main.c
-	$(CC) $(CFLAGS) -c src/client/main.c -D LOCALE='"$(LOCALE)"' $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
+	$(CC) $(CFLAGS) -c src/client/main.c $(INCFLAGS) -o obj/client/main.o $(OSFLAG)
 
 obj/client/app.o: src/client/app.c
 	$(CC) $(CFLAGS) -c src/client/app.c $(INCFLAGS) -o obj/client/app.o $(OSFLAG)

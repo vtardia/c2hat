@@ -77,10 +77,10 @@ int main(int argc, ARGV argv) {
     return EXIT_FAILURE;
   }
 
-  if (!setlocale(LC_ALL, locale)) {
-    fprintf(stderr, "Unable to set locale to '%s'\n", locale);
-    return EXIT_FAILURE;
-  }
+  /* if (!setlocale(LC_ALL, locale)) { */
+  /*   fprintf(stderr, "Unable to set locale to '%s'\n", locale); */
+  /*   return EXIT_FAILURE; */
+  /* } */
 
   // To correctly display Advanced Character Set in UTF-8 environment
   setenv("NCURSES_NO_UTF8_ACS", "0", 1);

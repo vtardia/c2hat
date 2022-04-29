@@ -32,8 +32,9 @@ else
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS -D_XOPEN_SOURCE_EXTENDED -D_XOPEN_CURSES -D_DARWIN_C_SOURCE
 		VALGRIND =
-		INCFLAGS += -I/opt/homebrew/Cellar/ncurses/6.3/include/ncursesw -I/opt/homebrew/Cellar/ncurses/6.3/include
-		CLIENTLIBS += -L/opt/homebrew/Cellar/ncurses/6.3/lib -Wl,-search_paths_first
+		INCFLAGS += -I$(HOMEBREW_CELLAR)/ncurses/6.3/include/ncursesw -I$(HOMEBREW_CELLAR)/ncurses/6.3/include -I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1n/include
+		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1n/lib
+		CLIENTLIBS += -L$(HOMEBREW_CELLAR)/ncurses/6.3/lib -Wl,-search_paths_first -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1n/lib
 	endif
 endif
 

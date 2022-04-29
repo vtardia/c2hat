@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include <sys/stat.h>
 #include <locale.h>
+#include <libgen.h> // provides basename()
 
 /// Current version
 static const char *kC2HatServerVersion = "1.0";

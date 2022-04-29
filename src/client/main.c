@@ -20,10 +20,6 @@
 #include "trim/wtrim.h"
 #include "app.h"
 
-#ifndef LOCALE
-#define LOCALE "en_GB.UTF-8"
-#endif
-
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
@@ -64,16 +60,29 @@ int main(int argc, ARGV argv) {
   Options options = {0};
   parseOptions(argc, argv, &options);
 
-  // Check locale compatibility
-  if (strstr(LOCALE, "UTF-8") == NULL) {
-    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", LOCALE);
+  // Calling setlocale() with an empty string loads the LANG env var
+  if (!setlocale(LC_ALL, "")) {
+    fprintf(stderr, "Unable to read locale");
     return EXIT_FAILURE;
   }
 
-  if (!setlocale(LC_ALL, LOCALE)) {
-    fprintf(stderr, "Unable to set locale to '%s'\n", LOCALE);
+  // Calling setlocale() with a NULL argument reads the corresponding LC_ var
+  // If the system does not support the locale it will return "C"
+  // otherwise the full locale string (e.g. en_US.UTF-8)
+  char *locale = setlocale(LC_ALL, NULL);
+
+  // Check locale compatibility
+  if (strstr(locale, "UTF-8") == NULL) {
+    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", locale);
     return EXIT_FAILURE;
   }
+
+  if (!setlocale(LC_ALL, locale)) {
+    fprintf(stderr, "Unable to set locale to '%s'\n", locale);
+    return EXIT_FAILURE;
+  }
+
+  // To correctly display Advanced Character Set in UTF-8 environment
   setenv("NCURSES_NO_UTF8_ACS", "0", 1);
 
   // Initialise sockets on Windows

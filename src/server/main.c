@@ -10,10 +10,6 @@
 #include <sys/stat.h>
 #include <locale.h>
 
-#ifndef LOCALE
-#define LOCALE "en_GB.UTF-8"
-#endif
-
 /// Current version
 static const char *kC2HatServerVersion = "1.0";
 
@@ -296,15 +292,28 @@ void cleanup() {
  * @param[in] currentConfig Pointer to a configuration structure
  */
 int CMD_runStart(ServerConfigInfo *currentConfig) {
+  // Calling setlocale() with an empty string loads the LANG env var
+  if (!setlocale(LC_ALL, "")) {
+    fprintf(stderr, "Unable to read locale");
+    return EXIT_FAILURE;
+  }
+
+  // Calling setlocale() with a NULL argument reads the corresponding LC_ var
+  // If the system does not support the locale it will return "C"
+  // otherwise the full locale string (e.g. en_US.UTF-8)
+  char *locale = setlocale(LC_ALL, NULL);
+  memcpy(currentConfig->locale, locale, strlen(locale));
+
   // Check locale compatibility
-  if (strstr(LOCALE, "UTF-8") == NULL) {
-    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", LOCALE);
+  if (strstr(locale, "UTF-8") == NULL) {
+    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", locale);
     return EXIT_FAILURE;
   }
-  if (!setlocale(LC_ALL, LOCALE)) {
-    fprintf(stderr, "Unable to set locale to '%s'\n", LOCALE);
-    return EXIT_FAILURE;
-  }
+
+  /* if (!setlocale(LC_ALL, currentConfig->locale)) { */
+  /*   fprintf(stderr, "Unable to set locale to '%s'\n", currentConfig->locale); */
+  /*   return EXIT_FAILURE; */
+  /* } */
 
   if (strlen(currentConfig->sslCertFilePath) == 0) {
     fprintf(stderr, "SSL certificate file path missing: use --ssl-cert=/path/to/cert.pem\n");
@@ -318,7 +327,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
   if (runServerInForeground) {
     pid_t serverPID = getpid();
     fprintf(stdout, "Starting foreground server on %s:%d with locale '%s' and PID %d\n",
-      currentConfig->host, currentConfig->port, LOCALE, serverPID
+      currentConfig->host, currentConfig->port, currentConfig->locale, serverPID
     );
   } else {
     pid_t sessionID;
@@ -341,7 +350,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     if (serverPID > 0) {
       // I'm in second parent process
       fprintf(stdout, "Starting background server on %s:%d with locale '%s' and PID %d\n",
-        currentConfig->host, currentConfig->port, LOCALE, serverPID
+        currentConfig->host, currentConfig->port, currentConfig->locale, serverPID
       );
       return EXIT_SUCCESS;
     }
@@ -583,8 +592,7 @@ int main(int argc, ARGV argv) {
     ServerConfigInfo currentConfig = {
       .host = kDefaultServerHost,
       .port = kDefaultServerPort,
-      .maxConnections = kDefaultMaxClients,
-      .locale = LOCALE
+      .maxConnections = kDefaultMaxClients
     };
     if (parseOptions(argc, argv, &currentConfig)) {
       return CMD_runStart(&currentConfig);

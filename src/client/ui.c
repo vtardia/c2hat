@@ -468,7 +468,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   wchar_t *end = buffer + inputWinEob;
 
   // Add a safe NULL terminator at the end of buffer
-  *end = 0;
+  *end = L'\0';
 
   // Initialise the input window and counters
   pthread_mutex_lock(&uiLock);
@@ -564,6 +564,7 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
             wclear(inputWin);
             wrefresh(inputWin);
           }
+          inputWinEom = 0;
           // ...and return it to the caller
           if ((cur - buffer) > 0) {
             return wcslen(buffer) + 1;
@@ -663,12 +664,13 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         // add the new character to the message window
         if (cursor < inputWinEob && !iswcntrl(ch)) {
           // Appending content to the end of the line
-          if (inputWin && cursor == inputWinEom && (wprintw(inputWin, "%lc", ch) != ERR)) {
+          wchar_t wstr[] = { ch, L'\0' };
+          if (inputWin && cursor == inputWinEom && (waddwstr(inputWin, wstr) != ERR)) {
             cursor++;
             inputWinEom++;
           }
           // Inserting content in the middle of a line
-          if (inputWin && cursor < inputWinEom && (winsch(inputWin, ch) != ERR)) {
+          if (inputWin && cursor < inputWinEom && (wins_wstr(inputWin, wstr) != ERR)) {
             if (x < maxX && wmove(inputWin, y, x + 1) != ERR) {
               cursor++;
               inputWinEom++;

@@ -665,18 +665,19 @@ size_t UIGetUserInput(wchar_t *buffer, size_t length) {
         if (cursor < inputWinEob && !iswcntrl(ch)) {
           // Appending content to the end of the line
           wchar_t wstr[] = { ch, L'\0' };
+          int wccols = wcwidth(wstr[0]); // Width of char in columns
           if (inputWin && cursor == inputWinEom && (waddwstr(inputWin, wstr) != ERR)) {
-            cursor++;
-            inputWinEom++;
+            cursor += wccols;
+            inputWinEom += wccols;
           }
           // Inserting content in the middle of a line
           if (inputWin && cursor < inputWinEom && (wins_wstr(inputWin, wstr) != ERR)) {
-            if (x < maxX && wmove(inputWin, y, x + 1) != ERR) {
-              cursor++;
-              inputWinEom++;
+            if (x < maxX && wmove(inputWin, y, x + wccols) != ERR) {
+              cursor += wccols;
+              inputWinEom += wccols;
             } else if (inputWin && wmove(inputWin, y + 1, 0) != ERR) {
-              cursor++;
-              inputWinEom++;
+              cursor += wccols;
+              inputWinEom += wccols;
             }
             // Don't update the cursor if you can't move
           }

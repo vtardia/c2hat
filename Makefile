@@ -24,7 +24,7 @@ ifeq ($(OS), Windows_NT)
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
-		OSFLAG += -D LINUX -D _GNU_SOURCE -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600
+		OSFLAG += -D LINUX -D _GNU_SOURCE -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED
 		SERVERLIBS +=  -lrt
 		TESTCONFIGLIBS +=  -lrt
 		CLIENTLIBS += -L/usr/lib -ltinfo

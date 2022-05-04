@@ -26,6 +26,10 @@
 
 #include "../c2hat.h"
 
+#define IsLocalhost(someAddress) ( \
+  strcmp(someAddress, "127.0.0.1") == 0 || strcmp(someAddress, "::1") == 0 \
+)
+
 /// Contains information on the current client application
 typedef struct _C2HatClient {
   SOCKET server;         ///< Connection socket resource
@@ -98,7 +102,7 @@ SSL_CTX *Client_ssl_init(const char *caCert, const char *caPath, char *error, si
     strncpy(error, "Unable to load CA locations", length);
     return NULL;
   }
-  // Tell OpenSSL to autometically check the server certificate or fail
+  // Tell OpenSSL to automatically check the server certificate or fail
   SSL_CTX_set_verify(context, SSL_VERIFY_PEER, NULL);
   return context;
 }
@@ -113,15 +117,18 @@ SSL_CTX *Client_ssl_init(const char *caCert, const char *caPath, char *error, si
 C2HatClient *Client_create(const char *caCert, const char *caPath) {
   C2HatClient *client = calloc(sizeof(C2HatClient), 1);
   if (client == NULL) {
-    fprintf(stderr, "❌ Error: %d - Unable to create network client\n%s\n", errno, strerror(errno));
+    fprintf(
+      stderr, "❌ Error: %d - Unable to create network client\n%s\n",
+      errno, strerror(errno)
+    );
     return NULL;
   }
   client->in = stdin;
   client->out = stdout;
   client->err = stderr;
 
-  char error[100] = {0};
-  client->sslContext = Client_ssl_init(caCert, caPath, error, 100);
+  char error[100] = {};
+  client->sslContext = Client_ssl_init(caCert, caPath, error, sizeof(error));
   if (!client->sslContext) {
     fprintf(stderr, "❌ Error: %s\n", error);
     Client_destroy(&client);
@@ -141,10 +148,8 @@ C2HatClient *Client_create(const char *caCert, const char *caPath) {
 bool Client_connect(C2HatClient *this, const char *host, const char *port) {
 
   // Validate host and port information
-  struct addrinfo options;
-  memset(&options, 0, sizeof(options));
+  struct addrinfo options = {.ai_socktype = SOCK_STREAM};
   struct addrinfo *bindAddress;
-  options.ai_socktype = SOCK_STREAM;
   if (getaddrinfo(host, port, &options, &bindAddress)) {
     fprintf(
       this->err, "❌ Invalid IP/port configuration: %s\n",
@@ -154,8 +159,8 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   }
 
   // Get a string representation of the host and port
-  char addressBuffer[100] = {0};
-  char serviceBuffer[100] = {0};
+  char addressBuffer[100] = {};
+  char serviceBuffer[100] = {};
   if (getnameinfo(
     bindAddress->ai_addr, bindAddress->ai_addrlen,
     addressBuffer, sizeof(addressBuffer),
@@ -205,8 +210,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // while allowing first level subdomains like sub.mydomain.com
   // See also https://www.openssl.org/docs/man3.0/man3/SSL_set_hostflags.html
   // and https://wiki.openssl.org/index.php/Hostname_validation
-  bool isLocalHost = (strcmp(addressBuffer, "127.0.0.1") == 0 || strcmp(addressBuffer, "::1") == 0);
-  if (!isLocalHost) {
+  if (!IsLocalhost(addressBuffer)) {
     SSL_set_hostflags(
       this->ssl,
       X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS | X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS
@@ -218,8 +222,8 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   }
   SSL_set_fd(this->ssl, this->server);
   if (SSL_connect(this->ssl) < 0) {
-    char error[256] = {0};
-    ERR_error_string_n(ERR_get_error(), error, 256);
+    char error[256] = {};
+    ERR_error_string_n(ERR_get_error(), error, sizeof(error));
     fprintf(this->err, "FAILED!\n ❌ SSL_connect() failed: %s\n", error);
     return false;
   }
@@ -231,7 +235,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   if (cert) {
     // Display certificate details
     char *cInfo;
-    if ((cInfo = X509_NAME_oneline(X509_get_subject_name(cert),0,0))) {
+    if ((cInfo = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0))) {
       fprintf(this->err, "   ⁃subject: %s\n", cInfo);
       OPENSSL_free(cInfo);
     }
@@ -250,7 +254,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // We are using select() with a timeout here, because if the server
   // doesn't have available connection slots, the client will remain hung.
   // To avoid this, we allow some second for the server to reply before failing
-  char buffer[kBufferSize] = {0};
+  char buffer[kBufferSize] = {};
   fd_set reads;
   FD_ZERO(&reads);
   FD_SET(this->server, &reads);
@@ -320,7 +324,7 @@ SOCKET Client_getSocket(const C2HatClient *this) {
 int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
-  char cursor[1] = {0};
+  char cursor[1] = {};
   // Reading 1 byte at a time, until either the NULL terminator is found
   // or the given length is reached
   do {
@@ -412,7 +416,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   // Wait for the AUTH signal from the server,
   // we are ok for this to be blocking because
   // the server won't sent any data to unauthenticated clients
-  char buffer[kBufferSize] = {0};
+  char buffer[kBufferSize] = {};
   int received = Client_receive(this, buffer, kBufferSize);
   if (received < 0) {
     Client_disconnect(this);
@@ -428,7 +432,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   }
 
   // Send credentials
-  char message[kBufferSize] = {0};
+  char message[kBufferSize] = {};
   Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
@@ -500,3 +504,4 @@ void Client_destroy(C2HatClient **this) {
     }
   }
 }
+

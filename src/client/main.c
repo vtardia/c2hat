@@ -57,7 +57,7 @@ int main(int argc, ARGV argv) {
   }
 
   // Check command line options and arguments
-  Options options = {0};
+  Options options = {};
   parseOptions(argc, argv, &options);
 
   // Calling setlocale() with an empty string loads the LANG env var
@@ -77,11 +77,6 @@ int main(int argc, ARGV argv) {
     return EXIT_FAILURE;
   }
 
-  /* if (!setlocale(LC_ALL, locale)) { */
-  /*   fprintf(stderr, "Unable to set locale to '%s'\n", locale); */
-  /*   return EXIT_FAILURE; */
-  /* } */
-
   // To correctly display Advanced Character Set in UTF-8 environment
   setenv("NCURSES_NO_UTF8_ACS", "0", 1);
 
@@ -97,20 +92,19 @@ int main(int argc, ARGV argv) {
 
   // Try to connect
   if (!Client_connect(app, options.host, options.port)) {
-    // fprintf(stderr, "❌ Connection failed\n"); // Client lib already displays error
     Client_destroy(&app);
     return App_cleanup(EXIT_FAILURE);
   }
 
   // Authenticate
-  char nickname[kMaxNicknameSize + sizeof(wchar_t)] = {0};
+  char nickname[kMaxNicknameSize + sizeof(wchar_t)] = {};
 
   if (strlen(options.user) > 0) {
     // Use the nickname provided from the command line...
     strncpy(nickname, options.user, kMaxNicknameSize);
   } else {
     // ...or read from the input as Unicode (UCS)
-    wchar_t inputNickname[kMaxNicknameInputBuffer] = {0};
+    wchar_t inputNickname[kMaxNicknameInputBuffer] = {};
     fprintf(stdout, "   〉Please, enter a nickname (max %d chars): ", kMaxNicknameLength);
     // fgetws() reads length -1 characters and includes the new line
     if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
@@ -134,12 +128,10 @@ int main(int argc, ARGV argv) {
 
   // Initialise NCurses UI engine
   UIInit();
-  char connectionStatus[kMaxStatusMessageSize] = {0};
+  char connectionStatus[kMaxStatusMessageSize] = {};
   int statusMessageLength = sprintf(
-      connectionStatus,
-      "Connected to %s:%s - Hit F1 to quit",
-      options.host,
-      options.port
+      connectionStatus, "Connected to %s:%s - Hit F1 to quit",
+      options.host, options.port
   );
   UISetStatusMessage(connectionStatus, statusMessageLength);
 
@@ -175,9 +167,10 @@ int main(int argc, ARGV argv) {
  * Displays program version
  */
 void version(const char *program) {
-  fprintf(stderr,
-"%1$s - C2Hat client [version %2$s]"
-"\n", basename((char *)program), kC2HatClientVersion);
+  fprintf(
+    stderr, "%1$s - C2Hat client [version %2$s]\n",
+    basename((char *)program), kC2HatClientVersion
+  );
 }
 
 /**
@@ -185,11 +178,12 @@ void version(const char *program) {
  */
 void usage(const char *program) {
   fprintf(stderr,
-"Usage: %1$s [options] <host> <port>\n"
-"       %1$s [-u YourNickname] <host> <port>\n"
-"\n"
-"For a listing of options, use %1$s --help."
-"\n", basename((char *)program));
+    "Usage: %1$s [options] <host> <port>\n"
+    "       %1$s [-u YourNickname] <host> <port>\n"
+    "\n"
+    "For a listing of options, use %1$s --help."
+    "\n", basename((char *)program)
+  );
 }
 
 /**
@@ -197,32 +191,33 @@ void usage(const char *program) {
  */
 void help(const char *program) {
   fprintf(stderr,
-"%1$s - commandline C2Hat client [version %2$s]\n"
-"\n"
-"Usage: %1$s [options] <host> <port>\n"
-"       %1$s [-u YourNickname] <host> <port>\n"
-"\n"
-"%1$s is a commandline ncurses-based client for the C2Hat server\n"
-"platform.\n"
-"\n"
-"It provides an interactive chat environment to send and receive\n"
-"messages up to 280 Unicode characters, including emojis.\n"
-"\n"
-"Examples:\n"
-"\n"
-"   $ %1$s chat.example.com 10000\n"
-"   $ %1$s -u Uncl3Ozzy chat.example.com 10000\n"
-"\n"
-"Current options include:\n"
-"   -u, --user      specify a user's nickname before connecting;\n"
-"       --cacert    specify a CA certificate to verify with;\n"
-"       --capath    specify a directory where trusted CA certificates\n"
-"                   are stored; if neither cacert and capath are\n"
-"                   specified, the default path will be used:\n"
-"                   $HOME/.local/share/c2hat/ssl\n"
-"   -v, --version   display the current program version;\n"
-"   -h, --help      display this help message;\n"
-"\n", basename((char *)program), kC2HatClientVersion);
+    "%1$s - commandline C2Hat client [version %2$s]\n"
+    "\n"
+    "Usage: %1$s [options] <host> <port>\n"
+    "       %1$s [-u YourNickname] <host> <port>\n"
+    "\n"
+    "%1$s is a commandline ncurses-based client for the C2Hat server\n"
+    "platform.\n"
+    "\n"
+    "It provides an interactive chat environment to send and receive\n"
+    "messages up to 280 Unicode characters, including emojis.\n"
+    "\n"
+    "Examples:\n"
+    "\n"
+    "   $ %1$s chat.example.com 10000\n"
+    "   $ %1$s -u Uncl3Ozzy chat.example.com 10000\n"
+    "\n"
+    "Current options include:\n"
+    "   -u, --user      specify a user's nickname before connecting;\n"
+    "       --cacert    specify a CA certificate to verify with;\n"
+    "       --capath    specify a directory where trusted CA certificates\n"
+    "                   are stored; if neither cacert and capath are\n"
+    "                   specified, the default path will be used:\n"
+    "                   $HOME/.local/share/c2hat/ssl\n"
+    "   -v, --version   display the current program version;\n"
+    "   -h, --help      display this help message;\n"
+    "\n", basename((char *)program), kC2HatClientVersion
+  );
 }
 
 /**

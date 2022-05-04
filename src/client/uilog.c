@@ -1,3 +1,12 @@
+#ifndef __STDC_WANT_LIB_EXT1__
+  // Ensure memset_s() is available
+  #define __STDC_WANT_LIB_EXT1__ 1
+#endif
+
+#ifdef __linux__
+  #define memset_s(s, smax, c, n) explicit_bzero(s, n)
+#endif
+
 #include "uilog.h"
 #include "message/message.h"
 #include <stdlib.h>
@@ -20,15 +29,14 @@ ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length) {
 
     // Get message content and length
     char *content = Message_getContent(buffer, entry->type, length);
-    memset(entry->content, 0, kBroadcastBufferSize);
     strncpy(entry->content, content, kBroadcastBufferSize - 1);
     entry->length = strlen(entry->content);
     Message_free(&content);
 
     // If the message is empty (e.g /ok with no detail), cleanup and return NULL
     if (entry->length == 0) {
-      // Paranoid free, TODO: maybe memset_s?
-      memset(entry->content, 0, kBroadcastBufferSize);
+      // Paranoid free
+      memset_s(entry->content, kBroadcastBufferSize, 0, kBroadcastBufferSize);
       ChatLogEntry_free(&entry);
       return NULL;
     }
@@ -46,12 +54,11 @@ ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length) {
 void ChatLogEntry_free(ChatLogEntry **entry) {
   if (entry != NULL) {
     // Erase the item
-    memset(*entry, 0, sizeof(ChatLogEntry));
+    memset_s(*entry, sizeof(ChatLogEntry), 0, sizeof(ChatLogEntry));
     // Free the pointer to which entry is pointing
     // which is the actual pointer to the object
     free(*entry);
     *entry = NULL;
   }
 }
-
 

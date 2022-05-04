@@ -47,7 +47,7 @@ void App_terminate(int signal) {
 
 /// Catches interrupt signals
 int App_catch(int sig, void (*handler)(int)) {
-   struct sigaction action;
+   struct sigaction action = {};
    action.sa_handler = handler;
    sigemptyset(&action.sa_mask);
    action.sa_flags = 0;
@@ -59,7 +59,7 @@ void *App_listen(void *client) {
   C2HatClient *this = (C2HatClient *) client;
   SOCKET server = Client_getSocket(this);
 
-  char buffer[kBufferSize] = {0};
+  char buffer[kBufferSize] = {};
   int received = 0;
 
   fd_set reads;
@@ -122,7 +122,7 @@ void App_run(C2HatClient *this) {
     UILoopInit();
 
     // Request user input as Unicode
-    wchar_t buffer[kMaxMessageLength] = {0};
+    wchar_t buffer[kMaxMessageLength] = {};
     size_t inputSize = UIGetUserInput(buffer, kMaxMessageLength);
     // User pressed F1 or other exit commands
     if ((int)inputSize < 0) {
@@ -134,14 +134,14 @@ void App_run(C2HatClient *this) {
     wchar_t *trimmedBuffer = wtrim(buffer, NULL);
 
     // Convert it into UTF-8
-    char messageBuffer[kBufferSize] = {0};
+    char messageBuffer[kBufferSize] = {};
     wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
 
     int messageType = Message_getType(messageBuffer);
     if (messageType == kMessageTypeQuit) break;
 
     // If the input is not a command, wrap it into a message payload
-    char message[kBufferSize] = {0};
+    char message[kBufferSize] = {};
     if (!messageType) {
       Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
     } else {

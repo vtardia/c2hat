@@ -60,7 +60,7 @@ enum chatWinStatusType {
 };
 
 static WINDOW *mainWin, *chatWin, *inputWin, *chatWinBox, *inputWinBox, *statusBarWin;
-static char currentStatusBarMessage[512] = {0};
+static char currentStatusBarMessage[512] = {};
 
 /// Associative array where the keys are the user nicknames
 static Hash *users = NULL;
@@ -179,7 +179,11 @@ int UIGetInputLines() {
  */
 bool UITermIsBigEnough() {
   int lines = UIGetInputLines();
-  return (screenLines > kMinTerminalLines && screenCols > kMinTerminalCols && ((screenCols - 1) * lines) >= kMaxMessageLength);
+  return (
+    screenLines > kMinTerminalLines
+      && screenCols > kMinTerminalCols
+      && ((screenCols - 1) * lines) >= kMaxMessageLength
+  );
 }
 
 /**
@@ -774,7 +778,10 @@ void UILogMessageDisplay(ChatLogEntry *entry, bool refresh) {
     break;
     default:
       // Print up to byte_received from the server
-      wprintw(chatWin, "Received (%zu bytes): %.*s\n", entry->length, (int) entry->length, entry->content);
+      wprintw(
+        chatWin, "Received (%zu bytes): %.*s\n",
+        entry->length, (int) entry->length, entry->content
+      );
     break;
   }
   if (refresh) wrefresh(chatWin);
@@ -798,7 +805,10 @@ void UILogMessage(char *buffer, size_t length) {
     if (entry->type == kMessageTypeQuit) {
       if (chatWin) {
         wattron(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
-        wprintw(chatWin, "[%s] [SERVER] You've been disconnected - %s\n", entry->timestamp, entry->content);
+        wprintw(
+          chatWin, "[%s] [SERVER] You've been disconnected - %s\n",
+          entry->timestamp, entry->content
+        );
         wattroff(chatWin, COLOR_PAIR(kColorPairRedOnDefault));
       }
       ChatLogEntry_free(&entry);
@@ -854,13 +864,16 @@ void UISetStatusMessage(char *buffer, size_t length) {
   if (statusBarWin == NULL) return;
 
   // Calculate the terminal size to be displayed at the bottom left
-  char termSize[20] = {0};
-  snprintf(termSize, 19, "[%d,%d]", screenCols, screenLines);
+  char termSize[20] = {};
+  snprintf(termSize, sizeof(termSize) -1, "[%d,%d]", screenCols, screenLines);
   size_t termSizeLength = strlen(termSize);
 
   // Determine the current chat window mode
-  char chatWinMode[10] = {0};
-  snprintf(chatWinMode, 9, "[%s]", (chatWinStatus == kChatWinStatusBrowse ? "B" : "C"));
+  char chatWinMode[10] = {};
+  snprintf(
+    chatWinMode, sizeof(chatWinMode) -1, "[%s]",
+    (chatWinStatus == kChatWinStatusBrowse ? "B" : "C")
+  );
   size_t chatWinModeLength = strlen(chatWinMode);
 
   // Considers 80% of the status bar available, minus the term size message
@@ -895,7 +908,7 @@ void UISetInputCounter(int current, int max) {
 
   int y, x;
   getyx(inputWin, y, x);
-  char text[20] = {0};
+  char text[20] = {};
   size_t length = sprintf(text, "%4d/%d", current, max);
   mvwprintw(statusBarWin, 0, (screenCols - length - 1), "%s", text);
   wrefresh(statusBarWin);

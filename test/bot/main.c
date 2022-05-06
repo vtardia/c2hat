@@ -15,6 +15,8 @@
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
+// TODO: review and get rid of magic numbers (eg. 1024), create consts
+
 enum {
   kMaxBots = 7,
   kMaxHostnameSize = 128,
@@ -37,9 +39,9 @@ static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
 
 static bool terminate = false;
 
-Options options = {0};
+Options options = {};
 
-char messages[1024][100] = {0};
+char messages[1024][100] = {};
 
 void usage(const char *program);
 void help(const char *program);
@@ -67,10 +69,11 @@ void Bot_stop(int signal) {
 
 // Catch interrupt signals
 int Bot_catch(int sig, void (*handler)(int)) {
-   struct sigaction action;
-   action.sa_handler = handler;
+   struct sigaction action = {
+     .sa_handler = handler,
+     .sa_flags = 0
+   };
    sigemptyset(&action.sa_mask);
-   action.sa_flags = 0;
    return sigaction (sig, &action, NULL);
 }
 
@@ -92,7 +95,7 @@ void* RunBot(void* data) {
   }
 
   // Choose your nickname
-  char nickname[50] = {0};
+  char nickname[50] = {};
   sprintf(nickname, "Bot@%d", *id);
 
   printf("Starting Bot thread %d: %lu\n", *id, (unsigned long)pthread_self());
@@ -142,7 +145,7 @@ void* RunBot(void* data) {
 
     if (FD_ISSET(server, &reads)) {
       // We have data in a socket
-      char read[kBufferSize] = {0};
+      char read[kBufferSize] = {};
       int received = Client_receive(bot, read, kBufferSize);
       if (received <= 0) {
         break;
@@ -155,8 +158,8 @@ void* RunBot(void* data) {
     int probability = rand() % 100;
     if (probability < 30) {
       int messageID = rand() % 100;
-      char message[1024] = {0};
-      snprintf(message, 1023, "/msg %s", messages[messageID]);
+      char message[1024] = {};
+      snprintf(message, sizeof(message) -1, "/msg %s", messages[messageID]);
       int sent = Client_send(bot, message, strlen(message) + 1);
       if (sent <= 0) {
         fprintf(
@@ -274,11 +277,12 @@ int main(int argc, ARGV argv) {
  */
 void usage(const char *program) {
   fprintf(stderr,
-"Usage: %1$s [options] <host> <port>\n"
-"       %1$s [-n HowManyBots] <host> <port>\n"
-"\n"
-"For a listing of options, use %1$s --help."
-"\n", basename((char *)program));
+    "Usage: %1$s [options] <host> <port>\n"
+    "       %1$s [-n HowManyBots] <host> <port>\n"
+    "\n"
+    "For a listing of options, use %1$s --help."
+    "\n", basename((char *)program)
+  );
 }
 
 /**
@@ -347,19 +351,20 @@ void parseOptions(int argc, ARGV argv, Options *params) {
  */
 void help(const char *program) {
   fprintf(stderr,
-"%1$s - commandline C2Hat Bot utility\n"
-"\n"
-"Usage: %1$s [options] <host> <port>\n"
-"       %1$s [-n HowManyBots] <host> <port>\n"
-"\n"
-"Current options include:\n"
-"   -n, --num-bots  specify how many bot threads to use;\n"
-"       --cacert    specify a CA certificate to verify with;\n"
-"       --capath    specify a directory where trusted CA certificates\n"
-"                   are stored; if neither cacert and capath are\n"
-"                   specified, the default path will be used:\n"
-"                   $HOME/.local/share/c2hat/ssl\n"
-"   -h, --help      display this help message;\n"
-"\n", basename((char *)program));
+    "%1$s - commandline C2Hat Bot utility\n"
+    "\n"
+    "Usage: %1$s [options] <host> <port>\n"
+    "       %1$s [-n HowManyBots] <host> <port>\n"
+    "\n"
+    "Current options include:\n"
+    "   -n, --num-bots  specify how many bot threads to use;\n"
+    "       --cacert    specify a CA certificate to verify with;\n"
+    "       --capath    specify a directory where trusted CA certificates\n"
+    "                   are stored; if neither cacert and capath are\n"
+    "                   specified, the default path will be used:\n"
+    "                   $HOME/.local/share/c2hat/ssl\n"
+    "   -h, --help      display this help message;\n"
+    "\n", basename((char *)program)
+  );
 }
 

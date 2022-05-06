@@ -154,7 +154,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *currentConfig) {
   char ch;
   while (true) {
     ch = getopt_long(argc, argv, "h:p:m:", options, NULL);
-    if( (signed char)ch == -1 ) break; // no more options
+    if ((signed char)ch == -1) break; // no more options
     switch (ch) {
       case 'h':
         memset(currentConfig->host, 0, strlen(currentConfig->host));
@@ -192,7 +192,7 @@ char *GetLogFilePath() {
   return strdup(kDefaultLogFile);
 #else
   const char *logFileName = kDefaultLogFileName;
-  char home[255] = {0};
+  char home[255] = {};
   strcat(home, getenv("HOME"));
   #if defined(LINUX)
     char *paths[] = {
@@ -311,15 +311,11 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     return EXIT_FAILURE;
   }
 
-  /* if (!setlocale(LC_ALL, currentConfig->locale)) { */
-  /*   fprintf(stderr, "Unable to set locale to '%s'\n", currentConfig->locale); */
-  /*   return EXIT_FAILURE; */
-  /* } */
-
   if (strlen(currentConfig->sslCertFilePath) == 0) {
     fprintf(stderr, "SSL certificate file path missing: use --ssl-cert=/path/to/cert.pem\n");
     return EXIT_FAILURE;
   }
+
   if (strlen(currentConfig->sslKeyFilePath) == 0) {
     fprintf(stderr, "SSL private key file path missing: use --ssl-key=/path/to/key.pem\n");
     return EXIT_FAILURE;
@@ -342,7 +338,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
       fprintf(stderr, "Unable to start daemon server(1): %s\n", strerror(errno));
       return EXIT_FAILURE;
     }
-    // I'm in the child, form again
+    // I'm in the child, fork again
     serverPID = fork();
     if (serverPID < 0) {
       fprintf(stderr, "Unable to start daemon server(2): %s\n", strerror(errno));
@@ -357,7 +353,7 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
     }
     // I'm in the final child
     umask(0);
-    chdir("/usr/local");
+    chdir("/usr/local"); // TODO: this should depend on the user's privilege
     sessionID = setsid();
     if (sessionID < 0) {
       fprintf(stderr, "Unable to set new session: %s\n", strerror(errno));
@@ -437,7 +433,9 @@ int CMD_runStart(ServerConfigInfo *currentConfig) {
  */
 int CMD_runStop() {
   // Load configuration
-  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(kServerSharedMemPath, sizeof(ServerConfigInfo));
+  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(
+    kServerSharedMemPath, sizeof(ServerConfigInfo)
+  );
   if (currentConfig == NULL) {
     if (errno == ENOENT) {
       fprintf(stderr, "The server may not be running\n");
@@ -494,7 +492,9 @@ int CMD_runStop() {
  */
 int CMD_runStatus() {
   // Load configuration
-  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(kServerSharedMemPath, sizeof(ServerConfigInfo));
+  ServerConfigInfo *currentConfig = (ServerConfigInfo *)Config_load(
+    kServerSharedMemPath, sizeof(ServerConfigInfo)
+  );
   if (currentConfig == NULL) {
     if (errno == ENOENT) {
       fprintf(stderr, "The server may not be running\n");
@@ -541,6 +541,7 @@ int CMD_runStatus() {
 
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
+  // TODO: wrap into a macro and use memset_s/explicit_bzero
   memset(currentConfig, 0, sizeof(ServerConfigInfo));
   free(currentConfig);
   currentConfig = NULL;
@@ -553,27 +554,27 @@ int CMD_runStatus() {
  */
 void usage(const char *program) {
   fprintf(stderr,
-"%1$s - Free TCP Chat Server [version %2$s]\n"
-"\n"
-"Usage: %1$s <command> [options]\n"
-"       %1$s start --ssl-cert=</path/to/cert.pem> --ssk-key=</path/to/key.pem>\n"
-"                    [--foreground] [-h <host>] [-p <port>] [-m <max-clients>]\n"
-"       %1$s stop\n"
-"       %1$s status\n"
-"\n"
-"Current available commands are:\n"
-"       start          start the chat server;\n"
-"       stop           stop the chat server, if running in background;\n"
-"       status         display the chat server status and configuration;\n"
-"\n"
-"Current start options include:\n"
-"       --ssl-cert     specify the path for the server TLS certificate;\n"
-"       --ssl-key      specify the path for the server private key\n"
-"   -h, --host         specify the listening host name or IP (default = localhost);\n"
-"   -p, --host         specify the listening TCP port number (default = 10000);\n"
-"   -m, --max-clients  specify the maximum number of connections (default = 5);\n"
-"       --foreground   run the server in foreground;\n"
-"\n", basename((char *)program), kC2HatServerVersion);
+    "%1$s - Free TCP Chat Server [version %2$s]\n"
+    "\n"
+    "Usage: %1$s <command> [options]\n"
+    "       %1$s start --ssl-cert=</path/to/cert.pem> --ssk-key=</path/to/key.pem>\n"
+    "                    [--foreground] [-h <host>] [-p <port>] [-m <max-clients>]\n"
+    "       %1$s stop\n"
+    "       %1$s status\n"
+    "\n"
+    "Current available commands are:\n"
+    "       start          start the chat server;\n"
+    "       stop           stop the chat server, if running in background;\n"
+    "       status         display the chat server status and configuration;\n"
+    "\n"
+    "Current start options include:\n"
+    "       --ssl-cert     specify the path for the server TLS certificate;\n"
+    "       --ssl-key      specify the path for the server private key\n"
+    "   -h, --host         specify the listening host name or IP (default = localhost);\n"
+    "   -p, --host         specify the listening TCP port number (default = 10000);\n"
+    "   -m, --max-clients  specify the maximum number of connections (default = 5);\n"
+    "       --foreground   run the server in foreground;\n"
+    "\n", basename((char *)program), kC2HatServerVersion);
 }
 
 /**

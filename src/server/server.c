@@ -106,14 +106,13 @@ Server *Server_init(ServerConfigInfo *config) {
   }
 
   // Hold socket settings
-  struct addrinfo options;
-  memset(&options, 0, sizeof(options));
+  struct addrinfo options = {};
 
   // Hold the return value for getaddrinfo()
   struct addrinfo *bindAddress;
 
   // Hold the server port number as string
-  char serverPort[6] = {0};
+  char serverPort[6] = {};
   sprintf(serverPort, "%d", config->port);
 
   // AF_INET = accepts only IPv4 host values
@@ -167,8 +166,8 @@ Server *Server_init(ServerConfigInfo *config) {
 
   if (!SSL_CTX_use_certificate_chain_file(sslContext, config->sslCertFilePath)
     || !SSL_CTX_use_PrivateKey_file(sslContext, config->sslKeyFilePath, SSL_FILETYPE_PEM)) {
-    char error[256] = {0};
-    ERR_error_string_n(ERR_get_error(), error, 256);
+    char error[256] = {};
+    ERR_error_string_n(ERR_get_error(), error, sizeof(error));
     SSL_CTX_free(sslContext);
     Fatal("SSL_CTX_use_certificate_file() failed: %s", error);
   }
@@ -232,14 +231,13 @@ void Server_stop(int signal) {
  * @param[out] The result of the sigaction() call
  */
 int Server_catch(int sig, void (*handler)(int)) {
-   struct sigaction action;
-   action.sa_handler = handler;
+   struct sigaction action = {
+     .sa_handler = handler,
+     // We also want to unset the SA_RESTART flag for the handler(s),
+     // which would make accept() return -1 on the signal's reception.
+     .sa_flags = 0
+   };
    sigemptyset(&action.sa_mask);
-
-   // We also want to unset the SA_RESTART flag for the handler(s),
-   // which would make accept() return -1 on the signal's reception.
-   action.sa_flags = 0;
-
    return sigaction (sig, &action, NULL);
 }
 
@@ -287,6 +285,7 @@ void Server_start(Server *this) {
 
     if (select(maxSocket+1, &reads, 0, &errors, 0) < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
+        // Signal received
         Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
         Error("select() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
@@ -298,8 +297,7 @@ void Server_start(Server *this) {
     if (FD_ISSET(this->socket, &reads)) {
 
       // Initialise a temporary client variable
-      Client client;
-      memset(&client, 0, sizeof(Client));
+      Client client = {};
       client.length = sizeof(client.address);
       client.socket = accept(this->socket, (struct sockaddr*) &(client).address, &(client).length);
       if (!SOCKET_isValid(client.socket)) {
@@ -319,8 +317,8 @@ void Server_start(Server *this) {
       }
       SSL_set_fd(client.ssl, client.socket);
       if (SSL_accept(client.ssl) != 1) {
-        char error[256] = {0};
-        ERR_error_string_n(ERR_get_error(), error, 256);
+        char error[256] = {};
+        ERR_error_string_n(ERR_get_error(), error, sizeof(error));
         Error("SSL_accept() failed: %s", error);
         Server_dropClient(&client);
         continue;
@@ -363,7 +361,10 @@ void Server_start(Server *this) {
 
     // Main socket has an error
     if (FD_ISSET(this->socket, &errors)) {
-      Error("Main socket failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      Error(
+        "Main socket failed (%d): %s",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
     }
   }
 
@@ -422,8 +423,8 @@ int Server_send(Client *client, const char* message, size_t length) {
  */
 int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
-  // The (0*size) statement avoids the 'unused parameter' error at compile time
-  pthread_t threadB = *((pthread_t *)b) + (0 * size);
+  (void)size; // Avoids the 'unused parameter' error at compile time
+  pthread_t threadB = *((pthread_t *)b);
   return client->threadID - threadB;
 }
 
@@ -437,7 +438,7 @@ int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
 int Client_findByNickname(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
   char *nickname = (char *)b;
-  (void)size; // Avoids the 'unused parameter' error at compile time
+  (void)size;
   return strncmp(client->nickname, nickname, kMaxNicknameSize);
 }
 
@@ -525,7 +526,7 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
 int Server_receive(Client *client, char *buffer, size_t length) {
   char *data = buffer; // points at the start of buffer
   size_t total = 0;
-  char cursor[1] = {0};
+  char cursor[1] = {};
   do {
     int bytesReceived = SSL_read(client->ssl, cursor, 1);
 
@@ -559,7 +560,7 @@ int Server_receive(Client *client, char *buffer, size_t length) {
  * @param[out] success/failure
  */
 bool Client_nicknameIsValid(const char *username) {
-  char error[512] = {0};
+  char error[512] = {};
   int valid = Regex_match(username, kRegexNicknamePattern, error, sizeof(error));
   if (valid) return true;
   if (valid < 0) {
@@ -578,8 +579,8 @@ bool Client_nicknameIsValid(const char *username) {
  * @param[out] Success or failure
  */
 bool Server_authenticate(Client *client) {
-  char request[kBufferSize] = {0};
-  char response[kBufferSize] = {0};
+  char request[kBufferSize] = {};
+  char response[kBufferSize] = {};
   struct timeval timeout;
 
   Message_format(kMessageTypeNick, request, kBufferSize, "Please enter a nickname:");
@@ -692,12 +693,11 @@ void* Server_handleClient(void* data) {
     Error("Client thread id mismatch (client: %lu, me: %lu)", client->threadID, me);
     Server_dropClient(client);
   }
-  char messageBuffer[kBufferSize] = {0};
+  char messageBuffer[kBufferSize] = {};
 
   Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
-  memset(messageBuffer, '\0', kBufferSize);
   Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Welcome to C2hat!");
   // Using strlen() +1 ensures the NULL terminator is sent
   Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
@@ -718,7 +718,10 @@ void* Server_handleClient(void* data) {
 
   // Broadcast that a new client has joined
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just joined the chat", client->nickname);
+  Message_format(
+    kMessageTypeLog, messageBuffer, kBufferSize,
+    "[%s] just joined the chat", client->nickname
+  );
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   fd_set reads;
@@ -783,7 +786,7 @@ void* Server_handleClient(void* data) {
         if (kMessageTypeQuit == messageType) break;
 
         char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg, kBufferSize);
-        char broadcastBuffer[kBroadcastBufferSize] = {0};
+        char broadcastBuffer[kBroadcastBufferSize] = {};
         switch (messageType) {
           case kMessageTypeMsg:
             if (messageContent != NULL && strlen(messageContent) > 0) {
@@ -810,7 +813,10 @@ void* Server_handleClient(void* data) {
 
     // Client socket has an error
     if (FD_ISSET(client->socket, &errors)) {
-      Error("Client socket failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+      Error(
+        "Client socket failed (%d): %s",
+        SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+      );
     }
 
     if (!SOCKET_isValid(client->socket)) break;
@@ -818,7 +824,10 @@ void* Server_handleClient(void* data) {
 
   // Broadcast that client has left
   memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeLog, messageBuffer, kBufferSize, "[%s] just left the chat", client->nickname);
+  Message_format(
+    kMessageTypeLog, messageBuffer, kBufferSize,
+    "[%s] just left the chat", client->nickname
+  );
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Close the connection
@@ -893,3 +902,4 @@ void Server_broadcast(char *message, size_t length) {
   Queue_enqueue(messages, message, length);
   pthread_mutex_unlock(&messagesLock);
 }
+

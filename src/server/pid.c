@@ -42,14 +42,14 @@ pid_t PID_init(const char *pidFilePath) {
  * @param[in] pidFilePath The full PID file path to load
  */
 pid_t PID_load(const char *pidFilePath) {
-  char buffer[100] = {0};
+  char buffer[100] = {};
   pidFile = fopen(pidFilePath, "r");
   FatalIf(
     (!pidFile),
     "Unable to open PID file: %s", strerror(errno)
   );
 
-  fgets(buffer, 100, pidFile);
+  fgets(buffer, sizeof(buffer), pidFile);
   fclose(pidFile);
   return atoi(buffer);
 }

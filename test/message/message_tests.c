@@ -189,7 +189,7 @@ void TestMessage_getContent() {
 }
 
 void TestMessage_format() {
-  char message[1024] = {0};
+  char message[1024] = {};
 
   // A simple successful message, without parameters
   // This will work even if message[1024] is left unitialised
@@ -221,7 +221,7 @@ void TestMessage_format() {
   // the specified size or message.
   // There seems to be no buffer overflow or memory leaks although it's not normal
   // When size is shorter than format + arguments + prefix the message is simply truncated
-  char shortMessage[4] = {0};
+  char shortMessage[4] = {};
   Message_format(kMessageTypeMsg, shortMessage, 1024, "Hello World!");
   assert(strcmp(shortMessage, "/msg Hello World!") == 0);
   printf(".");
@@ -250,7 +250,7 @@ void TestMessage_format() {
 void TestMessage_getUser() {
   char *message = NULL;
   size_t length = 0;
-  char user[21] = {0};
+  char user[21] = {};
 
   // Test that fails if type is not /msg or /log
   length = 20;
@@ -307,7 +307,7 @@ void TestMessage_getUser() {
   length = 5;
   // MUST be length + 1 (kMaxNicknameLength + 1) to avoid
   // unexpected buffer overflow results
-  char otherUser[5] = {0};
+  char otherUser[5] = {};
   message = "/msg [Abcde] said something";
   // Buffer too short to contain the username
   assert(Message_getUser(message, otherUser, sizeof(otherUser) -1) == false);

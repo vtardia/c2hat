@@ -11,18 +11,17 @@
 #include <getopt.h>
 
 #include "client.h"
+#include "../c2hat.h"
 
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
-
-// TODO: review and get rid of magic numbers (eg. 1024), create consts
 
 enum {
   kMaxBots = 7,
   kMaxHostnameSize = 128,
   kMaxPortSize = 6,
   kMaxFilePath = 4096,
-  kBufferSize = 1024
+  kMaxMessages = 100
 };
 
 /// Contains the client startup parameters
@@ -41,7 +40,7 @@ static bool terminate = false;
 
 Options options = {};
 
-char messages[1024][100] = {};
+char messages[kBufferSize][kMaxMessages] = {};
 
 void usage(const char *program);
 void help(const char *program);
@@ -95,7 +94,7 @@ void* RunBot(void* data) {
   }
 
   // Choose your nickname
-  char nickname[50] = {};
+  char nickname[kMaxNicknameSize] = {};
   sprintf(nickname, "Bot@%d", *id);
 
   printf("Starting Bot thread %d: %lu\n", *id, (unsigned long)pthread_self());
@@ -158,7 +157,7 @@ void* RunBot(void* data) {
     int probability = rand() % 100;
     if (probability < 30) {
       int messageID = rand() % 100;
-      char message[1024] = {};
+      char message[kBufferSize] = {};
       snprintf(message, sizeof(message) -1, "/msg %s", messages[messageID]);
       int sent = Client_send(bot, message, strlen(message) + 1);
       if (sent <= 0) {
@@ -192,9 +191,9 @@ void LoadMessages() {
     fprintf(stderr, "Unable to open messages file: %s\n", strerror(errno));
     exit(1);
   }
-  for (int i = 0; i < 100; ++i) {
-    memset(messages[i], 0, 1024);
-    fgets(messages[i], 1023, fd);
+  for (int i = 0; i < kMaxMessages; ++i) {
+    memset(messages[i], 0, sizeof(messages[i]));
+    fgets(messages[i], sizeof(messages[i]) -1, fd);
     // Remove last new line character
     *(messages[i] + strlen(messages[i]) -1) = 0;
   }

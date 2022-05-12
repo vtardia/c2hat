@@ -8,7 +8,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-#include "trim/wtrim.h"
+#include "wtrim/wtrim.h"
 #include "app.h"
 #include "ui.h"
 #include "message/message.h"

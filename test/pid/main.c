@@ -11,7 +11,7 @@
 int main(int argc, char const *argv[]) {
   if (argc < 3) return -1;
 
-  LogInit(L_INFO, NULL, "/dev/null");
+  vLogInit(LOG_INFO, "/dev/null");
 
   if (strcmp(argv[1], "init") == 0) {
     pid_t mypid = PID_init(argv[2]);

@@ -8,7 +8,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "logger/vlogger.h"
+#include "logger/logger.h"
 
 static FILE *pidFile = NULL;
 

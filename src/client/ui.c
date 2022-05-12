@@ -456,7 +456,7 @@ void UILoopInit() {
  */
 size_t UIGetUserInput(wchar_t *buffer, size_t length) {
   // Keep track of the input window coordinates
-  int y, x, maxY, maxX;
+  int y = 0, x = 0, maxY = 0, maxX = 0;
 
   // Contains the last input character
   wint_t ch = 0;

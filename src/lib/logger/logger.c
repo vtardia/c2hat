@@ -22,7 +22,7 @@
  * USA
  */
 
-#include "vlogger.h"
+#include "logger.h"
 
 #include <stdarg.h>
 #include <unistd.h>

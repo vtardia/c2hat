@@ -17,7 +17,7 @@
 
 #include "ui.h"
 #include "client.h"
-#include "trim/wtrim.h"
+#include "wtrim/wtrim.h"
 #include "app.h"
 
 /// ARGV wrapper for options parsing

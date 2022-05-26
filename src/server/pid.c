@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>
+#include <libgen.h> // for basename() and dirname()
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "logger/logger.h"
 
@@ -23,17 +26,29 @@ pid_t PID_init(const char *pidFilePath) {
     "A PID file (%s) already exists", pidFilePath
   );
 
-  pid_t my_pid;
+  // Try to create the PID directory if not exists
+  struct stat st = {};
+  char *path = strdup(pidFilePath);
+  char *pidDir = dirname(path);
+  if (stat(pidDir, &st) == -1) {
+    if (mkdir(pidDir, 0700) < 0) {
+      if (path != NULL) free(path);
+      Fatal("Unable to create PID directory (%d)", pidDir);
+    }
+  }
+  if (path != NULL) free(path);
+
+  pid_t myPID;
   pidFile = fopen(pidFilePath, "w");
   FatalIf(
     (!pidFile),
     "Unable to open PID file '%s': %s", pidFilePath, strerror(errno)
   );
 
-  my_pid = getpid();
-  fprintf(pidFile, "%d", my_pid);
+  myPID = getpid();
+  fprintf(pidFile, "%d", myPID);
   fclose(pidFile);
-  return my_pid;
+  return myPID;
 }
 
 /**

@@ -54,7 +54,7 @@ SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 
 COMMON_LIBRARIES = logger socket list queue message
-SERVER_LIBRARIES = config validate
+SERVER_LIBRARIES = config validate ini
 CLIENT_LIBRARIES = hash wtrim
 
 # Targets
@@ -92,7 +92,7 @@ $(SERVER_OBJECTS):
 	$(CC) $(CFLAGS) -c src/$@.c $(OSFLAG) -o obj/$@.o
 
 $(SERVER_LIBRARIES):
-	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/server/$@.o
+	$(CC) $(CFLAGS) -DINI_ALLOW_MULTILINE=0 -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/server/$@.o
 
 # Client dependencies
 $(CLIENT_OBJECTS):

@@ -7,17 +7,22 @@
 
   #include <unistd.h>
 
+  #define kMaxPath 4096
+  #define kMaxHostLength 40
+  #define kMaxLocaleLength 25
+
   typedef struct Server Server;
 
   /// Contains the server's active configuration
   typedef struct {
     pid_t pid; ///< PID for the currently running server
-    char logFilePath[4096]; ///< Log file path
-    char pidFilePath[4096]; ///< PID file path
-    char sslCertFilePath[4096]; ///< SSL certificate file path
-    char sslKeyFilePath[4096]; ///< SSL public key file path
-    char host[40]; ///< Listening IP address
-    char locale[25]; ///< Server locale
+    unsigned int logLevel;  ///< Default log level
+    char logFilePath[kMaxPath]; ///< Log file path
+    char pidFilePath[kMaxPath]; ///< PID file path
+    char sslCertFilePath[kMaxPath]; ///< SSL certificate file path
+    char sslKeyFilePath[kMaxPath]; ///< SSL public key file path
+    char host[kMaxHostLength]; ///< Listening IP address
+    char locale[kMaxLocaleLength]; ///< Server locale
     unsigned int port; ///< Listening TCP port
     unsigned int maxConnections; ///< Max connections
   } ServerConfigInfo;

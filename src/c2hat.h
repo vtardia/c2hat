@@ -18,7 +18,10 @@
     /// Max size of data that can be sent, including the NULL terminator
     kBufferSize = 1536,
     // Format is: /msg [<15charUsername>]:\s
-    kBroadcastBufferSize = 9 + kMaxNicknameSize + kBufferSize
+    kBroadcastBufferSize = 9 + kMaxNicknameSize + kBufferSize,
+    kMaxPath =  4096,
+    kMaxHostLength =  40,
+    kMaxLocaleLength =  25
   };
 #endif
 

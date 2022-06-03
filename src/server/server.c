@@ -2,8 +2,12 @@
  * Copyright (C) 2020 Vito Tardia
  */
 
-#include "../c2hat.h"
 #include "server.h"
+
+#include "message/message.h"
+#include "socket/socket.h"
+#include "list/list.h"
+#include "queue/queue.h"
 #include "validate/validate.h"
 
 #include <pthread.h>

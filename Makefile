@@ -101,10 +101,6 @@ $(CLIENT_OBJECTS):
 $(CLIENT_LIBRARIES):
 	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/client/$@.o
 
-# INI parser
-# obj/ini.o: ini/ini.c ini/ini.h
-# 	$(CC) $(CFLAGS) -c ini/ini.c -o obj/ini.o $(OSFLAG) -DINI_ALLOW_MULTILINE=0
-
 # Test Bot
 bot: prereq $(COMMON_LIBRARIES)
 	mkdir -p bin/test

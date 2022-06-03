@@ -6,10 +6,8 @@
 #define SERVER_H
 
   #include <unistd.h>
-
-  #define kMaxPath 4096
-  #define kMaxHostLength 40
-  #define kMaxLocaleLength 25
+  #include <stdbool.h>
+  #include "../c2hat.h"
 
   typedef struct Server Server;
 
@@ -17,6 +15,7 @@
   typedef struct {
     pid_t pid; ///< PID for the currently running server
     unsigned int logLevel;  ///< Default log level
+    char configFilePath[kMaxPath]; ///< Config file path, if found
     char logFilePath[kMaxPath]; ///< Log file path
     char pidFilePath[kMaxPath]; ///< PID file path
     char sslCertFilePath[kMaxPath]; ///< SSL certificate file path
@@ -25,6 +24,7 @@
     char locale[kMaxLocaleLength]; ///< Server locale
     unsigned int port; ///< Listening TCP port
     unsigned int maxConnections; ///< Max connections
+    bool foreground; ///< Foreground or background service flag
   } ServerConfigInfo;
 
   // Create a server for the given host/port combination
@@ -35,7 +35,6 @@
 
   // Cleanup server memory
   void Server_free(Server **);
-
 #endif
 
 #include <stdio.h>
@@ -45,8 +44,4 @@
 
 #include "logger/logger.h"
 #include "pid.h"
-#include "message/message.h"
-#include "socket/socket.h"
-#include "list/list.h"
-#include "queue/queue.h"
 #include "config/config.h"

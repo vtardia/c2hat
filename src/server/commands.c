@@ -15,11 +15,15 @@ bool serverStartedSuccessfully = false;
 const int kMaxCommandSize = 10;
 
 /// Shared memory handle that stores the configuration data
-const char *kServerSharedMemPath = "/c2hat";
+char sharedMemPath[16] = {};
 
 /// Size of the shared memory
 const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
 
+/**
+ * Sets the shared memory value depending on the current user
+ */
+void initSharedMemPath();
 
 /**
  * Closes any open resource and deletes PID file and shared memory
@@ -90,6 +94,8 @@ int CMD_runStart(ServerConfigInfo *settings) {
     fprintf(stderr, "SSL private key file path missing: use --ssl-key=/path/to/key.pem\n");
     return EXIT_FAILURE;
   }
+
+  initSharedMemPath();
 
   if (settings->foreground) {
     pid_t serverPID = getpid();
@@ -189,7 +195,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
   settings->pid = pid;
   if (currentLogFilePath != NULL) free(currentLogFilePath);
 
-  if (!Config_save(settings, sizeof(ServerConfigInfo), kServerSharedMemPath)) {
+  if (!Config_save(settings, sizeof(ServerConfigInfo), sharedMemPath)) {
     return EXIT_FAILURE;
   }
 
@@ -215,8 +221,9 @@ int CMD_runStart(ServerConfigInfo *settings) {
  */
 int CMD_runStop() {
   // Load configuration
+  initSharedMemPath();
   ServerConfigInfo *settings = (ServerConfigInfo *)Config_load(
-    kServerSharedMemPath, sizeof(ServerConfigInfo)
+    sharedMemPath, sizeof(ServerConfigInfo)
   );
   if (settings == NULL) {
     if (errno == ENOENT) {
@@ -274,8 +281,9 @@ int CMD_runStop() {
  */
 int CMD_runStatus() {
   // Load configuration
+  initSharedMemPath();
   ServerConfigInfo *settings = (ServerConfigInfo *)Config_load(
-    kServerSharedMemPath, sizeof(ServerConfigInfo)
+    sharedMemPath, sizeof(ServerConfigInfo)
   );
   if (settings == NULL) {
     if (errno == ENOENT) {
@@ -348,7 +356,7 @@ void clean() {
       }
       /* free(currentPIDFilePath); */
     }
-    if (!Config_clean(kServerSharedMemPath)) {
+    if (!Config_clean(sharedMemPath)) {
       Error("Unable to clean configuration: %s", strerror(errno));
     }
   }
@@ -366,7 +374,20 @@ void cleanup() {
     free(currentPIDFilePath);
     currentPIDFilePath = NULL;
   }
-  if (!Config_clean(kServerSharedMemPath)) {
+  if (!Config_clean(sharedMemPath)) {
     fprintf(stderr, "Unable to clean configuration: %s", strerror(errno));
   }
 }
+
+/**
+ * Sets the shared memory value depending on the current user
+ */
+void initSharedMemPath() {
+  uid_t uid = getuid();
+  if (uid == 0) { // running as root, use /<app>
+    snprintf(sharedMemPath, sizeof(sharedMemPath), "/%s", APPNAME);
+  } else { // running as normal user, use /<app>-uid
+    snprintf(sharedMemPath, sizeof(sharedMemPath), "/%s-%d", APPNAME, uid);
+  }
+}
+

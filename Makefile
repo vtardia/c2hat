@@ -14,8 +14,11 @@ SERVERLIBS =
 CLIENTLIBS = -ldl -lncursesw
 TESTCONFIGLIBS =
 
+# Default app name (also prefix for shared memory location)
+APPNAME = c2hat
+
 # Default prefix for executable files
-BINPREFIX = c2hat-
+BINPREFIX = $(APPNAME)-
 
 # Test prefix for Valgrind (currently Linux only)
 VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
@@ -89,7 +92,7 @@ $(COMMON_LIBRARIES):
 
 # Server dependencies
 $(SERVER_OBJECTS):
-	$(CC) $(CFLAGS) -c src/$@.c $(OSFLAG) -o obj/$@.o
+	$(CC) $(CFLAGS) -DAPPNAME='"$(APPNAME)"' -c src/$@.c $(OSFLAG) -o obj/$@.o
 
 $(SERVER_LIBRARIES):
 	$(CC) $(CFLAGS) -DINI_ALLOW_MULTILINE=0 -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/server/$@.o

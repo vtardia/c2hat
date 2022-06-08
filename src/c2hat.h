@@ -23,5 +23,9 @@
     kMaxHostLength =  40,
     kMaxLocaleLength =  25
   };
+
+  #ifndef APPNAME
+    #define APPNAME "c2hat"
+  #endif
 #endif
 

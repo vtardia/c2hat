@@ -15,21 +15,39 @@
  * @param[out]         The pointer to filePath
  */
 char *GetConfigFilePath(char *filePath, size_t length) {
+  /* $HOME/.config/<app>/server.conf */
   char userConfigFilePath[kMaxPath] = {};
   snprintf(
     userConfigFilePath, sizeof(userConfigFilePath),
-    "%s/.config/c2hat/c2hat-server.conf", getenv("HOME")
+    "%s/.config/%s/server.conf", getenv("HOME"), APPNAME
   );
+
+  /* /etc/<app>/server.conf */
+  char etcConfigFilePath[kMaxPath] = {};
+  snprintf(
+    etcConfigFilePath, sizeof(etcConfigFilePath),
+    "/etc/%s/server.conf", APPNAME
+  );
+
+  /* /usr/local/etc/<app>/server.conf */
+  char usrLocalEtcConfigFilePath[kMaxPath] = {};
+  snprintf(
+    usrLocalEtcConfigFilePath, sizeof(usrLocalEtcConfigFilePath),
+    "/usr/local/etc/%s/server.conf", APPNAME
+  );
+
+  // Clean the output buffer first
   memset(filePath, 0, length);
+
   if (getuid() != 0 && access(userConfigFilePath, R_OK) == 0) {
     // User is not root and has a config file under their home dir
     memcpy(filePath, userConfigFilePath, length);
-  } else if (access("/etc/c2hat/c2hat-server.conf", R_OK) == 0) {
+  } else if (access(etcConfigFilePath, R_OK) == 0) {
     // User is root or there is no personal config file,
     // lookup global files
-    memcpy(filePath, "/etc/c2hat/c2hat-server.conf", length);
-  } else if (access("/usr/local/etc/c2hat/c2hat-server.conf", R_OK) == 0) {
-    memcpy(filePath, "/usr/local/etc/c2hat/c2hat-server.conf", length);
+    memcpy(filePath, etcConfigFilePath, length);
+  } else if (access(usrLocalEtcConfigFilePath, R_OK) == 0) {
+    memcpy(filePath, usrLocalEtcConfigFilePath, length);
   }
   // If none of the files exist an empty string is returned
   return filePath;
@@ -45,12 +63,13 @@ char *GetConfigFilePath(char *filePath, size_t length) {
  * @param[out]         The pointer to filePath
  */
 char *GetDefaultPidFilePath(char *filePath, size_t length) {
+  memset(filePath, 0, length); // Reset first
   if (getuid() == 0) {
     // Running as root, use system directories
-    snprintf(filePath, length, "/var/run/c2hat.pid");
+    snprintf(filePath, length, "/var/run/%s.pid", APPNAME);
   } else {
     // Running as local user, use local directory
-    snprintf(filePath, length, "%s/.local/run/c2hat.pid", getenv("HOME"));
+    snprintf(filePath, length, "%s/.local/run/%s.pid", getenv("HOME"), APPNAME);
   }
   return filePath;
 }
@@ -67,10 +86,10 @@ char *GetDefaultPidFilePath(char *filePath, size_t length) {
 char *GetDefaultLogFilePath(char *filePath, size_t length) {
   if (getuid() == 0) {
     // Running as root, use system path
-    snprintf(filePath, length, "/var/log/c2hat-server.log");
+    snprintf(filePath, length, "/var/log/%s-server.log", APPNAME);
   } else {
     // Running as local user, use local directory
-    snprintf(filePath, length, "%s/.local/state/c2hat-server.log", getenv("HOME"));
+    snprintf(filePath, length, "%s/.local/state/%s-server.log", getenv("HOME"), APPNAME);
   }
   return filePath;
 }
@@ -92,32 +111,56 @@ void GetDefaultTlsFilePaths(
   // Paranoid reset of output buffers
   memset(certPath, 0, certLength);
   memset(keyPath, 0, keyLength);
+
   char userCertPath[kMaxPath] = {};
   char userKeyPath[kMaxPath] = {};
   snprintf(
     userCertPath, sizeof(userCertPath),
-    "%s/.config/c2hat/ssl/cert.pem", getenv("HOME")
+    "%s/.config/%s/ssl/cert.pem", getenv("HOME"), APPNAME
   );
   snprintf(
     userKeyPath, sizeof(userKeyPath),
-    "%s/.config/c2hat/ssl/key.pem", getenv("HOME")
+    "%s/.config/%s/ssl/key.pem", getenv("HOME"), APPNAME
   );
+
+  char etcCertPath[kMaxPath] = {};
+  char etcKeyPath[kMaxPath] = {};
+  snprintf(
+    etcCertPath, sizeof(etcCertPath),
+    "/etc/%s/ssl/cert.pem", APPNAME
+  );
+  snprintf(
+    etcKeyPath, sizeof(etcKeyPath),
+    "/etc/%s/ssl/key.pem", APPNAME
+  );
+
+  char localEtcCertPath[kMaxPath] = {};
+  char localEtcKeyPath[kMaxPath] = {};
+  snprintf(
+    localEtcCertPath, sizeof(localEtcCertPath),
+    "/usr/local/etc/%s/ssl/cert.pem", APPNAME
+  );
+  snprintf(
+    localEtcKeyPath, sizeof(localEtcKeyPath),
+    "/usr/local/etc/%s/ssl/key.pem", APPNAME
+  );
+
   if (getuid() != 0 && access(userCertPath, R_OK) == 0
     && access(userKeyPath, R_OK) == 0) {
       // Not running as root and we have local files
       memcpy(certPath, userCertPath, certLength);
       memcpy(keyPath, userKeyPath, keyLength);
-  } else if (access("/etc/c2hat/ssl/cert.pem", R_OK) == 0
-    && access("/etc/c2hat/ssl/key.pem", R_OK) == 0) {
+  } else if (access(etcCertPath, R_OK) == 0
+    && access(etcKeyPath, R_OK) == 0) {
       // Running as root or no user files available
-      // Try /etc/c2hat/ssl
-      snprintf(certPath, certLength, "/etc/c2hat/ssl/cert.pem");
-      snprintf(keyPath, keyLength, "/etc/c2hat/ssl/key.pem");
-  } else if (access("/usr/local/etc/c2hat/ssl/cert.pem", R_OK) == 0
-    && access("/usr/local/etc/c2hat/ssl/key.pem", R_OK) == 0) {
-      // Try /usr/local/etc/c2hat/ssl
-      snprintf(certPath, certLength, "/usr/local/etc/c2hat/ssl/cert.pem");
-      snprintf(keyPath, keyLength, "/usr/local/etc/c2hat/ssl/key.pem");
+      // Try /etc/<app>/ssl
+      snprintf(certPath, certLength, etcCertPath);
+      snprintf(keyPath, keyLength, etcKeyPath);
+  } else if (access(localEtcCertPath, R_OK) == 0
+    && access(localEtcKeyPath, R_OK) == 0) {
+      // Try /usr/local/etc/<app>/ssl
+      snprintf(certPath, certLength, localEtcCertPath);
+      snprintf(keyPath, keyLength, localEtcKeyPath);
   }
   // File paths will be empty at this point, will beed to be
   // overridden with a custom conf file or from the command line

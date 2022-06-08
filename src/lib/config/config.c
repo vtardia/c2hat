@@ -14,7 +14,7 @@
 bool Config_save(const void *data, size_t size, const char *path) {
 
   // Create the shared memory object
-  int fd = shm_open(path, O_CREAT | O_RDWR | O_TRUNC, 0644);
+  int fd = shm_open(path, O_CREAT | O_RDWR | O_TRUNC, 0600);
   if (fd < 0) {
     return false;
   }
@@ -52,7 +52,7 @@ bool Config_save(const void *data, size_t size, const char *path) {
  */
 void *Config_load(const char *path, size_t size) {
   // Open and map the shared memory location
-  int fd = shm_open(path, O_RDONLY, 0644);
+  int fd = shm_open(path, O_RDONLY, 0600);
   if (fd < 0) {
     return NULL;
   }

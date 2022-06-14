@@ -343,7 +343,7 @@ int CMD_runStop() {
 
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
-  memset(encryptedSettings, 0, 2*sizeof(ServerConfigInfo));
+  memset(encryptedSettings, 0, EncryptedServerConfigInfoSize);
   free(encryptedSettings);
   encryptedSettings = NULL;
 
@@ -437,7 +437,7 @@ int CMD_runStatus() {
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
   // TODO: wrap into a macro and use memset_s/explicit_bzero
-  memset(encryptedSettings, 0, 2*sizeof(ServerConfigInfo));
+  memset(encryptedSettings, 0, EncryptedServerConfigInfoSize);
   free(encryptedSettings);
   encryptedSettings = NULL;
 

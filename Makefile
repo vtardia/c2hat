@@ -26,6 +26,14 @@ VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 # Default Hash size
 HASH_SIZE = 128
 
+# A 256 bit (32 bytes) encryption key
+EVP_ENCRYPTION_KEY := $(shell head -c 500 /dev/urandom | md5sum | head -c 32; echo;)
+
+# A 128 bit (16 bytes) IV
+EVP_ENCRYPTION_IV := $(shell head -c 500 /dev/urandom | md5sum | head -c 16; echo;)
+
+ENCFLAGS = -DEVP_ENCRYPTION_KEY='"$(EVP_ENCRYPTION_KEY)"' -DEVP_ENCRYPTION_IV='"$(EVP_ENCRYPTION_IV)"'
+
 # OS detection
 OSFLAG := -D_XOPEN_SOURCE_EXTENDED
 ifeq ($(OS), Windows_NT)
@@ -57,7 +65,7 @@ SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 
 COMMON_LIBRARIES = logger socket list queue message
-SERVER_LIBRARIES = config validate ini
+SERVER_LIBRARIES = config validate ini encrypt
 CLIENT_LIBRARIES = hash wtrim
 
 # Targets
@@ -92,7 +100,7 @@ $(COMMON_LIBRARIES):
 
 # Server dependencies
 $(SERVER_OBJECTS):
-	$(CC) $(CFLAGS) -DAPPNAME='"$(APPNAME)"' -c src/$@.c $(OSFLAG) -o obj/$@.o
+	$(CC) $(CFLAGS) $(ENCFLAGS) -DAPPNAME='"$(APPNAME)"' -c src/$@.c $(OSFLAG) -o obj/$@.o
 
 $(SERVER_LIBRARIES):
 	$(CC) $(CFLAGS) -DINI_ALLOW_MULTILINE=0 -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/server/$@.o
@@ -105,10 +113,11 @@ $(CLIENT_LIBRARIES):
 	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/client/$@.o
 
 # Test Bot
+# logger, socket, message are the only one we need
 bot: prereq $(COMMON_LIBRARIES)
 	mkdir -p bin/test
 	$(CC) $(CFLAGS) -I src/client \
-		test/bot/main.c src/client/client.c obj/lib/*.o \ # logger, socket, message
+		test/bot/main.c src/client/client.c obj/lib/*.o \
 		$(OSFLAG) $(LDFLAGS) $(LDLIBS) -o bin/test/bot
 
 # Unit test targets

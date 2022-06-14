@@ -5,6 +5,8 @@
 #include <locale.h>
 #include <libgen.h> // for basename() and dirname()
 
+#include "encrypt/encrypt.h"
+
 char *currentLogFilePath = NULL;
 char *currentPIDFilePath = NULL;
 
@@ -19,6 +21,18 @@ char sharedMemPath[16] = {};
 
 /// Size of the shared memory
 const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
+
+/// A 256 bit (32 bytes) key
+const byte *kEncryptionKey = (byte *)EVP_ENCRYPTION_KEY;
+
+/// A 128 bit (16 bytes) IV
+const byte *kEncryptionIV = (byte *)EVP_ENCRYPTION_IV;
+
+/// A large enough buffer to hold the encrypted config data
+#define EncryptedServerConfigInfoSize (2 * sizeof(ServerConfigInfo))
+
+/// Space in bytes needed to save the length of the encrypted content within the payload
+#define EncryptedSizeOffset (sizeof(size_t))
 
 /**
  * Sets the shared memory value depending on the current user
@@ -77,7 +91,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
   // If the system does not support the locale it will return "C"
   // otherwise the full locale string (e.g. en_US.UTF-8)
   char *locale = setlocale(LC_ALL, NULL);
-  memcpy(settings->locale, locale, sizeof(settings->locale) -1);
+  memcpy(settings->locale, locale, strlen(locale) + 1);
 
   // Check locale compatibility
   if (strstr(locale, "UTF-8") == NULL) {
@@ -181,7 +195,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
   Server *server = Server_init(settings);
 
   // Init PID file (after server creation, so we don't create on failure)
-  currentPIDFilePath = settings->pidFilePath;
+  currentPIDFilePath = strdup(settings->pidFilePath);
   if (currentPIDFilePath == NULL) {
     Error("Unable to initialise PID file '%s'", currentPIDFilePath);
     return EXIT_FAILURE;
@@ -195,7 +209,36 @@ int CMD_runStart(ServerConfigInfo *settings) {
   settings->pid = pid;
   if (currentLogFilePath != NULL) free(currentLogFilePath);
 
-  if (!Config_save(settings, sizeof(ServerConfigInfo), sharedMemPath)) {
+  // Encrypt settings first...
+  // Since encryption and decryption happen in separate processes,
+  // we need to communicate the size of the encrypted data to the
+  // decrypting process, or a SegFault is generated.
+  // In order to do this we reserve the first bytes of the encrypted
+  // payload to store the length so the encrypted data start at
+  // encryptedSettings + sizeof(size_t)
+  byte encryptedSettings[EncryptedServerConfigInfoSize] = {};
+  size_t encryptedSettingsSize = AES_encrypt(
+    (byte *)settings,
+    sizeof(ServerConfigInfo),
+    kEncryptionKey,
+    kEncryptionIV,
+    encryptedSettings + EncryptedSizeOffset // Start writing after the offset
+  );
+  if ((int)encryptedSettingsSize < 0) {
+    Error("Unable to encrypt settings");
+    return EXIT_FAILURE;
+  }
+
+  // ...at this point we copy the length of the encrypted data
+  // at the beginning of the payload we are about to save
+  // and save the encrypted version
+  memcpy(encryptedSettings, &encryptedSettingsSize, EncryptedSizeOffset);
+  if (!Config_save(
+        encryptedSettings,
+        encryptedSettingsSize + EncryptedSizeOffset,
+        sharedMemPath
+     )
+  ) {
     return EXIT_FAILURE;
   }
 
@@ -222,30 +265,61 @@ int CMD_runStart(ServerConfigInfo *settings) {
 int CMD_runStop() {
   // Load configuration
   initSharedMemPath();
-  ServerConfigInfo *settings = (ServerConfigInfo *)Config_load(
-    sharedMemPath, sizeof(ServerConfigInfo)
+  // First we read the size of the encrypted payload
+  size_t *encryptedSettingsSize = (size_t *)Config_load(
+    sharedMemPath, EncryptedSizeOffset
   );
-  if (settings == NULL) {
+  if (encryptedSettingsSize == NULL) {
     if (errno == ENOENT) {
       fprintf(stderr, "The server may not be running\n");
     } else {
-      fprintf(stderr, "Unable to load configuration from shared memory: %s\n", strerror(errno));
+      fprintf(stderr,
+        "Unable to load configuration size from shared memory: %s\n", strerror(errno)
+      );
     }
     return EXIT_FAILURE;
   }
 
-  currentPIDFilePath = strdup(settings->pidFilePath);
-  int pidStatus = PID_exists(settings->pid);
+  // Then we try to read the settings starting at the offset
+  // pointed by the size
+  byte *encryptedSettings = (byte *)Config_load(
+    sharedMemPath, *encryptedSettingsSize + EncryptedSizeOffset
+  );
+  // If we could read above, the server is running
+  if (encryptedSettings == NULL) {
+    fprintf(stderr, "Unable to load configuration from shared memory: %s\n", strerror(errno));
+    free(encryptedSettingsSize);
+    return EXIT_FAILURE;
+  }
+
+  // Now we can decrypt...
+  ServerConfigInfo settings = {};
+  size_t decryptedSettingsSize = AES_decrypt(
+    encryptedSettings + EncryptedSizeOffset,
+    *encryptedSettingsSize,
+    kEncryptionKey,
+    kEncryptionIV,
+    (byte *)&settings
+  );
+  // ...and cleanup
+  free(encryptedSettingsSize);
+  if ((int)decryptedSettingsSize < 0) {
+    Error("Unable to decrypt settings");
+    return EXIT_FAILURE;
+  }
+
+  currentPIDFilePath = strdup(settings.pidFilePath);
+  int pidStatus = PID_exists(settings.pid);
   int result;
 
   // Existing PID
   if (pidStatus > 0) {
-    printf("The server is running with PID %d\n", settings->pid);
-    if (kill(settings->pid, SIGTERM) < 0) {
-      printf("Unable to kill process %d: %s\n", settings->pid, strerror(errno));
+    printf("The server is running with PID %d\n", settings.pid);
+    if (kill(settings.pid, SIGTERM) < 0) {
+      printf("Unable to kill process %d: %s\n", settings.pid, strerror(errno));
       result = EXIT_FAILURE;
     } else {
-      printf("The server with PID %d has been successfully stopped\n", settings->pid);
+      printf("The server with PID %d has been successfully stopped\n", settings.pid);
       // The server daemon will take care of cleaning the PID file and shared memory
       result = EXIT_SUCCESS;
     }
@@ -253,7 +327,7 @@ int CMD_runStop() {
 
   // Non-existing PID
   if (pidStatus == 0) {
-    printf("Unable to check for PID %d: the server may not be running\n", settings->pid);
+    printf("Unable to check for PID %d: the server may not be running\n", settings.pid);
     // Enable cleaning the shared memory and PID file
     cleanup();
     result = EXIT_FAILURE;
@@ -263,15 +337,15 @@ int CMD_runStop() {
   // We don't delete the PID file or shared memory because
   // the current user may not have access permissions the PID file
   if (pidStatus < 0 ) {
-    printf("Error while checking for PID %d: %s\n", settings->pid, strerror(errno));
+    printf("Error while checking for PID %d: %s\n", settings.pid, strerror(errno));
     result = EXIT_FAILURE;
   }
 
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
-  memset(settings, 0, sizeof(ServerConfigInfo));
-  free(settings);
-  settings = NULL;
+  memset(encryptedSettings, 0, 2*sizeof(ServerConfigInfo));
+  free(encryptedSettings);
+  encryptedSettings = NULL;
 
   return result;
 }
@@ -282,45 +356,72 @@ int CMD_runStop() {
 int CMD_runStatus() {
   // Load configuration
   initSharedMemPath();
-  ServerConfigInfo *settings = (ServerConfigInfo *)Config_load(
-    sharedMemPath, sizeof(ServerConfigInfo)
+  size_t *encryptedSettingsSize = (size_t *)Config_load(
+    sharedMemPath, EncryptedSizeOffset
   );
-  if (settings == NULL) {
+  if (encryptedSettingsSize == NULL) {
     if (errno == ENOENT) {
       fprintf(stderr, "The server may not be running\n");
     } else {
-      fprintf(stderr, "Unable to load configuration from shared memory: %s\n", strerror(errno));
+      fprintf(stderr,
+        "Unable to load configuration size from shared memory: %s\n", strerror(errno)
+      );
     }
     return EXIT_FAILURE;
   }
 
-  int pidStatus = PID_exists(settings->pid);
-  currentPIDFilePath = strdup(settings->pidFilePath);
+  byte *encryptedSettings = (byte *)Config_load(
+    sharedMemPath, *encryptedSettingsSize + EncryptedSizeOffset
+  );
+  if (encryptedSettings == NULL) {
+    fprintf(stderr,
+      "Unable to load configuration from shared memory: %s\n", strerror(errno)
+    );
+    free(encryptedSettingsSize);
+    return EXIT_FAILURE;
+  }
+
+  ServerConfigInfo settings = {};
+  size_t decryptedSettingsSize = AES_decrypt(
+    encryptedSettings + EncryptedSizeOffset,
+    *encryptedSettingsSize,
+    kEncryptionKey,
+    kEncryptionIV,
+    (byte *)&settings
+  );
+  free(encryptedSettingsSize);
+  if ((int)decryptedSettingsSize < 0) {
+    Error("Unable to decrypt settings");
+    return EXIT_FAILURE;
+  }
+
+  int pidStatus = PID_exists(settings.pid);
+  currentPIDFilePath = strdup(settings.pidFilePath);
   int result;
   switch (pidStatus) {
     // The process exists
     case 1:
       printf("\nThe server is running with the following configuration:\n");
-      printf("         PID: %d\n", settings->pid);
+      printf("         PID: %d\n", settings.pid);
       printf(
         " Config file: %s\n",
-        strlen(settings->configFilePath) > 0 ? settings->configFilePath : "(none)"
+        strlen(settings.configFilePath) > 0 ? settings.configFilePath : "(none)"
       );
-      printf("    Log file: %s\n", settings->logFilePath);
-      printf("    PID file: %s\n", settings->pidFilePath);
-      printf("        Host: %s\n", settings->host);
-      printf("        Port: %d\n", settings->port);
-      printf("    SSL cert: %s\n", settings->sslCertFilePath);
-      printf("     SSL key: %s\n", settings->sslKeyFilePath);
-      printf("      Locale: %s\n", settings->locale);
-      printf(" Max Clients: %d\n", settings->maxConnections);
+      printf("    Log file: %s\n", settings.logFilePath);
+      printf("    PID file: %s\n", settings.pidFilePath);
+      printf("        Host: %s\n", settings.host);
+      printf("        Port: %d\n", settings.port);
+      printf("    SSL cert: %s\n", settings.sslCertFilePath);
+      printf("     SSL key: %s\n", settings.sslKeyFilePath);
+      printf("      Locale: %s\n", settings.locale);
+      printf(" Max Clients: %d\n", settings.maxConnections);
       printf("\n");
       result = EXIT_SUCCESS;
     break;
 
     // The process does not exist
     case 0:
-      printf("Unable to check for PID %d: the server may not be running\n", settings->pid);
+      printf("Unable to check for PID %d: the server may not be running\n", settings.pid);
       // Enable cleaning the shared memory and PID file
       cleanup();
       result = EXIT_FAILURE;
@@ -328,7 +429,7 @@ int CMD_runStatus() {
 
     // Cannot access the process info
     default:
-      printf("Error while checking for PID %d: %s\n", settings->pid, strerror(errno));
+      printf("Error while checking for PID %d: %s\n", settings.pid, strerror(errno));
       result = EXIT_FAILURE;
     break;
   }
@@ -336,9 +437,9 @@ int CMD_runStatus() {
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
   // TODO: wrap into a macro and use memset_s/explicit_bzero
-  memset(settings, 0, sizeof(ServerConfigInfo));
-  free(settings);
-  settings = NULL;
+  memset(encryptedSettings, 0, 2*sizeof(ServerConfigInfo));
+  free(encryptedSettings);
+  encryptedSettings = NULL;
 
   return result;
 }
@@ -354,7 +455,7 @@ void clean() {
       if (remove(currentPIDFilePath) < 0) {
         Error("Unable to remove PID file: %s", strerror(errno));
       }
-      /* free(currentPIDFilePath); */
+      free(currentPIDFilePath);
     }
     if (!Config_clean(sharedMemPath)) {
       Error("Unable to clean configuration: %s", strerror(errno));

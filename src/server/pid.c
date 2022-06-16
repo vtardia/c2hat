@@ -12,6 +12,7 @@
 #include <sys/types.h>
 
 #include "logger/logger.h"
+#include "fsutil/fsutil.h"
 
 static FILE *pidFile = NULL;
 
@@ -27,16 +28,16 @@ pid_t PID_init(const char *pidFilePath) {
   );
 
   // Try to create the PID directory if not exists
-  struct stat st = {};
   char *path = strdup(pidFilePath);
-  char *pidDir = dirname(path);
-  if (stat(pidDir, &st) == -1) {
-    if (mkdir(pidDir, 0700) < 0) {
-      if (path != NULL) free(path);
-      Fatal("Unable to create PID directory (%d)", pidDir);
-    }
+  if (path == NULL) {
+    Fatal("Unable to copy the PID file path: %s", strerror(errno));
   }
-  if (path != NULL) free(path);
+  char *pidDir = dirname(path);
+  bool havePidDir = TouchDir(pidDir, 0700);
+  free(path);
+  if (!havePidDir) {
+    Fatal("Unable to create pid directory (%d)", pidDir);
+  }
 
   pid_t myPID;
   pidFile = fopen(pidFilePath, "w");

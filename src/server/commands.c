@@ -6,6 +6,7 @@
 #include <libgen.h> // for basename() and dirname()
 
 #include "encrypt/encrypt.h"
+#include "fsutil/fsutil.h"
 
 char *currentLogFilePath = NULL;
 char *currentPIDFilePath = NULL;
@@ -160,19 +161,21 @@ int CMD_runStart(ServerConfigInfo *settings) {
   if (settings->foreground) {
     currentLogFilePath = NULL; // Log to stdout
   } else {
-    // Try to create the log directory if not exists
-    // TODO create a fileutil lib and call this TouchDir()
     currentLogFilePath = strdup(settings->logFilePath);
+
+    // dirname may modify the input pointer, so we copy
     char *path = strdup(settings->logFilePath);
-    struct stat st = {};
-    char *logDir = dirname(path);
-    if (stat(logDir, &st) == -1) {
-      if (mkdir(logDir, 0700) < 0) {
-        if (path != NULL) free(path);
-        Fatal("Unable to create log directory (%d)", logDir);
-      }
+    if (path == NULL || currentLogFilePath == NULL) {
+      Fatal("Unable to copy the log file path: %s", strerror(errno));
     }
-    if (path != NULL) free(path);
+    char *logDir = dirname(path);
+
+    // Try to create the log directory if not exists
+    bool haveLogDir = TouchDir(logDir, 0700);
+    free(path);
+    if (!haveLogDir) {
+      Fatal("Unable to create log directory (%d)", logDir);
+    }
   }
   if (!vLogInit(LOG_INFO, currentLogFilePath)) {
     fprintf(stderr, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));

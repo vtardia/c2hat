@@ -25,6 +25,7 @@
     unsigned int port; ///< Listening TCP port
     unsigned int maxConnections; ///< Max connections
     bool foreground; ///< Foreground or background service flag
+    char workingDirPath[kMaxPath]; ///< Server work directory
   } ServerConfigInfo;
 
   // Create a server for the given host/port combination

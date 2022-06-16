@@ -75,6 +75,27 @@ char *GetDefaultPidFilePath(char *filePath, size_t length) {
 }
 
 /**
+ * Returns the path for the working directory
+ *
+ * TODO write Win/Mac/Linux versions and switch using a macro
+ *
+ * @param[in] dirPath  Pointer to a char buffer
+ * @param[in] length   The length of the buffer
+ * @param[out]         The pointer to dirPath
+ */
+char *GetWorkingDirectory(char *dirPath, size_t length) {
+  memset(dirPath, 0, length); // Reset first
+  if (getuid() == 0) {
+    // Running as root, use system directories
+    snprintf(dirPath, length, "/usr/local/%s", APPNAME);
+  } else {
+    // Running as local user, use local directory
+    snprintf(dirPath, length, "%s/.local/state/%s", getenv("HOME"), APPNAME);
+  }
+  return dirPath;
+}
+
+/**
  * Returns the path for the Log file
  *
  * TODO write Win/Mac/Linux versions and switch using a macro
@@ -89,7 +110,7 @@ char *GetDefaultLogFilePath(char *filePath, size_t length) {
     snprintf(filePath, length, "/var/log/%s-server.log", APPNAME);
   } else {
     // Running as local user, use local directory
-    snprintf(filePath, length, "%s/.local/state/%s-server.log", getenv("HOME"), APPNAME);
+    snprintf(filePath, length, "%s/.local/state/%s/server.log", getenv("HOME"), APPNAME);
   }
   return filePath;
 }
@@ -222,6 +243,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *settings) {
     settings->sslCertFilePath, sizeof(settings->sslCertFilePath),
     settings->sslKeyFilePath, sizeof(settings->sslKeyFilePath)
   );
+  GetWorkingDirectory(settings->workingDirPath, sizeof(settings->workingDirPath));
   char configFilePath[kMaxPath] = {};
   char sslCertFilePath[kMaxPath] = {};
   char sslKeyFilePath[kMaxPath] = {};
@@ -259,6 +281,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *settings) {
       break;
       case 'f':
         settings->foreground = true;
+        getcwd(settings->workingDirPath, sizeof(settings->workingDirPath));
       break;
       case 's':
         snprintf(sslCertFilePath, sizeof(sslCertFilePath) -1, "%s", optarg);

@@ -40,6 +40,8 @@
     char *keyPath, size_t keyLength
   );
 
+  char *GetWorkingDirectory(char *dirPath, size_t length);
+
   /// ARGV wrapper for options parsing
   typedef char * const * ARGV;
   int parseOptions(int argc, ARGV argv, ServerConfigInfo *settings);

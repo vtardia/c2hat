@@ -113,10 +113,15 @@ int CMD_runStart(ServerConfigInfo *settings) {
   initSharedMemPath();
 
   if (settings->foreground) {
+    if (settings->workingDirPath == NULL) {
+      fprintf(stderr, "Invalid working directory\n");
+      return EXIT_FAILURE;
+    }
     pid_t serverPID = getpid();
     fprintf(stdout, "Starting foreground server on %s:%d with locale '%s' and PID %d\n",
       settings->host, settings->port, settings->locale, serverPID
     );
+    fprintf(stdout, "The current working directory is %s\n", settings->workingDirPath);
   } else {
     pid_t sessionID;
     pid_t serverPID = fork();
@@ -142,9 +147,23 @@ int CMD_runStart(ServerConfigInfo *settings) {
       );
       return EXIT_SUCCESS;
     }
-    // I'm in the final child
+    // I'm in the final child...
+
+    // Change working directory
     umask(0);
-    chdir("/usr/local"); // TODO: this should depend on the user's privilege
+    if (!TouchDir(settings->workingDirPath, 0700)) {
+      fprintf(stderr, "Unable to set the working directory: %s\n", strerror(errno));
+      return EXIT_FAILURE;
+    }
+    if (chdir(settings->workingDirPath) < 0) {
+      fprintf(stderr,
+        "Unable to change working directory to '%s': %s\n",
+        settings->workingDirPath, strerror(errno)
+      );
+      return EXIT_FAILURE;
+    }
+
+    // Start the new session
     sessionID = setsid();
     if (sessionID < 0) {
       fprintf(stderr, "Unable to set new session: %s\n", strerror(errno));
@@ -418,6 +437,7 @@ int CMD_runStatus() {
       printf("     SSL key: %s\n", settings.sslKeyFilePath);
       printf("      Locale: %s\n", settings.locale);
       printf(" Max Clients: %d\n", settings.maxConnections);
+      printf(" Working Dir: %s\n", settings.workingDirPath);
       printf("\n");
       result = EXIT_SUCCESS;
     break;

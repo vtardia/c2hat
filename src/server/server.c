@@ -447,8 +447,8 @@ int Server_send(Client *client, const char* message, size_t length) {
 int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
   (void)size; // Avoids the 'unused parameter' error at compile time
-  //pthread_t *threadB = (pthread_t *)b;
-  return pthread_equal(client->threadID, *((pthread_t*)b));
+  pthread_t *threadB = (pthread_t *)b;
+  return (unsigned long)client->threadID - (unsigned long)*threadB;
 }
 
 /**
@@ -680,6 +680,8 @@ bool Server_authenticate(Client *client) {
               return true;
             }
             Error("Authentication: client info not found for client %lu", pthread_self());
+            Message_free(&nick);
+            return false;
           }
           Info("Client with nick '%s' is already logged in", nick);
           Message_free(&nick);

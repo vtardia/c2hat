@@ -428,8 +428,9 @@ int Server_send(Client *client, const char* message, size_t length) {
 int Client_findByThreadID(const ListData *a, const ListData *b, size_t size) {
   Client *client = (Client *)a;
   (void)size; // Avoids the 'unused parameter' error at compile time
-  //pthread_t *threadB = (pthread_t *)b;
-  return pthread_equal(client->threadID, *((pthread_t*)b));
+  pthread_t *threadB = (pthread_t *)b;
+  return client->threadID - *threadB;
+  /* return pthread_equal(client->threadID, *((pthread_t*)b)); */
 }
 
 /**

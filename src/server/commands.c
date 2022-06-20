@@ -113,7 +113,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
   initSharedMemPath();
 
   if (settings->foreground) {
-    if (settings->workingDirPath == NULL) {
+    if (strlen(settings->workingDirPath) == 0) {
       fprintf(stderr, "Invalid working directory\n");
       return EXIT_FAILURE;
     }

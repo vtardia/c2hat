@@ -57,6 +57,10 @@ else
 		CLIENTLIBS += -L$(HOMEBREW_CELLAR)/ncurses/6.3/lib -Wl,-search_paths_first \
 			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1n/lib
 	endif
+	ifeq ($(UNAME_S),FreeBSD)
+		CC = cc
+		OSFLAG += -D FREEBSD -D_XOPEN_CURSES -D_GNU_SOURCE
+	endif
 endif
 
 # Replace 'src/server/<filename>.c' with 'server/<filename>',

@@ -175,13 +175,13 @@ void GetDefaultTlsFilePaths(
     && access(etcKeyPath, R_OK) == 0) {
       // Running as root or no user files available
       // Try /etc/<app>/ssl
-      snprintf(certPath, certLength, etcCertPath);
-      snprintf(keyPath, keyLength, etcKeyPath);
+      snprintf(certPath, certLength, "%s", etcCertPath);
+      snprintf(keyPath, keyLength, "%s", etcKeyPath);
   } else if (access(localEtcCertPath, R_OK) == 0
     && access(localEtcKeyPath, R_OK) == 0) {
       // Try /usr/local/etc/<app>/ssl
-      snprintf(certPath, certLength, localEtcCertPath);
-      snprintf(keyPath, keyLength, localEtcKeyPath);
+      snprintf(certPath, certLength, "%s", localEtcCertPath);
+      snprintf(keyPath, keyLength, "%s", localEtcKeyPath);
   }
   // File paths will be empty at this point, will beed to be
   // overridden with a custom conf file or from the command line

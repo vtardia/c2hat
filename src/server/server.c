@@ -320,14 +320,33 @@ void Server_start(Server *this) {
         continue;
       }
       SSL_set_fd(client.ssl, client.socket);
-      if (SSL_accept(client.ssl) != 1) {
-        char error[256] = {};
-        ERR_error_string_n(ERR_get_error(), error, sizeof(error));
-        Error("SSL_accept() failed: %s", error);
-        Server_dropClient(&client);
-        continue;
+      while (true) {
+        int accepted = SSL_accept(client.ssl);
+        if (accepted != 1) {
+          if (accepted == 0) {
+            Error("SSL_accept(): connection closed clean");
+            Server_dropClient(&client);
+           // continue;
+           break;
+          }
+          switch(SSL_get_error(client.ssl, accepted)) {
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+              break;
+            default:
+              {
+                char error[256] = {};
+                ERR_error_string_n(ERR_get_error(), error, sizeof(error));
+                Error("SSL_accept() failed: %s", error);
+                Server_dropClient(&client);
+                //continue;
+                break;
+              }
+            }
+          continue;
+        }
+        break;
       }
-
       // A client has connected, log the client info
       getnameinfo(
         (struct sockaddr*)&(client).address,

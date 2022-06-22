@@ -221,8 +221,9 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     }
   }
   SSL_set_fd(this->ssl, this->server);
-  for (;;) {
-    int connected = SSL_connect(this->ssl);
+  int connected;
+  while (true) {
+    connected = SSL_connect(this->ssl);
     if (connected <= 0) {
       switch (SSL_get_error(this->ssl, connected)) {
         case SSL_ERROR_NONE:
@@ -231,6 +232,7 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
         case SSL_ERROR_WANT_X509_LOOKUP:
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_WRITE:
+          continue; // with the SSL_connect() loop
         default:
           {
             char error[256] = {};
@@ -239,9 +241,9 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
             return false;
           }
       }
-    } else {
-      break;
     }
+    // If we are here, we are connected
+    break; // out of the SSL_connect() loop
   }
   fprintf(this->err, "OK!\n\n");
   fprintf(this->err, "🔐 SSL/TLS using %s\n", SSL_get_cipher(this->ssl));

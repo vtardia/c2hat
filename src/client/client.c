@@ -221,11 +221,27 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     }
   }
   SSL_set_fd(this->ssl, this->server);
-  if (SSL_connect(this->ssl) < 0) {
-    char error[256] = {};
-    ERR_error_string_n(ERR_get_error(), error, sizeof(error));
-    fprintf(this->err, "FAILED!\n ❌ SSL_connect() failed: %s\n", error);
-    return false;
+  for (;;) {
+    int connected = SSL_connect(this->ssl);
+    if (connected <= 0) {
+      switch (SSL_get_error(this->ssl, connected)) {
+        case SSL_ERROR_NONE:
+        case SSL_ERROR_WANT_CONNECT:
+        case SSL_ERROR_WANT_ACCEPT:
+        case SSL_ERROR_WANT_X509_LOOKUP:
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+        default:
+          {
+            char error[256] = {};
+            ERR_error_string_n(ERR_get_error(), error, sizeof(error));
+            fprintf(this->err, "FAILED!\n ❌ SSL_connect() failed: %s\n", error);
+            return false;
+          }
+      }
+    } else {
+      break;
+    }
   }
   fprintf(this->err, "OK!\n\n");
   fprintf(this->err, "🔐 SSL/TLS using %s\n", SSL_get_cipher(this->ssl));

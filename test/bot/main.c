@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <getopt.h>
+#include <libgen.h>
 
 #include "client.h"
 #include "../c2hat.h"
@@ -241,8 +242,6 @@ int main(int argc, ARGV argv) {
 
   printf("Main loop... %lu\n", (unsigned long)pthread_self());
 
-  printf("Terminating...\n");
-
   // Wait for all the threads to finish and close.
   // Note: if some threads are already terminated (e.g. connection denied),
   // trying to join them by passing a pointer causes a segmentation fault.
@@ -267,6 +266,7 @@ int main(int argc, ARGV argv) {
     }
   }
 
+  printf("Terminating...\n");
   printf("Bye!\n");
   return BotCleanup(EXIT_SUCCESS);
 }

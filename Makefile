@@ -42,7 +42,7 @@ else
 		OSFLAG += -D LINUX -D _GNU_SOURCE -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600
 		SERVERLIBS += -lrt
 		TESTCONFIGLIBS +=  -lrt
-		CLIENTLIBS += -L/usr/lib -ltinfo
+		CLIENTLIBS += -L/usr/lib
 	endif
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS -D_XOPEN_CURSES -D_DARWIN_C_SOURCE

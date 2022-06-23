@@ -38,7 +38,7 @@ bool AES_keyFromString(const char *passphrase, AESKey *key) {
     for (size_t i = 0; i < sizeof(key->key); i++) {
       key->key[i] = digest[i];
     }
-    for (size_t i = sizeof(key->key); i < (sizeof(key->key) + sizeof(key->iv)); i++) {
+    for (size_t i = sizeof(key->key); i < minLength; i++) {
       key->iv[i - sizeof(key->key)] = digest[i];
     }
     return true;

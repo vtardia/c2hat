@@ -23,11 +23,8 @@ char sharedMemPath[16] = {};
 /// Size of the shared memory
 const size_t kServerSharedMemSize = sizeof(ServerConfigInfo);
 
-/// A 256 bit (32 bytes) key
-const byte *kEncryptionKey = (byte *)EVP_ENCRYPTION_KEY;
-
-/// A 128 bit (16 bytes) IV
-const byte *kEncryptionIV = (byte *)EVP_ENCRYPTION_IV;
+/// A string at least 48 bytes long (32 for the key + 16 for the IV)
+const char *kEncryptionSeed = EVP_ENCRYPTION_SEED;
 
 /// A large enough buffer to hold the encrypted config data
 #define EncryptedServerConfigInfoSize (2 * sizeof(ServerConfigInfo))
@@ -232,6 +229,13 @@ int CMD_runStart(ServerConfigInfo *settings) {
   if (currentLogFilePath != NULL) free(currentLogFilePath);
 
   // Encrypt settings first...
+
+  AESKey keyInfo = {};
+  if (!AES_keyFromString(kEncryptionSeed, &keyInfo)) {
+    Error("Unable to generate AES key\n");
+    return EXIT_FAILURE;
+  }
+
   // Since encryption and decryption happen in separate processes,
   // we need to communicate the size of the encrypted data to the
   // decrypting process, or a SegFault is generated.
@@ -242,8 +246,8 @@ int CMD_runStart(ServerConfigInfo *settings) {
   size_t encryptedSettingsSize = AES_encrypt(
     (byte *)settings,
     sizeof(ServerConfigInfo),
-    kEncryptionKey,
-    kEncryptionIV,
+    keyInfo.key,
+    keyInfo.iv,
     encryptedSettings + EncryptedSizeOffset // Start writing after the offset
   );
   if ((int)encryptedSettingsSize < 0) {
@@ -287,6 +291,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
 int CMD_runStop() {
   // Load configuration
   initSharedMemPath();
+
   // First we read the size of the encrypted payload
   size_t *encryptedSettingsSize = (size_t *)Config_load(
     sharedMemPath, EncryptedSizeOffset
@@ -315,12 +320,18 @@ int CMD_runStop() {
   }
 
   // Now we can decrypt...
+  AESKey keyInfo = {};
+  if (!AES_keyFromString(kEncryptionSeed, &keyInfo)) {
+    Error("Unable to generate AES key\n");
+    return EXIT_FAILURE;
+  }
+
   ServerConfigInfo settings = {};
   size_t decryptedSettingsSize = AES_decrypt(
     encryptedSettings + EncryptedSizeOffset,
     *encryptedSettingsSize,
-    kEncryptionKey,
-    kEncryptionIV,
+    keyInfo.key,
+    keyInfo.iv,
     (byte *)&settings
   );
   // ...and cleanup
@@ -403,12 +414,17 @@ int CMD_runStatus() {
     return EXIT_FAILURE;
   }
 
+  AESKey keyInfo = {};
+  if (!AES_keyFromString(kEncryptionSeed, &keyInfo)) {
+    Error("Unable to generate AES key\n");
+    return EXIT_FAILURE;
+  }
   ServerConfigInfo settings = {};
   size_t decryptedSettingsSize = AES_decrypt(
     encryptedSettings + EncryptedSizeOffset,
     *encryptedSettingsSize,
-    kEncryptionKey,
-    kEncryptionIV,
+    keyInfo.key,
+    keyInfo.iv,
     (byte *)&settings
   );
   free(encryptedSettingsSize);

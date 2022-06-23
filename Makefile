@@ -26,13 +26,10 @@ VALGRIND = valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes
 # Default Hash size
 HASH_SIZE = 128
 
-# A 256 bit (32 bytes) encryption key
-EVP_ENCRYPTION_KEY := $(shell head -c 500 /dev/urandom | md5sum | head -c 32; echo;)
+# A random seed used to generate the key and IV
+EVP_ENCRYPTION_SEED := $(shell openssl rand -base64 21; echo;)
 
-# A 128 bit (16 bytes) IV
-EVP_ENCRYPTION_IV := $(shell head -c 500 /dev/urandom | md5sum | head -c 16; echo;)
-
-ENCFLAGS = -DEVP_ENCRYPTION_KEY='"$(EVP_ENCRYPTION_KEY)"' -DEVP_ENCRYPTION_IV='"$(EVP_ENCRYPTION_IV)"'
+ENCFLAGS = -DEVP_ENCRYPTION_SEED='"$(EVP_ENCRYPTION_SEED)"'
 
 # OS detection
 OSFLAG := -D_XOPEN_SOURCE_EXTENDED

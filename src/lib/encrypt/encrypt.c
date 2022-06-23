@@ -3,6 +3,48 @@
  * https://wiki.openssl.org/index.php/EVP_Symmetric_Encryption_and_Decryption
  */
 #include "encrypt.h"
+#include <stdio.h>
+
+bool SHA256Sum(const void *data, size_t size, char *digest, size_t dsize) {
+  byte mdValue[EVP_MAX_MD_SIZE] = {};
+  unsigned int mdSize; // => 32 (bytes) for SHA256 digest
+  if (EVP_Digest(
+    data, size,
+    mdValue, &mdSize,
+    EVP_get_digestbyname("sha256"), NULL
+  )) {
+    // Convert to readable text
+    char *p = digest;
+    char *end = digest + dsize;
+    for (unsigned int i = 0; i < mdSize; i++) {
+      if (p >= end) break;
+      sprintf(p, "%02x", mdValue[i]);
+      p += 2;
+    }
+    return true;
+  }
+  return false;
+}
+
+bool AES_keyFromString(const char *passphrase, AESKey *key) {
+  char digest[65] = {};
+  // Compute the digest for the passphrase
+  if (!SHA256Sum(passphrase, strlen(passphrase), digest, sizeof(digest))) {
+    return false;
+  }
+  // Minimum length for the resulting digest
+  const size_t minLength = sizeof(key->key) + sizeof(key->iv);
+  if (strlen(digest) >= minLength) {
+    for (size_t i = 0; i < sizeof(key->key); i++) {
+      key->key[i] = digest[i];
+    }
+    for (size_t i = sizeof(key->key); i < (sizeof(key->key) + sizeof(key->iv)); i++) {
+      key->iv[i] = digest[i];
+    }
+    return true;
+  }
+  return false;
+}
 
 char *AES_errors(char *error, size_t length) {
   if (error) {

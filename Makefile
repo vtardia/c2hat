@@ -90,10 +90,22 @@ server: prereq $(COMMON_LIBRARIES) $(SERVER_LIBRARIES) $(SERVER_OBJECTS)
 	$(CC) $(CFLAGS) obj/server/*.o obj/lib/*.o obj/lib/server/*.o \
 		$(LDFLAGS) $(LDLIBS) $(SERVERLIBS) -o bin/$(BINPREFIX)server
 
+docker/server: Dockerfile
+	docker build --target server \
+		-t $(APPNAME)/server:$(shell date +%Y%m%d%H%M%S) \
+		-t $(APPNAME)/server:latest .
+
 # Client final binary
 client: prereq $(COMMON_LIBRARIES) $(CLIENT_LIBRARIES) $(CLIENT_OBJECTS)
 	$(CC) $(CFLAGS) obj/client/*.o obj/lib/*.o obj/lib/client/*.o \
 		$(LDFLAGS) $(LDLIBS) $(CLIENTLIBS) -o bin/$(BINPREFIX)cli
+
+docker/client: Dockerfile
+	docker build --target client \
+		-t $(APPNAME)/client:$(shell date +%Y%m%d%H%M%S) \
+		-t $(APPNAME)/client:latest .
+
+docker: docker/client docker/server
 
 # Common dependencies
 $(COMMON_LIBRARIES):
@@ -174,6 +186,10 @@ clean:
 	rm -rfv obj/**
 	rm -rfv lib/**
 	rm -rfv docs/**
+
+docker/clean:
+	docker rmi --force $(shell docker images | grep $(APPNAME)/ | tr -s ' ' | cut -d ' ' -f 3 | uniq)
+	docker image prune -f
 
 .PHONY: docs
 docs: docs Doxyfile

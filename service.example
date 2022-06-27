@@ -1,0 +1,32 @@
+# Example service file for a systemd service
+# Edit and copy to /etc/systemd/system/<app-name>.service
+# Then run '[sudo] systemctl start <app-name>'
+# and '[sudo] systemctl enable <app-name>'
+# See https://www.freedesktop.org/software/systemd/man/systemd.service.html
+
+[Unit]
+Description=A simple Chat server written in C
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+# The parent call fork() so we need to use Type 'forking'
+Type=forking
+
+# or on-failure to only restart if the status is non-0
+Restart=on-failure
+RestartSec=3
+
+# Not a good idea to use root,
+# ideally create a user/group with access permissions to the resources needed
+User=<app-user>
+
+PIDFile=/home/<app-user>/.local/run/c2hat.pid
+
+# Place a configuration file in one of the default locations before starting
+ExecStart=/usr/local/bin/<app-name>-server start
+ExecStop=/usr/local/bin/<app-name>-server stop
+
+[Install]
+WantedBy=multi-user.target
+

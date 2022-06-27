@@ -14,6 +14,9 @@ SERVERLIBS =
 CLIENTLIBS = -ldl -lncursesw
 TESTCONFIGLIBS =
 
+# Installation prefix
+PREFIX = /usr/local
+
 # Default app name (also prefix for shared memory location)
 APPNAME = c2hat
 
@@ -106,6 +109,28 @@ docker/client: Dockerfile
 		-t $(APPNAME)/client:latest .
 
 docker: docker/client docker/server
+
+install: install/server install/client
+
+uninstall: uninstall/server uninstall/client
+
+install/server: bin/$(BINPREFIX)server
+	$(eval INSTALL_BIN_DIR = $(PREFIX)/bin)
+	if test ! -d "$(INSTALL_BIN_DIR)"; then mkdir -vp "$(INSTALL_BIN_DIR)"; fi \
+		&& cp bin/$(BINPREFIX)server "$(INSTALL_BIN_DIR)/$(BINPREFIX)server"
+
+uninstall/server:
+	$(eval INSTALL_BIN_DIR = $(PREFIX)/bin)
+	if test -f "$(INSTALL_BIN_DIR)/$(BINPREFIX)server"; then rm "$(INSTALL_BIN_DIR)/$(BINPREFIX)server"; fi
+
+install/client: bin/$(BINPREFIX)cli
+	$(eval INSTALL_BIN_DIR = $(PREFIX)/bin)
+	if test ! -d "$(INSTALL_BIN_DIR)"; then mkdir -vp "$(INSTALL_BIN_DIR)"; fi \
+		&& cp bin/$(BINPREFIX)cli "$(INSTALL_BIN_DIR)/$(BINPREFIX)cli"
+
+uninstall/client:
+	$(eval INSTALL_BIN_DIR = $(PREFIX)/bin)
+	if test -f "$(INSTALL_BIN_DIR)/$(BINPREFIX)cli"; then rm "$(INSTALL_BIN_DIR)/$(BINPREFIX)cli"; fi
 
 # Common dependencies
 $(COMMON_LIBRARIES):

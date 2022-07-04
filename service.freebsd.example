@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# PROVIDE: <app-name>
+# REQUIRE: NETWORKING SERVERS
+
+# Example service file for a FreeBSD service
+#  - Change '<app-name>' to the name of the binary (default: c2hat)
+#  - Edit and copy to /usr/local/etc/rc.d/<app-name> and make it executable
+#  - Then add '<app-name>_enable="YES"' to /etc/.rc.conf
+#  - Then run '[sudo] service <app-name> [start|stop|status]'
+# See also https://docs.freebsd.org/en/books/handbook/config/#configtuning-starting-services
+
+. /etc/rc.subr
+
+name=<app-name>
+desc="A simple chat server written in C"
+rcvar=<app-name>_enable
+
+start_cmd="app_start"
+stop_cmd="app_stop"
+status_cmd="app_status"
+
+command="/usr/local/bin/${name}-server"
+
+<app-name>_enable=${<app-name>_enable-"NO"}
+
+pidfile=${<app-name>_pidfile-"/var/run/${name}.pid"}
+
+app_start() {
+    ${command} start
+}
+
+app_stop() {
+    ${command} stop
+}
+
+app_status() {
+    ${command} status
+}
+
+load_rc_config $name
+run_rc_command "$1"
+

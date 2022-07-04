@@ -75,26 +75,54 @@ Command parseCommand(int argc, const char *arg) {
 }
 
 /**
+ * Initialises the server locale
+ *
+ * If a locale setting is not provided with the configuration file,
+ * tries to read the current locale and check if it's UTF-8 compatible.
+ *
+ * If a locale setting is provided, first check that it's UTF-8 compatible,
+ * then tries to set it into the app.
+ */
+bool initLocale(ServerConfigInfo *settings) {
+  if (!strlen(settings->locale)) {
+    // No locale specified in the config file, check the system
+    // Calling setlocale() with an empty string loads the LANG env var
+    if (!setlocale(LC_ALL, "")) {
+      fprintf(stderr, "Unable to read locale");
+      return false;
+    }
+    // Calling setlocale() with a NULL argument reads the corresponding LC_ var
+    // If the system does not support the locale it will return "C"
+    // otherwise the full locale string (e.g. en_US.UTF-8)
+    char *locale = setlocale(LC_ALL, NULL);
+    // Check locale compatibility
+    if (strstr(locale, "UTF-8") == NULL) {
+      fprintf(stderr, "The given locale (%s) does not support UTF-8\n", locale);
+      return false;
+    }
+    // Locale is compatible, save it into settings
+    memcpy(settings->locale, locale, strlen(locale) + 1);
+    return true;
+  }
+  // Try to user the specified locale, if UTF-8 compatible
+  if (strstr(settings->locale, "UTF-8") == NULL) {
+    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", settings->locale);
+    return false;
+  }
+  if (!setlocale(LC_ALL, settings->locale)) {
+    fprintf(stderr, "Unable to set locale to '%s'\n", settings->locale);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Starts the server
  * @param[in] settings Pointer to a configuration structure
  */
 int CMD_runStart(ServerConfigInfo *settings) {
-  // Calling setlocale() with an empty string loads the LANG env var
-  if (!setlocale(LC_ALL, "")) {
-    fprintf(stderr, "Unable to read locale");
-    return EXIT_FAILURE;
-  }
-
-  // Calling setlocale() with a NULL argument reads the corresponding LC_ var
-  // If the system does not support the locale it will return "C"
-  // otherwise the full locale string (e.g. en_US.UTF-8)
-  char *locale = setlocale(LC_ALL, NULL);
-  memcpy(settings->locale, locale, strlen(locale) + 1);
-
-  // Check locale compatibility
-  if (strstr(locale, "UTF-8") == NULL) {
-    fprintf(stderr, "The given locale (%s) does not support UTF-8\n", locale);
-    return EXIT_FAILURE;
+  if (!initLocale(settings)) {
+      return EXIT_FAILURE;
   }
 
   if (strlen(settings->sslCertFilePath) == 0) {

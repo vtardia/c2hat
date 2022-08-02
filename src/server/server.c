@@ -48,6 +48,7 @@ typedef struct {
   socklen_t length; ///< Length of the binary IP address
   char host[kMaxClientHostLength]; ///< IP address in pretty string format
   SSL *ssl; ///< SSL connection handle
+  MessageBuffer buffer; ///< Data read from client connection
 } Client;
 
 /// This is the singleton instance for our server
@@ -77,7 +78,7 @@ void Server_stop(int signal);
 
 // Send and receive data from client sockets
 int Server_send(Client *client, const char* message, size_t length);
-int Server_receive(Client *client, char *buffer, size_t length);
+int Server_receive(Client *client);
 
 // Manages a client's thread
 void* Server_handleClient(void* data);
@@ -541,21 +542,43 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
 
 /**
  * Receives a message from a connected client until
- * a null terminator is found or the buffer is full
+ * the buffer is full
  * @param[in] client Client struct containing the socket to receive from
- * @param[in] buffer Char buffer to store the received data
- * @param[in] length Length of the char buffer
  * @param[out] The number of bytes received
  */
-int Server_receive(Client *client, char *buffer, size_t length) {
-  char *data = buffer; // points at the start of buffer
-  size_t total = 0;
-  char cursor[1] = {};
-  do {
-    int bytesReceived = SSL_read(client->ssl, cursor, 1);
+int Server_receive(Client *client) {
+  // Max length of data we can read into the buffer
+  size_t length = sizeof(client->buffer.data);
+
+  // Pointer to the end of the buffer, to prevent overflow
+  char *eob = client->buffer.data + length -1;
+
+  // Manage buffer status
+  if (client->buffer.start == NULL) {
+    // There is no leftover data in the buffer from previous read
+    client->buffer.start = client->buffer.data;
+    memset(client->buffer.data, 0, length); // Reset buffer
+  } else if (client->buffer.start != client->buffer.data) {
+    // There is leftover data from a previous read
+    size_t remainingTextSize = eob - client->buffer.start + 1;
+    // Move the leftover data at the beginning of the buffer...
+    memcpy(client->buffer.data, client->buffer.start, remainingTextSize);
+    // ...and pad the rest with NULL terminators
+    for (size_t i = length; i >= remainingTextSize; i--) {
+      *(client->buffer.data + i) = 0;
+    }
+    // Set the buffer to start reading at the end of the leftover data
+    client->buffer.start = client->buffer.data + remainingTextSize;
+    length = eob - client->buffer.start + 1; // new buffer start
+  }
+
+  while(true) {
+    int bytesReceived = SSL_read(client->ssl, client->buffer.start, length);
 
     // The remote client closed the connection
-    if (bytesReceived == 0) return 0;
+    if (bytesReceived == 0) {
+      return 0;
+    }
 
     // There has been an error somewhere
     if (bytesReceived < 0 ) {
@@ -563,21 +586,17 @@ int Server_receive(Client *client, char *buffer, size_t length) {
       if (EAGAIN == SOCKET_getErrorNumber() || EWOULDBLOCK == SOCKET_getErrorNumber()) {
         continue;
       } else {
-        return total;
+        return 0;
       }
     }
 
-    *data = cursor[0];
-    data++;
-    total++;
-    if (total == (length - 1)) break;
-  } while(cursor[0] != 0);
-
-  // Adding safe terminator in case of loop break
-  if (*data != 0) *(data + 1) = 0;
-
-  return total;
+    // Got data
+    if (bytesReceived > 0 ) {
+      return bytesReceived;
+    }
+  }
 }
+
 /**
  * Validates a username with a pre-defined regex
  * @param[in]  username
@@ -604,10 +623,12 @@ bool Client_nicknameIsValid(const char *username) {
  */
 bool Server_authenticate(Client *client) {
   char request[kBufferSize] = {};
-  char response[kBufferSize] = {};
   struct timeval timeout;
 
-  Message_format(kMessageTypeNick, request, kBufferSize, "Please enter a nickname:");
+  Message_format(
+    kMessageTypeNick, request, sizeof(request),
+    "Please enter a nickname:"
+  );
   Server_send(client, request, strlen(request) + 1);
 
   fd_set reads;
@@ -638,26 +659,39 @@ bool Server_authenticate(Client *client) {
 
     // Timeout expired
     if (rc == 0) {
-      memset(request, '\0', kBufferSize);
-      Message_format(kMessageTypeErr, request, kBufferSize, "Authentication timeout expired!");
+      memset(request, '\0', sizeof(request));
+      Message_format(
+        kMessageTypeErr, request, sizeof(request),
+        "Authentication timeout expired!"
+      );
       Server_send(client, request, strlen(request) + 1);
       break;
     }
 
     // Socket ready to receive
     if (FD_ISSET(client->socket, &reads)) {
-      int received = Server_receive(client, response, kBufferSize);
+      int received = Server_receive(client);
       if (received > 0) {
+        char *response = Message_get(&(client->buffer));
+        if (!response) break;
+
         if (kMessageTypeNick == Message_getType(response)) {
           // The client has sent a nick in the format '/nick Name'
-          // In order to have a full 20 chars nickname, we need to add a 7 chars pad
-          // to the length: 5chars for the /nick prefix, + 1 space + null-terminator
-          char *nick = Message_getContent(response, kMessageTypeNick, kMaxNicknameSize + 7);
+          // In order to have a full 20 chars nickname,
+          // we need to add a 7 chars pad to the length:
+          // 5chars for the /nick prefix, + 1 space + null-terminator
+          char *nick = Message_getContent(
+            response, kMessageTypeNick, kMaxNicknameSize + 7
+          );
+          Message_free(&response);
 
           // User name validation
           if (!Client_nicknameIsValid(nick)) {
-            memset(request, '\0', kBufferSize);
-            Message_format(kMessageTypeErr, request, kBufferSize, kErrorMessageInvalidUsername);
+            memset(request, '\0', sizeof(request));
+            Message_format(
+              kMessageTypeErr, request, sizeof(request),
+              kErrorMessageInvalidUsername
+            );
             Server_send(client, request, strlen(request) + 1);
             Message_free(&nick);
             break;
@@ -680,7 +714,10 @@ bool Server_authenticate(Client *client) {
               Message_free(&nick);
               return true;
             }
-            Error("Authentication: client info not found for client %lu", pthread_self());
+            Error(
+              "Authentication: client info not found for client %lu",
+              pthread_self()
+            );
             Message_free(&nick);
             return false;
           }
@@ -724,28 +761,37 @@ void* Server_handleClient(void* data) {
   Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
-  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Welcome to C2hat!");
+  Message_format(
+    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
+    "Welcome to C2hat!"
+  );
   // Using strlen() +1 ensures the NULL terminator is sent
   Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Ask for a nickname
   if (!Server_authenticate(client)) {
     Info("Authentication failed for client thread %lu", client->threadID);
-    memset(messageBuffer, '\0', kBufferSize);
-    Message_format(kMessageTypeErr, messageBuffer, kBufferSize, "Authentication failed");
+    memset(messageBuffer, '\0', sizeof(messageBuffer));
+    Message_format(
+      kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
+      "Authentication failed"
+    );
     Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
     Server_dropClient(client);
   }
 
   // Say Hello to the new user
-  memset(messageBuffer, '\0', kBufferSize);
-  Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "Hello %s!", client->nickname);
+  memset(messageBuffer, '\0', sizeof(messageBuffer));
+  Message_format(
+    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
+    "Hello %s!", client->nickname
+  );
   Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
 
   // Broadcast that a new client has joined
-  memset(messageBuffer, '\0', kBufferSize);
+  memset(messageBuffer, '\0', sizeof(messageBuffer));
   Message_format(
-    kMessageTypeLog, messageBuffer, kBufferSize,
+    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
     "[%s] just joined the chat", client->nickname
   );
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
@@ -764,14 +810,17 @@ void* Server_handleClient(void* data) {
   // Start the chat
   while(!terminate) {
     // Initialise buffer for client data
-    memset(messageBuffer, '\0', kBufferSize);
+    memset(messageBuffer, '\0', sizeof(messageBuffer));
 
     int rc = select(maxSocket + 1, &reads, 0, &errors, &timeout);
     if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
         Info("%s", strerror(SOCKET_getErrorNumber()));
       } else {
-        Error("select() failed (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+        Error(
+          "select() failed (%d): %s",
+          SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+        );
       }
       continue;
     }
@@ -779,7 +828,7 @@ void* Server_handleClient(void* data) {
     // Timeout expired
     if (rc == 0) {
       Message_format(
-        kMessageTypeErr, messageBuffer, kBufferSize,
+        kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
         "Connection timed out, you've been disconnected!"
       );
       Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
@@ -790,12 +839,15 @@ void* Server_handleClient(void* data) {
     if (FD_ISSET(client->socket, &reads)) {
 
       // Listen for data
-      int received = Server_receive(client, messageBuffer, kBufferSize);
+      int received = Server_receive(client);
       if (received < 0) {
         if (SOCKET_getErrorNumber() == 0) {
           Info("Connection closed by remote client (1) %d", ECONNRESET);
         } else {
-          Error("recv() failed: (%d): %s", SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber()));
+          Error(
+            "recv() failed: (%d): %s",
+            SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
+          );
         }
         break;
       }
@@ -806,34 +858,46 @@ void* Server_handleClient(void* data) {
       }
 
       if (received > 0) {
-        Info("Received: (%d bytes) %.*s", received, received, messageBuffer);
+        int messageType = 0;
+        char *response = NULL;
+        // Retrieve all messages available from the client's buffer
+        do {
+          response = Message_get(&(client->buffer));
+          if (!response) break;
 
-        int messageType = Message_getType(messageBuffer);
-        if (kMessageTypeQuit == messageType) break;
+          Info("Received: (%d bytes) %.*s", received, received, response);
 
-        char *messageContent = Message_getContent(messageBuffer, kMessageTypeMsg, kBufferSize);
-        char broadcastBuffer[kBroadcastBufferSize] = {};
-        switch (messageType) {
-          case kMessageTypeMsg:
-            if (messageContent != NULL && strlen(messageContent) > 0) {
+          messageType = Message_getType(response);
+          if (messageType == kMessageTypeQuit) {
+            Message_free(&response);
+          } else {
+            char *messageContent = Message_getContent(response, kMessageTypeMsg, kBufferSize);
+            Message_free(&response);
+            char broadcastBuffer[kBroadcastBufferSize] = {};
+            switch (messageType) {
+              case kMessageTypeMsg:
+                if (messageContent != NULL && strlen(messageContent) > 0) {
 
-              // Send /ok to the client to acknowledge the correct message
-              memset(messageBuffer, '\0', kBufferSize);
-              Message_format(kMessageTypeOk, messageBuffer, kBufferSize, "");
-              if (Server_send(client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
+                  // Send /ok to the client to acknowledge the correct message
+                  memset(messageBuffer, '\0', sizeof(messageBuffer));
+                  Message_format(kMessageTypeOk, messageBuffer, sizeof(messageBuffer), "");
+                  if (Server_send(client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
 
-              // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-              Message_format(
-                kMessageTypeMsg, broadcastBuffer, kBroadcastBufferSize,
-                "[%s] %s", client->nickname, messageContent
-              );
-              Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
-              Message_free(&messageContent);
+                  // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
+                  Message_format(
+                    kMessageTypeMsg, broadcastBuffer, sizeof(broadcastBuffer),
+                    "[%s] %s", client->nickname, messageContent
+                  );
+                  Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
+                  Message_free(&messageContent);
+                }
+              break;
+              default:
+                ; // Ignore for now...
             }
-          break;
-          default:
-            ; // Ignore for now...
-        }
+          }
+        } while(messageType != kMessageTypeQuit && response != NULL);
+        if (messageType == kMessageTypeQuit) break;
       }
     }
 
@@ -849,9 +913,9 @@ void* Server_handleClient(void* data) {
   }
 
   // Broadcast that client has left
-  memset(messageBuffer, '\0', kBufferSize);
+  memset(messageBuffer, '\0', sizeof(messageBuffer));
   Message_format(
-    kMessageTypeLog, messageBuffer, kBufferSize,
+    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
     "[%s] just left the chat", client->nickname
   );
   Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);

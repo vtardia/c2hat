@@ -321,3 +321,68 @@ void TestMessage_getUser() {
   printf(".");
 }
 
+void TestMessage_get() {
+  MessageBuffer buffer = {
+    .data = {
+      '/', 'm', 's', 'g', ' ', 'H', 'e', 'l', 'l', 'o', 0, // 0-10 = 11 chars
+      '/', 'm', 's', 'g', ' ', 'C', 'o', 'm', 'o', ' ', 'e', 's', 't', 'a', 's', '?', 0, // 11-27 = 17 chars
+      '/', 'm', 's', 'g', // 28-31 = 4 chars
+      ' ', 'M', 'y', ' ', 'n', 'a', 'm', 'e', ' ', 'i', 's', ' ', 'J', 'o', 'h', 'n', 0, // 32-48 = 17 chars
+    }
+  };
+  char *message = NULL;
+
+  // Test that the first message is read...
+  message = Message_get(&buffer);
+  assert(message != NULL);
+  printf(".");
+
+  assert(strncmp(message, "/msg Hello", strlen(message)) == 0);
+  printf(".");
+
+  assert(*buffer.start == '/');
+  printf(".");
+
+  // ...and properly cleaned
+  Message_free(&message);
+  assert(message == NULL);
+  printf(".");
+
+  // Test that the second message is read
+  message = Message_get(&buffer);
+  assert(message != NULL);
+  printf(".");
+
+  assert(strncmp(message, "/msg Como estas?", strlen(message)) == 0);
+  printf(".");
+
+  assert(*buffer.start == '/');
+  printf(".");
+
+  Message_free(&message);
+  assert(message == NULL);
+  printf(".");
+
+  // Test that the third message is read
+  message = Message_get(&buffer);
+  assert(message != NULL);
+  printf(".");
+
+  assert(strncmp(message, "/msg My name is John", strlen(message)) == 0);
+  printf(".");
+
+  assert(*buffer.start == 0);
+  printf(".");
+
+  Message_free(&message);
+  assert(message == NULL);
+  printf(".");
+
+  // Test that the no more messages are read
+  message = Message_get(&buffer);
+  assert(message == NULL);
+  printf(".");
+
+  assert(buffer.start == NULL);
+  printf(".");
+}

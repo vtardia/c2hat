@@ -199,6 +199,64 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
 }
 
 /**
+ * Extracts raw message data from a buffer of bytes received by the server
+ * After every read, the buffer is updated to point to the next message
+ * The returned string needs to be freed with Message_free()
+ * @param[in] buffer
+ */
+char *Message_get(MessageBuffer *buffer) {
+  // Start of message
+  if (buffer->start == NULL) {
+    // Newly created buffer or result of invalid read
+    buffer->start = buffer->data;
+  }
+  // How much we can read from start till the end of the buffer
+  size_t size = sizeof(buffer->data) - (buffer->start - buffer->data);
+  // Identify the start of a valid message
+  buffer->start = memchr(buffer->start, '/', size);
+  if (buffer->start == NULL) {
+    // No valid data available ahead, already read data behind,
+    // a good occasion to cleanup
+    memset(buffer->data, 0, sizeof(buffer->data));
+    return NULL;
+  }
+
+  // Pointer to end of buffer
+  char *end = buffer->start + size -1;
+
+  for (char *cursor = buffer->start;; cursor++) {
+    if (cursor == end && *cursor != 0 ) {
+      return NULL; // No null terminator, partial message
+    }
+    if (*cursor == 0) {
+      end = cursor; // Now points to end of message
+      break;
+    }
+  }
+  // Length of message data to process, including the NULL terminator
+  size_t length = end - buffer->start + 1;
+  if (length <= 0) return NULL;
+
+  // Copy the message data
+  char *message = calloc(1, length);
+  if (!message) return NULL;
+  memcpy(message, buffer->start, length);
+
+  // Update cursor for next reading
+  if (length < size) {
+    buffer->start += length;
+  }
+  if (length == size) {
+    // No more to parse, reset
+    // Note: this may never happen, unless the data fits perfectly
+    // in our buffer, which is very rare
+    buffer->start = NULL;
+    memset(buffer->data, 0, sizeof(buffer->data));
+  }
+  return message;
+}
+
+/**
  * Frees memory space for a message allocated by Message_getContent()
  * @param[in] message
  */

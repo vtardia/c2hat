@@ -14,6 +14,7 @@ int main() {
   TestMessage_getContent();
   TestMessage_format();
   TestMessage_getUser();
+  TestMessage_get();
 
   printf("\n");
   return 0;

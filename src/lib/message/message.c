@@ -235,7 +235,7 @@ char *Message_get(MessageBuffer *buffer) {
   }
   // Length of message data to process, including the NULL terminator
   size_t length = end - buffer->start + 1;
-  if (length <= 0) return NULL;
+  if (length <= 1) return NULL; // no more data
 
   // Copy the message data
   char *message = calloc(1, length);

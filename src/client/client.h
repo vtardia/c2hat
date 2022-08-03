@@ -23,11 +23,14 @@
   // Returns the raw socket for the given client
   SOCKET Client_getSocket(const C2HatClient *client);
 
+  // Returns the message buffer for the given client
+  void *Client_getBuffer(C2HatClient *this);
+
   // Sends data through the client's socket
   int Client_send(const C2HatClient *client, const char *buffer, size_t length);
 
   // Receives data through the client's socket
-  int Client_receive(const C2HatClient *client, char *buffer, size_t length);
+  int Client_receive(C2HatClient *client);
 
   // Safely disconnects a client instance
   void Client_disconnect(C2HatClient *this);

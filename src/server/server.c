@@ -549,31 +549,39 @@ Client *Server_getClientInfoForNickname(char *clientNickname) {
 int Server_receive(Client *client) {
   // Max length of data we can read into the buffer
   size_t length = sizeof(client->buffer.data);
+  Debug("Server_receive - max buffer size: %zu", length);
 
   // Pointer to the end of the buffer, to prevent overflow
   char *eob = client->buffer.data + length -1;
 
   // Manage buffer status
-  if (client->buffer.start == NULL) {
-    // There is no leftover data in the buffer from previous read
+  if (client->buffer.start != client->buffer.data && *eob != 0) {
+      // There is leftover data from a previous read
+      size_t remainingTextSize = eob - client->buffer.start + 1;
+      // Move the leftover data at the beginning of the buffer...
+      memcpy(client->buffer.data, client->buffer.start, remainingTextSize);
+      // ...and pad the rest with NULL terminators
+      for (size_t i = length; i >= remainingTextSize; i--) {
+        *(client->buffer.data + i) = 0;
+      }
+      // Set the buffer to start reading at the end of the leftover data
+      client->buffer.start = client->buffer.data + remainingTextSize + 1;
+      length = eob - client->buffer.start + 1; // new buffer start
+      Debug("Server_receive - remaining text size: %zu", remainingTextSize);
+      Debug("Server_receive - rew max buffer size: %zu", length);
+  } else {
+    // buffer.start != NULL: all data has been already read, no leftover
+    // buffer.start == NULL: newly created buffer
+    // In either case, reset everything
     client->buffer.start = client->buffer.data;
-    memset(client->buffer.data, 0, length); // Reset buffer
-  } else if (client->buffer.start != client->buffer.data) {
-    // There is leftover data from a previous read
-    size_t remainingTextSize = eob - client->buffer.start + 1;
-    // Move the leftover data at the beginning of the buffer...
-    memcpy(client->buffer.data, client->buffer.start, remainingTextSize);
-    // ...and pad the rest with NULL terminators
-    for (size_t i = length; i >= remainingTextSize; i--) {
-      *(client->buffer.data + i) = 0;
-    }
-    // Set the buffer to start reading at the end of the leftover data
-    client->buffer.start = client->buffer.data + remainingTextSize;
-    length = eob - client->buffer.start + 1; // new buffer start
+    memset(client->buffer.data, 0, length);
   }
 
+  Debug("Server_receive - starting at: %zu", client->buffer.start - client->buffer.data);
   while(true) {
     int bytesReceived = SSL_read(client->ssl, client->buffer.start, length);
+
+    Debug("Server_receive - received (%d bytes): %.*s", bytesReceived, bytesReceived, client->buffer.start);
 
     // The remote client closed the connection
     if (bytesReceived == 0) {
@@ -865,7 +873,7 @@ void* Server_handleClient(void* data) {
           response = Message_get(&(client->buffer));
           if (!response) break;
 
-          Info("Received: (%d bytes) %.*s", received, received, response);
+          Debug("Server_handleClient - received: (%d bytes) %.*s", received, received, response);
 
           messageType = Message_getType(response);
           if (messageType == kMessageTypeQuit) {

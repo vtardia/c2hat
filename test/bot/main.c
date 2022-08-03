@@ -12,6 +12,7 @@
 #include <libgen.h>
 
 #include "client.h"
+#include "message/message.h"
 #include "../c2hat.h"
 
 /// ARGV wrapper for options parsing
@@ -145,13 +146,13 @@ void* RunBot(void* data) {
 
     if (FD_ISSET(server, &reads)) {
       // We have data in a socket
-      char read[kBufferSize] = {};
-      int received = Client_receive(bot, read, kBufferSize);
+      int received = Client_receive(bot);
       if (received <= 0) {
         break;
       }
       // Print up to byte_received from the server
-      printf("[%s/server]: %.*s\n", nickname, received, read);
+      MessageBuffer *buffer = Client_getBuffer(bot);
+      printf("[%s/server]: %.*s\n", nickname, received, buffer->start);
     }
 
     // Throw a dice to send a message

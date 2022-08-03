@@ -221,7 +221,7 @@ int CMD_runStart(ServerConfigInfo *settings) {
       Fatal("Unable to create log directory (%d)", logDir);
     }
   }
-  if (!vLogInit(LOG_INFO, currentLogFilePath)) {
+  if (!vLogInit(settings->logLevel, currentLogFilePath)) {
     fprintf(stderr, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
     fprintf(stdout, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
     exit(EXIT_FAILURE);

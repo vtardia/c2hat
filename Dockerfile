@@ -59,5 +59,6 @@ USER appuser
 ENV LANG=en_GB.UTF-8 \
     LANGUAGE=en_GB.UTF-8
 WORKDIR /home/appuser
+RUN mkdir -p /home/appuser/.local/state/c2hat
 ENTRYPOINT ["/usr/local/bin/c2hat-cli", "--capath", "/etc/ssl/certs"]
 

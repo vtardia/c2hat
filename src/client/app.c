@@ -12,6 +12,7 @@
 #include "app.h"
 #include "ui.h"
 #include "message/message.h"
+#include "logger/logger.h"
 
 /// Loop termination flag
 static bool terminate = false;
@@ -58,8 +59,8 @@ int App_catch(int sig, void (*handler)(int)) {
 void *App_listen(void *client) {
   C2HatClient *this = (C2HatClient *) client;
   SOCKET server = Client_getSocket(this);
+  MessageBuffer *buffer = Client_getBuffer(this);
 
-  char buffer[kBufferSize] = {};
   int received = 0;
 
   fd_set reads;
@@ -85,14 +86,21 @@ void *App_listen(void *client) {
       break;
     }
     if (FD_ISSET(server, &reads)) {
-      memset(buffer, 0, kBufferSize);
-      received = Client_receive(this, buffer, kBufferSize);
+      received = Client_receive(this);
       if (received <= 0) {
         terminate = true;
         break;
       }
-      // Push the message to be read by the main thread
-      UIPushMessage(buffer, received);
+      char *response = NULL;
+      do {
+        response = Message_get(buffer);
+        if (!response) break;
+
+        // Push the message to be read by the main thread
+        UIPushMessage(response, strlen(response) + 1);
+        Message_free(&response);
+      } while(response != NULL);
+
       // Alert the main thread that there are messages to read
       pthread_kill(mainThreadID, SIGUSR2);
     }
@@ -136,6 +144,8 @@ void App_run(C2HatClient *this) {
     // Convert it into UTF-8
     char messageBuffer[kBufferSize] = {};
     wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
+
+    Debug("App_run - user typed: %s", messageBuffer);
 
     int messageType = Message_getType(messageBuffer);
     if (messageType == kMessageTypeQuit) break;

@@ -8,4 +8,5 @@
   void TestMessage_getContent();
   void TestMessage_format();
   void TestMessage_getUser();
+  void TestMessage_get();
 #endif

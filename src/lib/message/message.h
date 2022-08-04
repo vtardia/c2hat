@@ -4,6 +4,9 @@
 
 #ifndef MESSAGE_H
 #define MESSAGE_H
+  #include <stddef.h>
+  #include <stdbool.h>
+
   enum {
     kMessageTypeNick = 100,
     kMessageTypeAuth = 110,
@@ -17,8 +20,15 @@
     kMessageTypeAdmin = 300
   };
 
-  #include <stddef.h>
-  #include <stdbool.h>
+  enum {
+    kMessageBufferSize = 2048
+  };
+
+  /// Holds data read from a client's connection
+  typedef struct {
+    char data[kMessageBufferSize];
+    char *start;
+  } MessageBuffer;
 
   // Returns the type of a given message
   int Message_getType(const char *message);
@@ -35,5 +45,8 @@
 
   // Frees memory space for a parsed message
   void Message_free(char **);
+
+  // Gets the next available message from a message buffer
+  char *Message_get(MessageBuffer *buffer);
 
 #endif

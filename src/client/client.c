@@ -23,8 +23,7 @@
 
 #include "socket/socket.h"
 #include "message/message.h"
-
-#include "../c2hat.h"
+#include "logger/logger.h"
 
 #define IsLocalhost(someAddress) ( \
   strcmp(someAddress, "127.0.0.1") == 0 || strcmp(someAddress, "::1") == 0 \
@@ -32,13 +31,16 @@
 
 /// Contains information on the current client application
 typedef struct _C2HatClient {
-  SOCKET server;         ///< Connection socket resource
-  FILE *in;              ///< Input stream (currently unused)
-  FILE *out;             ///< Output stream
-  FILE *err;             ///< Error stream
-  SSL_CTX *sslContext;   ///< SSL context resource
-  SSL *ssl;              ///< SSL connection handle
-  STACK_OF(X509) *chain; ///< SSL certificate chain from the server
+  SOCKET server;               ///< Connection socket resource
+  FILE *in;                    ///< Input stream (currently unused)
+  FILE *out;                   ///< Output stream
+  FILE *err;                   ///< Error stream
+  SSL_CTX *sslContext;         ///< SSL context resource
+  SSL *ssl;                    ///< SSL connection handle
+  STACK_OF(X509) *chain;       ///< SSL certificate chain from the server
+  MessageBuffer buffer;        ///< Data read from server connection
+  char logFilePath[kMaxPath];  ///< Path to the log file
+  unsigned int logLevel;       ///< Default log level
 } C2HatClient;
 
 /// Keeps track of SSL initialisation that should happen only once
@@ -110,11 +112,10 @@ SSL_CTX *Client_ssl_init(const char *caCert, const char *caPath, char *error, si
 /**
  * Creates a new connected network chat client
  *
- * @param[in]  caCert Path to the CA certificate file
- * @param[in]  caPath Path to a directory that stores CA files
+ * @param[in]  options Client startup configuration
  * @param[out] A new C2HatClient instance or NULL on failure
  */
-C2HatClient *Client_create(const char *caCert, const char *caPath) {
+C2HatClient *Client_create(ClientOptions *options) {
   C2HatClient *client = calloc(sizeof(C2HatClient), 1);
   if (client == NULL) {
     fprintf(
@@ -126,9 +127,17 @@ C2HatClient *Client_create(const char *caCert, const char *caPath) {
   client->in = stdin;
   client->out = stdout;
   client->err = stderr;
+  client->logLevel = options->logLevel;
+  // Create the log file path, doing it in 2 steps because snprintf() complains
+  // about a possible format overflow
+  strncpy(client->logFilePath, options->logDirPath, sizeof(client->logFilePath));
+  strncat(client->logFilePath, "/client.log", sizeof(client->logFilePath));
 
   char error[100] = {};
-  client->sslContext = Client_ssl_init(caCert, caPath, error, sizeof(error));
+  client->sslContext = Client_ssl_init(
+    options->caCertFilePath, options->caCertDirPath,
+    error, sizeof(error)
+  );
   if (!client->sslContext) {
     fprintf(stderr, "❌ Error: %s\n", error);
     Client_destroy(&client);
@@ -272,7 +281,6 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
   // We are using select() with a timeout here, because if the server
   // doesn't have available connection slots, the client will remain hung.
   // To avoid this, we allow some second for the server to reply before failing
-  char buffer[kBufferSize] = {};
   fd_set reads;
   FD_ZERO(&reads);
   FD_SET(this->server, &reads);
@@ -296,23 +304,35 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
     }
 
     if (FD_ISSET(this->server, &reads)) {
-      int received = Client_receive(this, buffer, kBufferSize);
+      int received = Client_receive(this);
       if (received < 0) {
         return false;
       }
       // At this point the server will only send /ok or /err messages
-      if (Message_getType(buffer) != kMessageTypeOk) {
-        char *serverErrorMessage = Message_getContent(buffer, kMessageTypeErr, received);
+      char *response = Message_get(&(this->buffer));
+      if (response == NULL) return false;
+
+      int messageType = Message_getType(response);
+      if (messageType != kMessageTypeOk) {
+        char *serverErrorMessage = Message_getContent(response, kMessageTypeErr, kBufferSize);
         fprintf(this->err, "❌ Error: Connection refused: %s\n", serverErrorMessage);
         Message_free(&serverErrorMessage);
+        Message_free(&response);
         return false;
       }
       // Display the server welcome message
-      char *messageContent = Message_getContent(buffer, kMessageTypeOk, received);
+      char *messageContent = Message_getContent(response, kMessageTypeOk, kBufferSize);
       if (strlen(messageContent) > 0) {
-        fprintf(this->err, "\n💬 %s\n", messageContent);
+        fprintf(this->out, "\n💬 %s\n", messageContent);
       }
+      Message_free(&response);
       Message_free(&messageContent);
+
+      if (!vLogInit(this->logLevel, this->logFilePath)) {
+        fprintf(this->err, "Unable to initialise the logger (%s): %s\n", this->logFilePath, strerror(errno));
+        fprintf(this->out, "Unable to initialise the logger (%s): %s\n", this->logFilePath, strerror(errno));
+        return false;
+      }
       break;
     }
   }
@@ -331,49 +351,79 @@ SOCKET Client_getSocket(const C2HatClient *this) {
 }
 
 /**
+ * Returns the raw client buffer
+ *
+ * This is handy when external application need to implement
+ * a custom listen loop
+ */
+void *Client_getBuffer(C2HatClient *this) {
+  if (this != NULL) return &(this->buffer);
+  return NULL;
+}
+
+/**
  * Receives data from the server through the client's socket
  * until a null terminator is found or the buffer is full
  *
  * @param[in] this C2HatClient structure holding the connection information
- * @param[in] buffer Char buffer to store the received data
- * @param[in] length Length of the char buffer
  * @param[out] The number of bytes received
  */
-int Client_receive(const C2HatClient *this, char *buffer, size_t length) {
-  char *data = buffer; // points at the start of buffer
-  size_t total = 0;
-  char cursor[1] = {};
-  // Reading 1 byte at a time, until either the NULL terminator is found
-  // or the given length is reached
-  do {
-    int bytesReceived = SSL_read(this->ssl, cursor, 1);
+int Client_receive(C2HatClient *this) {
+  // Max length of data we can read into the buffer
+  size_t length = sizeof(this->buffer.data);
+  Debug("Client_receive - max buffer size: %zu", length);
+
+  // Pointer to the end of the buffer, to prevent overflow
+  char *eob = this->buffer.data + length -1;
+
+  // Manage buffer status
+  if (this->buffer.start != this->buffer.data && *eob != 0) {
+    // There is leftover data from a previous read
+    size_t remainingTextSize = eob - this->buffer.start + 1;
+    // Move the leftover data at the beginning of the buffer...
+    memcpy(this->buffer.data, this->buffer.start, remainingTextSize);
+    // ...and pad the rest with NULL terminators
+    for (size_t i = length; i >= remainingTextSize; i--) {
+      *(this->buffer.data + i) = 0;
+    }
+    // Set the buffer to start reading at the end of the leftover data
+    this->buffer.start = this->buffer.data + remainingTextSize + 1;
+    length = eob - this->buffer.start + 1; // new buffer start
+    Debug("Client_receive - remaining text size: %zu", remainingTextSize);
+    Debug("Client_receive - new max buffer size: %zu", length);
+  } else {
+    // buffer.start != NULL: all data has been already read, no leftover
+    // buffer.start == NULL: newly created buffer
+    // In either case, reset everything
+    this->buffer.start = this->buffer.data;
+    memset(this->buffer.data, 0, length); // Reset buffer
+  }
+
+  Debug("Client_receive - starting at: %zu", this->buffer.start - this->buffer.data);
+  while (true) {
+    int bytesReceived = SSL_read(this->ssl, this->buffer.start, length);
+    Debug("Client_receive - received (%d bytes): %.*s", bytesReceived, bytesReceived, this->buffer.start);
+
     if (bytesReceived == 0) {
-      fprintf(this->err, "Connection closed by remote server\n");
+      fprintf(this->err, "Client_receive - Connection closed by remote server\n");
       return -1;
     }
+
     if (bytesReceived < 0) {
       // Ignore a signal received before timeout, will be managed by handler
-      if (SOCKET_getErrorNumber() == EINTR) continue;
+      if (SOCKET_getErrorNumber() == EINTR || EAGAIN == SOCKET_getErrorNumber() || EWOULDBLOCK == SOCKET_getErrorNumber()) continue;
 
       fprintf(
-        this->err, "recv() failed. (%d): %s\n",
+        this->err, "Client_receive - recv() failed (%d): %s\n",
         SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
       );
-      // We don't care about partial read, it would be useless anyway
       return -1;
     }
-    // Save data to the buffer and advance the cursor
-    *data = cursor[0];
-    data ++;
-    total++;
-    // Break the loop at length -1 so we can add the NULL terminator
-    if (total == (length - 1)) break;
-  } while(cursor[0] != 0);
-
-  // Adding safe NULL terminator at the end
-  if (*data != 0) *(data + 1) = 0;
-
-  return total;
+    // Got data
+    if (bytesReceived > 0 ) {
+      return bytesReceived;
+    }
+  }
 }
 
 /**
@@ -391,6 +441,8 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
   // Cursor pointing to the beginning of the message
   char *data = (char*)buffer;
 
+  Debug("Client_send - about to send (%zu): %s", length, data);
+
   // Keep sending data until the buffer is empty
   do {
     int bytesSent = SSL_write(this->ssl, data, length - total);
@@ -407,6 +459,7 @@ int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
     data += bytesSent;
     total += bytesSent;
   } while (total < length);
+  Debug("Client_send - sent %zu bytes", total);
   return total;
 }
 
@@ -434,13 +487,17 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   // Wait for the AUTH signal from the server,
   // we are ok for this to be blocking because
   // the server won't sent any data to unauthenticated clients
-  char buffer[kBufferSize] = {};
-  int received = Client_receive(this, buffer, kBufferSize);
+  int received = Client_receive(this);
   if (received < 0) {
     Client_disconnect(this);
     return false;
   }
-  if (Message_getType(buffer) != kMessageTypeNick) {
+  char *response = Message_get(&(this->buffer));
+  if (response == NULL) return false;
+
+  int messageType = Message_getType(response);
+  Message_free(&response);
+  if (messageType != kMessageTypeNick) {
     fprintf(
       this->err,
       "❌ Error: Unable to authenticate\nUnknown server response\n"
@@ -451,7 +508,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
 
   // Send credentials
   char message[kBufferSize] = {};
-  Message_format(kMessageTypeNick, message, kBufferSize, "%s", username);
+  Message_format(kMessageTypeNick, message, sizeof(message), "%s", username);
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
     fprintf(
@@ -463,8 +520,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   }
 
   // Wait for OK/ERR
-  memset(buffer, 0, kBufferSize);
-  received = Client_receive(this, buffer, kBufferSize);
+  received = Client_receive(this);
   if (received < 0) {
     fprintf(
       this->err,
@@ -474,10 +530,13 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     return false;
   }
 
-  int messageType = Message_getType(buffer);
+  response = Message_get(&(this->buffer));
+  if (response == NULL) return false;
+
+  messageType = Message_getType(response);
   if (messageType != kMessageTypeOk) {
     if (messageType == kMessageTypeErr) {
-      char *errorMessage = Message_getContent(buffer, kMessageTypeErr, kBufferSize);
+      char *errorMessage = Message_getContent(response, kMessageTypeErr, kBufferSize);
       fprintf(
         this->err, "❌ [Server Error] Authentication failed\n%s\n",
         errorMessage
@@ -489,9 +548,11 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
         "❌ Error: Authentication failed\nInvalid response from the server\n"
       );
     }
+    Message_free(&response);
     Client_disconnect(this);
     return false;
   }
+  Message_free(&response);
   return true;
 }
 

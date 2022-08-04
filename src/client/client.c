@@ -128,10 +128,10 @@ C2HatClient *Client_create(ClientOptions *options) {
   client->out = stdout;
   client->err = stderr;
   client->logLevel = options->logLevel;
-  snprintf(
-    client->logFilePath, sizeof(client->logFilePath),
-    "%s/client.log", options->logDirPath
-  );
+  // Create the log file path, doing it in 2 steps because snprintf() complains
+  // about a possible format overflow
+  strncpy(client->logFilePath, options->logDirPath, sizeof(client->logFilePath));
+  strncat(client->logFilePath, "/client.log", sizeof(client->logFilePath));
 
   char error[100] = {};
   client->sslContext = Client_ssl_init(

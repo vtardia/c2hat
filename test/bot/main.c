@@ -354,9 +354,9 @@ void parseOptions(int argc, ARGV argv, BotOptions *params) {
   strncpy(params->host, argv[optind++], kMaxHostnameSize - 1);
   strncpy(params->port, argv[optind], kMaxPortSize - 1);
 
-  // Copy SSL details into client options
-  strncpy(clientOptions.caCertFilePath, params->caCertFilePath, sizeof(params->caCertFilePath));
-  strncpy(clientOptions.caCertDirPath, params->caCertDirPath, sizeof(params->caCertDirPath));
+  // Copy SSL details into client options (prevent overflow by using he destination size)
+  strncpy(clientOptions.caCertFilePath, params->caCertFilePath, sizeof(clientOptions.caCertFilePath));
+  strncpy(clientOptions.caCertDirPath, params->caCertDirPath, sizeof(clientOptions.caCertDirPath));
 }
 
 /**

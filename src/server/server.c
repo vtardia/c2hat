@@ -733,6 +733,10 @@ bool Server_authenticate(Client *client) {
           Message_free(&nick);
         }
       }
+      if (received == 0) {
+        Info("Connection closed by remote client (auth) %d", ECONNRESET);
+        break;
+      }
     }
 
     // Client socket has an error

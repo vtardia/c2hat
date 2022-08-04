@@ -25,22 +25,22 @@
 #include "message/message.h"
 #include "logger/logger.h"
 
-#include "../c2hat.h"
-
 #define IsLocalhost(someAddress) ( \
   strcmp(someAddress, "127.0.0.1") == 0 || strcmp(someAddress, "::1") == 0 \
 )
 
 /// Contains information on the current client application
 typedef struct _C2HatClient {
-  SOCKET server;         ///< Connection socket resource
-  FILE *in;              ///< Input stream (currently unused)
-  FILE *out;             ///< Output stream
-  FILE *err;             ///< Error stream
-  SSL_CTX *sslContext;   ///< SSL context resource
-  SSL *ssl;              ///< SSL connection handle
-  STACK_OF(X509) *chain; ///< SSL certificate chain from the server
-  MessageBuffer buffer;  ///< Data read from server connection
+  SOCKET server;               ///< Connection socket resource
+  FILE *in;                    ///< Input stream (currently unused)
+  FILE *out;                   ///< Output stream
+  FILE *err;                   ///< Error stream
+  SSL_CTX *sslContext;         ///< SSL context resource
+  SSL *ssl;                    ///< SSL connection handle
+  STACK_OF(X509) *chain;       ///< SSL certificate chain from the server
+  MessageBuffer buffer;        ///< Data read from server connection
+  char logFilePath[kMaxPath];  ///< Path to the log file
+  unsigned int logLevel;       ///< Default log level
 } C2HatClient;
 
 /// Keeps track of SSL initialisation that should happen only once
@@ -112,11 +112,10 @@ SSL_CTX *Client_ssl_init(const char *caCert, const char *caPath, char *error, si
 /**
  * Creates a new connected network chat client
  *
- * @param[in]  caCert Path to the CA certificate file
- * @param[in]  caPath Path to a directory that stores CA files
+ * @param[in]  options Client startup configuration
  * @param[out] A new C2HatClient instance or NULL on failure
  */
-C2HatClient *Client_create(const char *caCert, const char *caPath) {
+C2HatClient *Client_create(ClientOptions *options) {
   C2HatClient *client = calloc(sizeof(C2HatClient), 1);
   if (client == NULL) {
     fprintf(
@@ -128,9 +127,17 @@ C2HatClient *Client_create(const char *caCert, const char *caPath) {
   client->in = stdin;
   client->out = stdout;
   client->err = stderr;
+  client->logLevel = options->logLevel;
+  snprintf(
+    client->logFilePath, sizeof(client->logFilePath),
+    "%s/client.log", options->logDirPath
+  );
 
   char error[100] = {};
-  client->sslContext = Client_ssl_init(caCert, caPath, error, sizeof(error));
+  client->sslContext = Client_ssl_init(
+    options->caCertFilePath, options->caCertDirPath,
+    error, sizeof(error)
+  );
   if (!client->sslContext) {
     fprintf(stderr, "❌ Error: %s\n", error);
     Client_destroy(&client);
@@ -321,14 +328,9 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
       Message_free(&response);
       Message_free(&messageContent);
 
-      char currentLogFilePath[kMaxPath] = {};
-      snprintf(
-        currentLogFilePath, sizeof(currentLogFilePath),
-        "%s/.local/state/%s/client.log", getenv("HOME"), APPNAME
-      );
-      if (!vLogInit(LOG_DEBUG, currentLogFilePath)) {
-        fprintf(this->err, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
-        fprintf(this->out, "Unable to initialise the logger (%s): %s\n", currentLogFilePath, strerror(errno));
+      if (!vLogInit(this->logLevel, this->logFilePath)) {
+        fprintf(this->err, "Unable to initialise the logger (%s): %s\n", this->logFilePath, strerror(errno));
+        fprintf(this->out, "Unable to initialise the logger (%s): %s\n", this->logFilePath, strerror(errno));
         return false;
       }
       break;

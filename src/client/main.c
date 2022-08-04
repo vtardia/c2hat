@@ -18,26 +18,12 @@
 #include "ui.h"
 #include "client.h"
 #include "wtrim/wtrim.h"
+#include "fsutil/fsutil.h"
+#include "logger/logger.h"
 #include "app.h"
 
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
-
-enum {
-  kMaxHostnameSize = 128,
-  kMaxPortSize = 6,
-  kMaxStatusMessageSize = kMaxHostnameSize + kMaxPortSize + 50,
-  kMaxFilePath = 4096
-};
-
-/// Contains the client startup parameters
-typedef struct _options {
-  char user[kMaxNicknameSize];
-  char host[kMaxHostnameSize];
-  char port[kMaxPortSize];
-  char caCertFilePath[kMaxFilePath];
-  char caCertDirPath[kMaxFilePath];
-} Options;
 
 static const char *kC2HatClientVersion = "1.0";
 static const char *kDefaultCACertFilePath = ".local/share/c2hat/ssl/cacert.pem";
@@ -46,7 +32,7 @@ static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
 void usage(const char *program);
 void help(const char *program);
 void version(const char *program);
-void parseOptions(int argc, ARGV argv, Options *params);
+void parseOptions(int argc, ARGV argv, ClientOptions *params);
 
 int main(int argc, ARGV argv) {
   // First check we are running in a terminal (TTY)
@@ -57,7 +43,7 @@ int main(int argc, ARGV argv) {
   }
 
   // Check command line options and arguments
-  Options options = {};
+  ClientOptions options = { .logLevel = LOG_INFO };
   parseOptions(argc, argv, &options);
 
   // Calling setlocale() with an empty string loads the LANG env var
@@ -84,7 +70,7 @@ int main(int argc, ARGV argv) {
   App_init();
 
   // Create chat client
-  C2HatClient *app = Client_create(options.caCertFilePath, options.caCertDirPath);
+  C2HatClient *app = Client_create(&options);
   if (app == NULL) {
     fprintf(stderr, "Chat client creation failed\n");
     return App_cleanup(EXIT_FAILURE);
@@ -227,7 +213,7 @@ void help(const char *program) {
  * @param[in] argv The array of arguments
  * @param[in] options Pointer to a configuration structure
  */
-void parseOptions(int argc, ARGV argv, Options *params) {
+void parseOptions(int argc, ARGV argv, ClientOptions *params) {
   // Check that we have the minimum required command line args
   if (argc < 2) {
     usage(argv[0]);
@@ -245,8 +231,18 @@ void parseOptions(int argc, ARGV argv, Options *params) {
   };
 
   // Setup default SSL config
-  snprintf(params->caCertFilePath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
-  snprintf(params->caCertDirPath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
+  snprintf(params->caCertFilePath, kMaxPath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
+  snprintf(params->caCertDirPath, kMaxPath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
+
+  // Setup log directory
+  snprintf(
+    params->logDirPath, sizeof(params->logDirPath),
+    "%s/.local/state/%s", getenv("HOME"), APPNAME
+  );
+  if (!TouchDir(params->logDirPath, 0700)) {
+    fprintf(stderr, "Unable to set the log directory: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
 
   // Parse the command line arguments into options
   char ch;
@@ -266,10 +262,10 @@ void parseOptions(int argc, ARGV argv, Options *params) {
         strncpy(params->user, optarg, kMaxNicknameSize - 1);
       break;
       case 'f': // User passed a CA certificate file
-        strncpy(params->caCertFilePath, optarg, kMaxFilePath - 1);
+        strncpy(params->caCertFilePath, optarg, kMaxPath - 1);
       break;
       case 'd': // User passed a CA directory path
-        strncpy(params->caCertDirPath, optarg, kMaxFilePath - 1);
+        strncpy(params->caCertDirPath, optarg, kMaxPath - 1);
       break;
     }
   }

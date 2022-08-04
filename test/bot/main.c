@@ -13,40 +13,39 @@
 
 #include "client.h"
 #include "message/message.h"
-#include "../c2hat.h"
+#include "logger/logger.h"
+#include "fsutil/fsutil.h"
 
 /// ARGV wrapper for options parsing
 typedef char * const * ARGV;
 
 enum {
   kMaxBots = 7,
-  kMaxHostnameSize = 128,
-  kMaxPortSize = 6,
-  kMaxFilePath = 4096,
   kMaxMessages = 100
 };
 
 /// Contains the client startup parameters
-typedef struct _options {
+typedef struct {
   size_t maxBots;
   char   host[kMaxHostnameSize];
   char   port[kMaxPortSize];
-  char   caCertFilePath[kMaxFilePath];
-  char   caCertDirPath[kMaxFilePath];
-} Options;
+  char   caCertFilePath[kMaxPath];
+  char   caCertDirPath[kMaxPath];
+} BotOptions;
 
 static const char *kDefaultCACertFilePath = ".local/share/c2hat/ssl/cacert.pem";
 static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
 
 static bool terminate = false;
 
-Options options = {};
+BotOptions options = {};
+ClientOptions clientOptions = { .logLevel = LOG_DEBUG };
 
 char messages[kBufferSize][kMaxMessages] = {};
 
 void usage(const char *program);
 void help(const char *program);
-void parseOptions(int argc, ARGV argv, Options *params);
+void parseOptions(int argc, ARGV argv, BotOptions *params);
 
 /**
  * Called within a thread function, hides that thread from signals
@@ -82,7 +81,7 @@ void* RunBot(void* data) {
   int *id = (int *)data;
 
   // Create a chat client
-  C2HatClient *bot = Client_create(options.caCertFilePath, options.caCertDirPath);
+  C2HatClient *bot = Client_create(&clientOptions);
   if (bot == NULL) {
     fprintf(stderr, "[%d] Bot client creation failed\n", *id);
     return NULL;
@@ -291,7 +290,7 @@ void usage(const char *program) {
  * @param[in] argv The array of arguments
  * @param[in] options Pointer to a configuration structure
  */
-void parseOptions(int argc, ARGV argv, Options *params) {
+void parseOptions(int argc, ARGV argv, BotOptions *params) {
   // Check that we have the minimum required command line args
   if (argc < 2) {
     usage(argv[0]);
@@ -311,8 +310,18 @@ void parseOptions(int argc, ARGV argv, Options *params) {
   params->maxBots = kMaxBots;
 
   // Setup default SSL config
-  snprintf(params->caCertFilePath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
-  snprintf(params->caCertDirPath, kMaxFilePath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
+  snprintf(params->caCertFilePath, kMaxPath - 1, "%s/%s", getenv("HOME"), kDefaultCACertFilePath);
+  snprintf(params->caCertDirPath, kMaxPath - 1, "%s/%s", getenv("HOME"), kDefaultCACertDirPath);
+
+  // Setup log directory
+  snprintf(
+    clientOptions.logDirPath, sizeof(clientOptions.logDirPath),
+    "%s/.local/state/%s", getenv("HOME"), APPNAME
+  );
+  if (!TouchDir(clientOptions.logDirPath, 0700)) {
+    fprintf(stderr, "Unable to set the log directory: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
 
   // Parse the command line arguments into options
   char ch;
@@ -328,10 +337,10 @@ void parseOptions(int argc, ARGV argv, Options *params) {
         params->maxBots = atoi(optarg);
       break;
       case 'f': // User passed a CA certificate file
-        strncpy(params->caCertFilePath, optarg, kMaxFilePath - 1);
+        strncpy(params->caCertFilePath, optarg, kMaxPath - 1);
       break;
       case 'd': // User passed a CA directory path
-        strncpy(params->caCertDirPath, optarg, kMaxFilePath - 1);
+        strncpy(params->caCertDirPath, optarg, kMaxPath - 1);
       break;
     }
   }
@@ -344,6 +353,10 @@ void parseOptions(int argc, ARGV argv, Options *params) {
   // Copy host and port into the options struct
   strncpy(params->host, argv[optind++], kMaxHostnameSize - 1);
   strncpy(params->port, argv[optind], kMaxPortSize - 1);
+
+  // Copy SSL details into client options
+  strncpy(clientOptions.caCertFilePath, params->caCertFilePath, sizeof(params->caCertFilePath));
+  strncpy(clientOptions.caCertDirPath, params->caCertDirPath, sizeof(params->caCertDirPath));
 }
 
 /**

@@ -7,7 +7,7 @@
 #include "message/message.h"
 #include "socket/socket.h"
 #include "list/list.h"
-#include "queue/queue.h"
+#include "cqueue/cqueue.h"
 #include "validate/validate.h"
 
 #include <pthread.h>
@@ -64,13 +64,17 @@ static Server *server = NULL;
 static bool terminate = false;
 
 static List *clients = NULL;
-static Queue *messages = NULL;
+static CQueue *messages = NULL;
 
 // Mutex for client list
 pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
 
-// Mutex for message queue
-pthread_mutex_t messagesLock = PTHREAD_MUTEX_INITIALIZER;
+/**
+ * Adds a message to the broadcast queue
+ * @param[in] message Message to enqueue
+ * @param[in] length Size of the data to enqueue
+ */
+#define Server_broadcast(message, length) CQueue_push(messages, message, length)
 
 // Signal handling
 int Server_catch(int sig, void (*handler)(int));
@@ -85,7 +89,6 @@ void* Server_handleClient(void* data);
 
 // Broadcast messages to all connected clients
 void* Server_handleBroadcast(void* data);
-void Server_broadcast(char *message, size_t length);
 
 // Closes a client connection and related thread
 void Server_dropClient(Client *client);
@@ -273,7 +276,7 @@ void Server_start(Server *this) {
     Fatal("Unable to initialise clients list");
   }
 
-  messages = Queue_new();
+  messages = CQueue_new();
   if (messages == NULL) {
     Fatal("Unable to initialise message queue");
   }
@@ -405,7 +408,7 @@ void Server_start(Server *this) {
 
   // Close broadcast thread
   pthread_join(broadcastThreadID, NULL);
-  Queue_free(&messages);
+  CQueue_free(&messages);
 
   // Cleanup socket and server
   SOCKET_close(this->socket);
@@ -947,36 +950,30 @@ void* Server_handleClient(void* data) {
  */
 void* Server_handleBroadcast(void* data) {
   pthread_t me = pthread_self();
-  QueueData *item = NULL;
 
   // Define a sleep interval in milliseconds
-  struct timespec ts;
   int msec = 200;
-  ts.tv_sec = msec / 1000;
-  ts.tv_nsec = (msec % 1000) * 1000000;
+  struct timespec ts = {
+    .tv_sec = msec / 1000,
+    .tv_nsec = (msec % 1000) * 1000000
+  };
 
-  while (!terminate) {
-    if (Queue_empty(messages)) {
-      nanosleep(&ts, NULL);
-      continue;
-    }
-    do {
-      // Lock Message Queue
-      pthread_mutex_lock(&messagesLock);
-      item = Queue_dequeue(messages);
-      // Unlock queue
-      pthread_mutex_unlock(&messagesLock);
-      if (item == NULL) break; // Queue is empty
-
-      Client *client;
-
-      // Lock clients
-      pthread_mutex_lock(&clientsLock);
+  Info("Starting broadcast thread %lu", me);
+  do {
+    QueueData *item = CQueue_tryPop(messages);
+    if (item != NULL) {
 
       List_rewind(clients);
-      while ((client = (Client *)List_next(clients)) != NULL) {
+      while (!terminate) {
+        // Lock the list for just the time needed to get the client handle
+        pthread_mutex_lock(&clientsLock);
+        Client *client = (Client *)List_next(clients);
+        pthread_mutex_unlock(&clientsLock);
+        if (client == NULL) break;
+
         // Don't broadcast messages to non-authenticated clients
         if (strlen(client->nickname) == 0) continue;
+
         // The client may have been disconnected with a /quit message
         // the server will hang if tries to send a message
         if (SOCKET_isValid(client->socket)) {
@@ -984,24 +981,12 @@ void* Server_handleBroadcast(void* data) {
           if (sent <= 0) Server_dropClient(client);
         }
       }
-      QueueData_free(&item);
 
-      // Unlock clients
-      pthread_mutex_unlock(&clientsLock);
-    } while(!Queue_empty(messages));
-  }
+      QueueData_free(&item);
+    }
+    nanosleep(&ts, NULL);
+  } while (!terminate);
+
   Info("Closing broadcast thread %lu", me);
   pthread_exit(data);
 }
-
-/**
- * Adds a message to the broadcast queue
- * @param[in] message Message to enqueue
- * @param[in] length Size of the data to enqueue
- */
-void Server_broadcast(char *message, size_t length) {
-  pthread_mutex_lock(&messagesLock);
-  Queue_enqueue(messages, message, length);
-  pthread_mutex_unlock(&messagesLock);
-}
-

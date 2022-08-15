@@ -69,7 +69,7 @@ SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 
 COMMON_LIBRARIES = logger socket list queue message fsutil
-SERVER_LIBRARIES = config validate ini encrypt
+SERVER_LIBRARIES = config validate ini encrypt cqueue
 CLIENT_LIBRARIES = hash wtrim
 
 # Targets

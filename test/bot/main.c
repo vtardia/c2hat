@@ -39,7 +39,7 @@ static const char *kDefaultCACertDirPath = ".local/share/c2hat/ssl";
 static bool terminate = false;
 
 BotOptions options = {};
-ClientOptions clientOptions = { .logLevel = LOG_DEBUG };
+ClientOptions clientOptions = { .logLevel = LOG_INFO };
 
 char messages[kBufferSize][kMaxMessages] = {};
 
@@ -298,11 +298,13 @@ void parseOptions(int argc, ARGV argv, BotOptions *params) {
   }
 
   // Build the options list
+  int debug = 0;
   struct option options[] = {
     {"num-bots", required_argument, NULL, 'n'},
     {"cacert", required_argument, NULL, 'f'},
     {"capath", required_argument, NULL, 'd'},
     {"help", no_argument, NULL, 'h'},
+    {"debug", no_argument, &debug, 1},
     { NULL, 0, NULL, 0}
   };
 
@@ -342,6 +344,9 @@ void parseOptions(int argc, ARGV argv, BotOptions *params) {
       case 'd': // User passed a CA directory path
         strncpy(params->caCertDirPath, optarg, kMaxPath - 1);
       break;
+      case 0:
+        if (debug) clientOptions.logLevel = LOG_DEBUG;
+      break;
     }
   }
 
@@ -377,6 +382,7 @@ void help(const char *program) {
     "                   specified, the default path will be used:\n"
     "                   $HOME/.local/share/c2hat/ssl\n"
     "   -h, --help      display this help message;\n"
+    "       --debug     enable verbose logging;\n"
     "\n", basename((char *)program)
   );
 }

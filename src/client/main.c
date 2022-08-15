@@ -203,6 +203,7 @@ void help(const char *program) {
     "                   $HOME/.local/share/c2hat/ssl\n"
     "   -v, --version   display the current program version;\n"
     "   -h, --help      display this help message;\n"
+    "       --debug     enable verbose logging;\n"
     "\n", basename((char *)program), kC2HatClientVersion
   );
 }
@@ -221,12 +222,14 @@ void parseOptions(int argc, ARGV argv, ClientOptions *params) {
   }
 
   // Build the options list
+  int debug = 0;
   struct option options[] = {
     {"user", required_argument, NULL, 'u'},
     {"cacert", required_argument, NULL, 'f'},
     {"capath", required_argument, NULL, 'd'},
     {"help", no_argument, NULL, 'h'},
     {"version", no_argument, NULL, 'v'},
+    {"debug", no_argument, &debug, 1},
     { NULL, 0, NULL, 0}
   };
 
@@ -266,6 +269,9 @@ void parseOptions(int argc, ARGV argv, ClientOptions *params) {
       break;
       case 'd': // User passed a CA directory path
         strncpy(params->caCertDirPath, optarg, kMaxPath - 1);
+      break;
+      case 0:
+        if (debug) params->logLevel = LOG_DEBUG;
       break;
     }
   }

@@ -30,21 +30,23 @@ static C2HatClient *client = NULL;
 static ClientOptions settings = {};
 
 /// Cleanup resources and exit
-int App_cleanup(int result) {
+void App_cleanup() {
 #if defined(_WIN32)
   WSACleanup();
 #endif
   if (client != NULL) {
-    fprintf(stdout, "Destroying client...");
+    fprintf(stdout, "Cleaning up client...");
     Client_destroy(&client);
-    fprintf(stdout, "OK!\n");
+    fprintf(stdout, "DONE!\n");
   }
-  return result;
 }
 
 /// Initialise the application resources
 void App_init(ClientOptions *options) {
   if (client != NULL) return; // Already initialised
+
+  // Register shutdown function
+  atexit(App_cleanup);
 
 // Initialise sockets on Windows
 #if defined(_WIN32)
@@ -62,12 +64,12 @@ void App_init(ClientOptions *options) {
   client = Client_create(&settings);
   if (client == NULL) {
     fprintf(stderr, "Chat client creation failed\n");
-    exit(App_cleanup(EXIT_FAILURE));
+    exit(EXIT_FAILURE);
   }
 
   // ...and try to connect
   if (!Client_connect(client, settings.host, settings.port)) {
-    exit(App_cleanup(EXIT_FAILURE));
+    exit(EXIT_FAILURE);
   }
 }
 
@@ -91,7 +93,7 @@ void App_authenticate() {
     // fgetws() reads length -1 characters and includes the new line
     if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
       fprintf(stderr, "Unable to read nickname\n");
-      exit(App_cleanup(EXIT_FAILURE));
+      exit(EXIT_FAILURE);
     }
 
     // Remove unwanted trailing spaces and new line characters
@@ -103,7 +105,7 @@ void App_authenticate() {
 
   // Send to the server for authentication
   if (!Client_authenticate(client, nickname)) {
-    exit(App_cleanup(EXIT_FAILURE));
+    exit(EXIT_FAILURE);
   }
 }
 
@@ -244,9 +246,6 @@ void App_run() {
 }
 
 int App_start() {
-  // To correctly display Advanced Character Set in UTF-8 environment
-  setenv("NCURSES_NO_UTF8_ACS", "0", 1);
-
   // Initialise NCurses UI engine
   UIInit();
   char connectionStatus[kMaxStatusMessageSize] = {};
@@ -279,5 +278,5 @@ int App_start() {
 
   // Clean Exit
   fprintf(stdout, "Bye!\n");
-  return App_cleanup(EXIT_SUCCESS);
+  return EXIT_SUCCESS;
 }

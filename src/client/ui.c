@@ -199,10 +199,16 @@ void UIClearScreen() {
 void UIInit() {
   if (mainWin != NULL) return; // Already initialised
 
+  // Correctly display Advanced Character Set in UTF-8 environment
+  setenv("NCURSES_NO_UTF8_ACS", "0", 1);
+
   UIClearScreen();
 
   if ((mainWin = initscr()) == NULL) {
-    fprintf(stderr, "❌ Error: Unable to initialise the user interface\n%s\n", strerror(errno));
+    fprintf(
+      stderr,
+      "❌ Error: Unable to initialise the user interface\n%s\n", strerror(errno)
+    );
     exit(EXIT_FAILURE);
   }
   getmaxyx(mainWin, screenLines, screenCols);

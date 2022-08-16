@@ -478,7 +478,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   // Minimal validation: ensure that at least two characters are entered
   if (strlen(username) < 2) {
     fprintf(
-      this->err,
+      this->out,
       "❌ Error: Invalid user nickname\nNicknames must be at least 2 characters long\n"
     );
     Client_disconnect(this);
@@ -499,7 +499,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   Message_free(&response);
   if (messageType != kMessageTypeNick) {
     fprintf(
-      this->err,
+      this->out,
       "❌ Error: Unable to authenticate\nUnknown server response\n"
     );
     Client_disconnect(this);
@@ -512,7 +512,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   int sent = Client_send(this, message, strlen(message) + 1);
   if (sent < 0) {
     fprintf(
-      this->err,
+      this->out,
       "❌ Error: Unable to authenticate\nCannot send data to the server, please retry later\n"
     );
     Client_disconnect(this);
@@ -523,7 +523,7 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   received = Client_receive(this);
   if (received < 0) {
     fprintf(
-      this->err,
+      this->out,
       "❌ Error: Authentication failed\nCannot receive a response from the server\n"
     );
     Client_disconnect(this);
@@ -538,13 +538,13 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     if (messageType == kMessageTypeErr) {
       char *errorMessage = Message_getContent(response, kMessageTypeErr, kBufferSize);
       fprintf(
-        this->err, "❌ [Server Error] Authentication failed\n%s\n",
+        this->out, "❌ [Server Error] Authentication failed\n%s\n",
         errorMessage
       );
       Message_free(&errorMessage);
     } else {
       fprintf(
-        this->err,
+        this->out,
         "❌ Error: Authentication failed\nInvalid response from the server\n"
       );
     }

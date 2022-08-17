@@ -7,15 +7,17 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 
 #include "wtrim/wtrim.h"
 #include "app.h"
 #include "ui.h"
 #include "message/message.h"
 #include "logger/logger.h"
+#include "cqueue/cqueue.h"
 
 /// Loop termination flag
-static bool terminate = false;
+static atomic_bool terminate = false;
 
 /// Keeps track of the main thread id so other threads can send signals
 static pthread_t mainThreadID = 0;
@@ -29,6 +31,10 @@ static C2HatClient *client = NULL;
 /// Contains a copy of the chat client settings
 static ClientOptions settings = {};
 
+/// Concurrent FIFO queue of chat messages
+static CQueue *messages = NULL;
+
+
 /// Cleanup resources and exit
 void App_cleanup() {
 #if defined(_WIN32)
@@ -39,6 +45,7 @@ void App_cleanup() {
     Client_destroy(&client);
     fprintf(stdout, "DONE!\n");
   }
+  if (messages != NULL) CQueue_free(&messages);
 }
 
 /// Initialise the application resources
@@ -111,9 +118,12 @@ void App_authenticate() {
 
 /// Sets the termination flag on SIGINT or SIGTERM
 void App_terminate(int signal) {
-  // Disable unused parameter warning
-  (void)(signal);
-  terminate = true;
+  if (signal == SIGINT || signal == SIGTERM) {
+    terminate = true;
+    UITerminate();
+  } else if (signal == SIGUSR2) {
+    UIUpdateChatLog();
+  }
 }
 
 /// Catches interrupt signals
@@ -146,6 +156,7 @@ void *App_listen(void *data) {
     .tv_nsec = (msec % 1000) * 1000000
   };
 
+  Info("Starting listening thread...");
   while(!terminate) {
     if (!SOCKET_isValid(server)) break;
     if (select(server + 1, &reads, 0, 0, NULL) < 0) {
@@ -165,15 +176,14 @@ void *App_listen(void *data) {
         terminate = true;
         break;
       }
-      char *response = NULL;
-      do {
-        response = Message_get(buffer);
-        if (!response) break;
-
+      // char *response = NULL;
+      while (true) {
+        char *response = Message_get(buffer);
+        if (response == NULL) break;
         // Push the message to be read by the main thread
-        UIPushMessage(response, strlen(response) + 1);
+        CQueue_push(messages, response, strlen(response) + 1);
         Message_free(&response);
-      } while(response != NULL);
+      }
 
       // Alert the main thread that there are messages to read
       pthread_kill(mainThreadID, SIGUSR2);
@@ -188,9 +198,10 @@ void *App_listen(void *data) {
   SOCKET_close(server); // Or Client_disconnect()?
 
   // Tell the main thread that it needs to close the UI
-  pthread_kill(mainThreadID, SIGUSR1);
+  pthread_kill(mainThreadID, SIGTERM);
 
   // Clean exit
+  Info("Closing listening thread");
   pthread_exit(NULL);
 }
 
@@ -202,69 +213,99 @@ void App_run() {
   // Initialise the thread id in order to receive messages
   mainThreadID = pthread_self();
 
-  while(!terminate) {
-    // Reset the UI input facility
-    UILoopInit();
-
-    // Request user input as Unicode
-    wchar_t buffer[kMaxMessageLength] = {};
-    size_t inputSize = UIGetUserInput(buffer, kMaxMessageLength);
-    // User pressed F1 or other exit commands
-    if ((int)inputSize < 0) {
+  while (!terminate) {
+    int res = UIInputLoop();
+    if (res > 0) {
+      // Message to be sent to server
+    } else if (res == kUITerminate) {
       terminate = true;
       break;
+    } else if (res == kUIUpdate) {
+      while (true) {
+        QueueData *item = CQueue_tryPop(messages);
+        if (item == NULL) break;
+        UILogMessage(item->content, item->length);
+        QueueData_free(&item);
+      }
+    } else if (res == kUIResize) {
+      // Trigger a resize
     }
-
-    // Clean input buffer
-    wchar_t *trimmedBuffer = wtrim(buffer, NULL);
-
-    // Convert it into UTF-8
-    char messageBuffer[kBufferSize] = {};
-    wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
-
-    Debug("App_run - user typed: %s", messageBuffer);
-
-    int messageType = Message_getType(messageBuffer);
-    if (messageType == kMessageTypeQuit) break;
-
-    // If the input is not a command, wrap it into a message payload
-    char message[kBufferSize] = {};
-    if (!messageType) {
-      Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
-    } else {
-      // Send the message as is
-      memcpy(message, messageBuffer, inputSize);
-    }
-    int sent = Client_send(client, message, strlen(message) + 1);
-
-    // If the connection drops, break and close
-    if (sent < 0) break;
   }
+  // while(!terminate) {
+  //   // Reset the UI input facility
+  //   UILoopInit();
+
+  //   // Request user input as Unicode
+  //   wchar_t buffer[kMaxMessageLength] = {};
+  //   size_t inputSize = UIGetUserInput(buffer, kMaxMessageLength);
+  //   // User pressed F1 or other exit commands
+  //   if ((int)inputSize < 0) {
+  //     terminate = true;
+  //     break;
+  //   }
+
+  //   // Clean input buffer
+  //   wchar_t *trimmedBuffer = wtrim(buffer, NULL);
+
+  //   // Convert it into UTF-8
+  //   char messageBuffer[kBufferSize] = {};
+  //   wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
+
+  //   Debug("App_run - user typed: %s", messageBuffer);
+
+  //   int messageType = Message_getType(messageBuffer);
+  //   if (messageType == kMessageTypeQuit) break;
+
+  //   // If the input is not a command, wrap it into a message payload
+  //   char message[kBufferSize] = {};
+  //   if (!messageType) {
+  //     Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
+  //   } else {
+  //     // Send the message as is
+  //     memcpy(message, messageBuffer, inputSize);
+  //   }
+  //   int sent = Client_send(client, message, strlen(message) + 1);
+
+  //   // If the connection drops, break and close
+  //   if (sent < 0) break;
+  // }
 
   // Try a clean clean exit
   Client_send(client, "/quit", strlen("/quit") + 1);
 }
 
 int App_start() {
-  // Initialise NCurses UI engine
-  UIInit();
-  char connectionStatus[kMaxStatusMessageSize] = {};
-  int statusMessageLength = sprintf(
-      connectionStatus, "Connected to %s:%s - Hit F1 to quit",
-      settings.host, settings.port
-  );
-  UISetStatusMessage(connectionStatus, statusMessageLength);
+  messages = CQueue_new();
+  if (messages == NULL) {
+    fprintf(
+      stderr,
+      "Unable to initialise message queue: %s\n", strerror(errno)
+    );
+    return EXIT_FAILURE;
+  }
 
   // Set up event handlers
   App_catch(SIGINT, App_terminate);
   App_catch(SIGTERM, App_terminate);
-  App_catch(SIGWINCH, UIResizeHandler);
-  App_catch(SIGUSR1, UITerminate);
-  App_catch(SIGUSR2, UIQueueHandler);
+  App_catch(SIGUSR2, App_terminate);
+  // App_catch(SIGWINCH, UIResizeHandler);
+
+  // Initialise NCurses UI engine
+  UIInit();
+  // char connectionStatus[kMaxStatusMessageSize] = {};
+  // int statusMessageLength = sprintf(
+  //     connectionStatus, "Connected to %s:%s - Hit F1 to quit",
+  //     settings.host, settings.port
+  // );
+  // UISetStatusMessage(connectionStatus, statusMessageLength);
+
 
   // Start a new thread that listens for messages from the server
   // and updates the chat log window
-  pthread_create(&listeningThreadID, NULL, App_listen, NULL);
+  if (pthread_create(&listeningThreadID, NULL, App_listen, NULL) != 0) {
+    fprintf(stderr, "Unable to start listening thread: %s\n", strerror(errno));
+    return EXIT_FAILURE;
+  }
 
   // Start the app infinite loop
   App_run();

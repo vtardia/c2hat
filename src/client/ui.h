@@ -7,33 +7,29 @@
 
   #include <ncurses.h>
 
+  enum UIInputLoopStatus {
+    kUITerminate = 0,
+    kUIUpdate = -1,
+    kUIResize = -2
+  };
+
   // Initialises the UI engine
   void UIInit();
 
   // Destroys the UI engine
   void UIClean();
 
-  // Intercepts terminal resize events
-  void UIResizeHandler(int signal);
+  // Runs the UI input loop
+  int UIInputLoop();
 
-  // Intercepts queue events
-  void UIQueueHandler(int signal);
+  // Signals the UI to terminate
+  // Required to interrupt the input loop
+  void UITerminate();
 
-  // Intercepts UI close events to unlock the input loop
-  void UITerminate(int signal);
+  // Signals the UI to update the chat log
+  // Required to interrupt the input loop
+  void UIUpdateChatLog();
 
-  // Initialises the infinite loop
-  void UILoopInit();
-
-  // Reads user input
-  size_t UIGetUserInput(wchar_t *buffer, size_t length);
-
-  // Displays output from the server in he chat log
+  // Adds a message to the chat log display buffer
   void UILogMessage(char *buffer, size_t length);
-
-  // Push the received message in the message queue
-  void UIPushMessage(char *buffer, size_t length);
-
-  // Displays a message in the status bar
-  void UISetStatusMessage(char *buffer, size_t length);
 #endif

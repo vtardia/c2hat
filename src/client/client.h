@@ -11,8 +11,7 @@
 
   enum {
     kMaxHostnameSize = 128,
-    kMaxPortSize = 6,
-    kMaxStatusMessageSize = kMaxHostnameSize + kMaxPortSize + 50
+    kMaxPortSize = 6
   };
 
   /// Contains the client startup parameters

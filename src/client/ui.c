@@ -7,10 +7,14 @@
 #include "../c2hat.h"
 #include "logger/logger.h"
 #include "ui.h"
+#include "uiterm.h"
+#include "uichat.h"
+#include "uiinput.h"
+#include "uistatus.h"
+#include "uicolor.h"
 
-
-/// Handle for the main screen
-static WINDOW *screen;
+/// The main screen
+static UIScreen screen = {};
 
 /// Input loop termination flag
 static atomic_bool terminate = false;
@@ -18,48 +22,19 @@ static atomic_bool terminate = false;
 /// Input loop update-ready flag
 static atomic_bool update = false;
 
-/// Available lines in the main screen
-static int screenLines = 0;
-
-/// Available columns in the main screen
-static int screenCols = 0;
-
-enum ColorPair {
-  kColorPairDefault = 0,
-  kColorPairCyanOnDefault = 1,
-  kColorPairYellowOnDefault = 2,
-  kColorPairRedOnDefault = 3,
-  kColorPairBlueOnDefault = 4,
-  kColorPairMagentaOnDefault = 5,
-  kColorPairGreenOnDefault = 6,
-  kColorPairWhiteOnBlue = 7,
-  kColorPairWhiteOnRed = 8
+enum config {
+  /// Max message length, in characters, including the NULL terminator
+  kMaxMessageLength = 281,
+  /// Max cached lines for the chat log window
+  kMaxCachedLines = 100
 };
 
-enum CursorState {
-  kCursorStateInvisible = 0,
-  kCursorStateNormal = 1,
-  kCursorStateVeryVisible = 2
-};
-
-
-/**
- * Clears the console
- */
-void UIClearScreen() {
-  printf("\e[1;1H\e[2J");
-}
-
-/**
- * Destroys the given window object
- */
-void UIWindow_destroy(WINDOW *win) {
-  if (win == NULL) return;
-  wborder(win, ' ', ' ', ' ',' ',' ',' ',' ',' ');
-  wbkgd(win, COLOR_PAIR(kColorPairDefault));
-  wclear(win);
-  wrefresh(win);
-  delwin(win);
+#define UISetInputCounter() { \
+  int current = 0; \
+  int max = 0; \
+  UIInputWin_getCount(&current, &max);\
+  UIStatus_set(kUIStatusPositionRight, "%4d/%d", current, max); \
+  UIInputWin_getCursor(); \
 }
 
 /**
@@ -67,46 +42,68 @@ void UIWindow_destroy(WINDOW *win) {
  */
 void UIClean() {
   // Destroy windows
-  // UIWindow_destroy(statusBarWin);
-  // UIWindow_destroy(inputWin);
-  // UIWindow_destroy(inputWinBox);
-  // UIWindow_destroy(chatWin);
-  // UIWindow_destroy(chatWinBox);
-  UIWindow_destroy(screen);
+  UIStatusBar_destroy();
+  UIInputWin_destroy();
+  UIChatWin_destroy();
+  UIScreen_destroy(screen);
   // Close ncurses
   endwin();
   // Free user list and message buffer
   // Hash_free(&users);
   // List_free(&messages);
-  // Queue_free(&events);
+}
+
+void UIRender() {
+  if (UIScreen_isBigEnough(&screen, kMaxMessageLength)) {
+
+    // Set the sizes of container windows based on the current terminal
+    // With narrow terminals we need 4 input lines to fit the whole message
+    // so the chat log will be smaller. With wider terminals we can get away
+    // with 3 lines for the input and leave the rest for the chat log
+    size_t inputWinBoxHeight = (screen.cols < kWideTerminalCols) ? 6  : 5;
+    // The upper border requires 1 line
+    size_t inputWinBoxStart = screen.lines - (inputWinBoxHeight + 1);
+    size_t chatWinBoxHeight = inputWinBoxStart;
+
+    UIChatWin_render(&screen, chatWinBoxHeight, " C2Hat ");
+    UIInputWin_render(&screen, inputWinBoxHeight, inputWinBoxStart);
+    UIStatusBar_render(&screen);
+    curs_set(kCursorStateNormal);
+    UIInputWin_getCursor();
+    return;
+  }
+  UIRender_terminalTooSmall(&screen);
 }
 
 /**
  * Initialises NCurses configuration
  */
 void UIInit() {
-  if (screen != NULL) return; // Already initialised
+  if (screen.handle != NULL) return; // Already initialised
 
   // Correctly display Advanced Character Set in UTF-8 environment
   setenv("NCURSES_NO_UTF8_ACS", "0", 1);
 
-  UIClearScreen();
+  UIScreen_clear();
 
-  if ((screen = initscr()) == NULL) {
+  if ((screen.handle = initscr()) == NULL) {
     fprintf(
       stderr,
-      "❌ Error: Unable to initialise the user interface\n%s\n", strerror(errno)
+      "❌ Error: Unable to initialise the user interface\n%s\n",
+      strerror(errno)
     );
     exit(EXIT_FAILURE);
   }
-  getmaxyx(screen, screenLines, screenCols);
+  getmaxyx(screen.handle, screen.lines, screen.cols);
+
+  UIColor_init();
 
   // Read input one char at a time,
   // disable line buffering, keeping CTRL as default SIGINT
   cbreak();
 
   // Capture Fn and other special keys
-  keypad(screen, TRUE);
+  keypad(screen.handle, TRUE);
 
   // Don't automatically echo input, let the program to manage it
   noecho();
@@ -121,20 +118,31 @@ void UIInit() {
   // Initialises the random generator
   srand(time(NULL));
 
-  // wrefresh(screen);
+  UIRender();
 }
 
-// First responder
-// Manages errors and spechal characters
-// Returns 0 on F1/terminate
-// Returns >0 on message to sent
-// Returns -1 on messages available
-// Returns -2 on resize
-// Returns -X on other error
-int UIInputLoop() {
+/**
+ * First responder
+ *
+ * Manages errors and special characters
+ *
+ * Returns:
+ *
+ *  0   on F1/terminate
+ *  >0  on new input message to send
+ *  -1  on messages available
+ *  -2  on resize
+ *  -10 on other error
+ */
+//
+int UIInputLoop(wchar_t *buffer, size_t length) {
+  memset(buffer, 0, length * sizeof(wchar_t));
+
   wint_t ch = 0;
+  UIInputWin_init(buffer, length);
+  UISetInputCounter();
   while (!terminate) {
-    int res = wget_wch(screen, &ch);
+    int res = wget_wch(screen.handle, &ch);
 
     if (res == ERR) /* Including EINTR */ {
       if (terminate) {
@@ -142,9 +150,9 @@ int UIInputLoop() {
         break;
       } else if (update) {
         update = false;
-        return -1;
+        return kUIUpdate;
       // } else if ( resize ) {
-      //   return -2;
+      //   return kUIResize;
       } else if (errno == EINTR) {
         // Let event handlers take care of this
         continue;
@@ -161,21 +169,128 @@ int UIInputLoop() {
     }
 
     // The responsibility here should be of the Input Window
-    Debug("Got input: %c", ch);
+    switch(ch) {
+
+      case kKeyBackspace:
+      case kKeyDel:
+      case KEY_BACKSPACE:
+        Debug("Delete pressed");
+        // Delete the character at the current position,
+        // move to a new position and update the counters
+        UIInputWin_delete();
+        UISetInputCounter();
+      break;
+
+      case kKeyEnter:
+      case kKeyEOT: // Ctrl + D
+        Debug("Enter pressed");
+        // Read the content of the window up to the given limit
+        // and returns it to the caller function
+        {
+          size_t charRead = UIInputWin_commit();
+          if (charRead > 0) return charRead;
+        }
+      break;
+
+      case kKeyESC:
+        if (UIChatWin_getStatus() == kChatWinStatusBrowse) {
+          // If in browse mode, exit and go live
+          // UISetChatModeLive();
+          // UIDrawChatWinContent();
+        } else {
+          // If in Live mode, cancel any input operation and reset everything
+          UIInputWin_reset();
+          UISetInputCounter();
+        }
+      break;
+
+      case KEY_LEFT:
+        Debug("Left arrow pressed");
+        // Advance the cursor if possible
+        UIInputWin_moveCursor(KEY_LEFT);
+      break;
+
+      case KEY_RIGHT:
+        Debug("Right arrow pressed");
+        // Move the cursor back, if possible
+        // We can move to the right only of there is already text
+        UIInputWin_moveCursor(KEY_RIGHT);
+      break;
+
+      case KEY_UP:
+        Debug("Up arrow pressed");
+        // Move the cursor to the line above, if possible
+        UIInputWin_moveCursor(KEY_UP);
+      break;
+
+      case KEY_DOWN:
+        Debug("Down pressed");
+        // Move the cursor to the line below,
+        // but only if there is enough text in the line below
+        UIInputWin_moveCursor(KEY_DOWN);
+      break;
+
+      case KEY_PPAGE: // Page up
+        // If Browse mode: display previous page if available
+        // If Live mode: set browse mode
+      break;
+
+      case KEY_NPAGE: // Page down
+        // If Browse mode: display next page if available
+      break;
+
+      default:
+        Debug("Got input: %c", ch);
+        // If we have space, AND the input character is not a control char,
+        // add the new character to the message window
+        UIInputWin_addChar(ch);
+        UISetInputCounter();
+      break;
+    }
   }
-  return 0;
+  // An input error happened, cleanup and return error
+  memset(buffer, 0, length * sizeof(wchar_t));
+  // TODO reset inputwin?
+  return kUITerminate;
 }
 
+/// Sets termination flag
 void UITerminate() {
   terminate = true;
 }
 
+/// Sets update notification flag
 void UIUpdateChatLog() {
   update = true;
 }
 
+/// Adds a message to the chat log queue
 void UILogMessage(char *buffer, size_t length) {
-  waddnstr(screen, buffer, length);
-  waddstr(screen, "\n");
-  // wrefresh(screen);
+  UIChatWin_logMessage(buffer, length);
+  UIInputWin_getCursor();
+}
+
+/// Updates the status bar message
+bool UISetStatus(char *format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  // Parse the source message
+  char message[kMaxStatusMessageSize] = {};
+  vsnprintf(
+    message,
+    sizeof(message),
+    format,
+    args
+  );
+  va_end(args);
+
+  // Create a new format with the app data and source message
+  return UIStatus_set(
+    kUIStatusPositionLeft,
+    "[%s] [%d,%d] %s",
+    UIChatWin_getStatus() == kChatWinStatusBrowse ? "B" : "C",
+    screen.lines, screen.cols,
+    message
+  );
 }

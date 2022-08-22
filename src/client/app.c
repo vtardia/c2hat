@@ -40,11 +40,14 @@ void App_cleanup() {
 #if defined(_WIN32)
   WSACleanup();
 #endif
+  if (!isendwin()) UIClean();
+
   if (client != NULL) {
-    fprintf(stdout, "Cleaning up client...");
+    Debug("Cleaning up client...");
     Client_destroy(&client);
-    fprintf(stdout, "DONE!\n");
+    Debug("Cleaning up client success");
   }
+
   if (messages != NULL) CQueue_free(&messages);
 }
 
@@ -75,6 +78,7 @@ void App_init(ClientOptions *options) {
   }
 
   // ...and try to connect
+  // NOTE: from now on, stderr may be redirected to the log facility
   if (!Client_connect(client, settings.host, settings.port)) {
     exit(EXIT_FAILURE);
   }
@@ -83,7 +87,7 @@ void App_init(ClientOptions *options) {
 /// Tries to authenticate with the server
 void App_authenticate() {
   if (client == NULL) {
-    fprintf(stderr, "Client not initialised\n");
+    Error("Client not initialised");
     exit(EXIT_FAILURE);
   }
 
@@ -99,7 +103,7 @@ void App_authenticate() {
     fflush(stdout); // or some clients won't display the above
     // fgetws() reads length -1 characters and includes the new line
     if (!fgetws(inputNickname, kMaxNicknameInputBuffer, stdin)) {
-      fprintf(stderr, "Unable to read nickname\n");
+      fprintf(stdout, "Unable to read nickname\n");
       exit(EXIT_FAILURE);
     }
 
@@ -123,6 +127,9 @@ void App_terminate(int signal) {
     UITerminate();
   } else if (signal == SIGUSR2) {
     UIUpdateChatLog();
+  } else if (signal == SIGSEGV) {
+    // Should prevent terminal messup on crash
+    if (!isendwin()) endwin();
   }
 }
 
@@ -163,8 +170,8 @@ void *App_listen(void *data) {
       // Ignore a signal received before timeout, will be managed by handler
       if (SOCKET_getErrorNumber() == EINTR) continue;
 
-      fprintf(
-        stderr, "select() failed. (%d): %s\n",
+      Error(
+        "select() failed. (%d): %s",
         SOCKET_getErrorNumber(), strerror(SOCKET_getErrorNumber())
       );
       terminate = true;
@@ -213,10 +220,33 @@ void App_run() {
   // Initialise the thread id in order to receive messages
   mainThreadID = pthread_self();
 
+  wchar_t buffer[kMaxMessageLength] = {};
   while (!terminate) {
-    int res = UIInputLoop();
+    int res = UIInputLoop(buffer, kMaxMessageLength);
     if (res > 0) {
       // Message to be sent to server
+      // Clean input buffer
+      wchar_t *trimmedBuffer = wtrim(buffer, NULL);
+
+      // Convert it into UTF-8
+      char messageBuffer[kBufferSize] = {};
+      wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
+
+      int messageType = Message_getType(messageBuffer);
+      if (messageType == kMessageTypeQuit) break;
+
+      // If the input is not a command, wrap it into a message payload
+      char message[kBufferSize] = {};
+      if (!messageType) {
+        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
+      } else {
+        // Send the message as is
+        memcpy(message, messageBuffer, res);
+      }
+      int sent = Client_send(client, message, strlen(message) + 1);
+
+      // If the connection drops, break and close
+      if (sent < 0) break;
     } else if (res == kUITerminate) {
       terminate = true;
       break;
@@ -231,44 +261,6 @@ void App_run() {
       // Trigger a resize
     }
   }
-  // while(!terminate) {
-  //   // Reset the UI input facility
-  //   UILoopInit();
-
-  //   // Request user input as Unicode
-  //   wchar_t buffer[kMaxMessageLength] = {};
-  //   size_t inputSize = UIGetUserInput(buffer, kMaxMessageLength);
-  //   // User pressed F1 or other exit commands
-  //   if ((int)inputSize < 0) {
-  //     terminate = true;
-  //     break;
-  //   }
-
-  //   // Clean input buffer
-  //   wchar_t *trimmedBuffer = wtrim(buffer, NULL);
-
-  //   // Convert it into UTF-8
-  //   char messageBuffer[kBufferSize] = {};
-  //   wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
-
-  //   Debug("App_run - user typed: %s", messageBuffer);
-
-  //   int messageType = Message_getType(messageBuffer);
-  //   if (messageType == kMessageTypeQuit) break;
-
-  //   // If the input is not a command, wrap it into a message payload
-  //   char message[kBufferSize] = {};
-  //   if (!messageType) {
-  //     Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
-  //   } else {
-  //     // Send the message as is
-  //     memcpy(message, messageBuffer, inputSize);
-  //   }
-  //   int sent = Client_send(client, message, strlen(message) + 1);
-
-  //   // If the connection drops, break and close
-  //   if (sent < 0) break;
-  // }
 
   // Try a clean clean exit
   Client_send(client, "/quit", strlen("/quit") + 1);
@@ -277,10 +269,7 @@ void App_run() {
 int App_start() {
   messages = CQueue_new();
   if (messages == NULL) {
-    fprintf(
-      stderr,
-      "Unable to initialise message queue: %s\n", strerror(errno)
-    );
+    Error("Unable to initialise message queue: %s\n", strerror(errno));
     return EXIT_FAILURE;
   }
 
@@ -292,18 +281,16 @@ int App_start() {
 
   // Initialise NCurses UI engine
   UIInit();
-  // char connectionStatus[kMaxStatusMessageSize] = {};
-  // int statusMessageLength = sprintf(
-  //     connectionStatus, "Connected to %s:%s - Hit F1 to quit",
-  //     settings.host, settings.port
-  // );
-  // UISetStatusMessage(connectionStatus, statusMessageLength);
 
+  UISetStatus(
+    "Connected to %s:%s - Hit F1 to quit",
+    settings.host, settings.port
+  );
 
   // Start a new thread that listens for messages from the server
   // and updates the chat log window
   if (pthread_create(&listeningThreadID, NULL, App_listen, NULL) != 0) {
-    fprintf(stderr, "Unable to start listening thread: %s\n", strerror(errno));
+    Error("Unable to start listening thread: %s", strerror(errno));
     return EXIT_FAILURE;
   }
 

@@ -15,6 +15,10 @@
     kColorPairWhiteOnRed = 8
   };
 
+  /// Initialise the color engine
   void UIColor_init();
+
+  /// Returns the maximum number of available color pairs
+  int UIColor_getCount();
 
 #endif

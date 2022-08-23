@@ -3,9 +3,11 @@
 #include <string.h>
 #include <time.h>
 #include <stdatomic.h>
+#include <pthread.h>
 
 #include "../c2hat.h"
 #include "logger/logger.h"
+#include "message/message.h"
 #include "ui.h"
 #include "uiterm.h"
 #include "uichat.h"
@@ -24,9 +26,7 @@ static atomic_bool update = false;
 
 enum config {
   /// Max message length, in characters, including the NULL terminator
-  kMaxMessageLength = 281,
-  /// Max cached lines for the chat log window
-  kMaxCachedLines = 100
+  kMaxMessageLength = 281
 };
 
 #define UISetInputCounter() { \
@@ -46,11 +46,9 @@ void UIClean() {
   UIInputWin_destroy();
   UIChatWin_destroy();
   UIScreen_destroy(screen);
+
   // Close ncurses
   endwin();
-  // Free user list and message buffer
-  // Hash_free(&users);
-  // List_free(&messages);
 }
 
 void UIRender() {
@@ -117,6 +115,8 @@ void UIInit() {
 
   // Initialises the random generator
   srand(time(NULL));
+
+  if (!UIChatWin_init()) exit(EXIT_FAILURE);
 
   UIRender();
 }
@@ -266,6 +266,16 @@ void UIUpdateChatLog() {
 
 /// Adds a message to the chat log queue
 void UILogMessage(char *buffer, size_t length) {
+  if (Message_getType(buffer) == kMessageTypeQuit) {
+    // The server sent a disconnect command
+    char *error = "/err You have been disconnected";
+    UIChatWin_logMessage(error, strlen(error));
+    Info("Session terminated by the server");
+    pthread_kill(pthread_self(), SIGTERM);
+    return;
+  }
+
+  // Other type of message
   UIChatWin_logMessage(buffer, length);
   UIInputWin_getCursor();
 }

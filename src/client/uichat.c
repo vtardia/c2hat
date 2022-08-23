@@ -1,70 +1,242 @@
 #include "uichat.h"
 #include <string.h>
 
+#include "hash/hash.h"
+#include "list/list.h"
+#include "logger/logger.h"
+#include "message/message.h"
+#include "uilog.h"
+#include "uicolor.h"
+
+typedef struct {
+  WINDOW *handle;
+  int height;
+} UIChatWinBox;
+
+typedef struct {
+  WINDOW *handle;
+  int lines;
+  int cols;
+  size_t pageSize;
+  UIChatWinStatus status;
+} UIChatWin;
+
+enum {
+  /// Max cached lines for the chat log window
+  kMaxCachedLines = 100
+};
+
 /// The external fixed size chat window box
-static UIChatWinBox chatWinBox = {};
+static UIChatWinBox wrapper = {};
 
 /// The internal scrollable chat log window
-static UIChatWin chatWin = { .status = kChatWinStatusLive };
+static UIChatWin this = { .status = kChatWinStatusLive };
+
+/// Dynamic list that caches the chatlog content
+static List *chatlog = NULL;
+
+/// Associative array where the keys are the user nicknames
+static Hash *users = NULL;
+
+/// Keeps track of how many color pairs are available
+static int colors = kColorPairGreenOnDefault + 1;
+
+/// Set to true on init if the terminal supports more colors
+static bool extendedColors = false;
+
+bool UIChatWin_init() {
+  // Initialise Users hash
+  if (users == NULL) users = Hash_new();
+  if (users == NULL) {
+    Error("Unable to initialise the users list\n%s\n", strerror(errno));
+    return false;
+  }
+
+  // Initialise chat buffer
+  if (chatlog == NULL) chatlog = List_new();
+  if (chatlog == NULL) {
+    Error("Unable to initialise the chat log buffer\n%s\n", strerror(errno));
+    return false;
+  }
+
+  // Initialise colors
+  colors = UIColor_getCount();
+  extendedColors = (colors > (kColorPairWhiteOnRed + 1));
+
+  return true;
+}
 
 void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) {
-  if (chatWinBox.handle == NULL) {
+  if (wrapper.handle == NULL) {
     // Create the chat window container as a sub window of the main screen:
     // ~80% tall, 100% wide, starts at top left
-    chatWinBox.handle = derwin(screen->handle, height, screen->cols, 0, 0);
+    wrapper.handle = derwin(screen->handle, height, screen->cols, 0, 0);
   }
-  if (chatWin.handle == NULL) {
+  if (this.handle == NULL) {
     // Draw the scrollable chat log box, within the chat window
-    chatWin.handle = subwin(chatWinBox.handle, (height - 1), (screen->cols - 2), 1, 1);
+    this.handle = subwin(wrapper.handle, (height - 1), (screen->cols - 2), 1, 1);
   }
 
   // Add border, just top and bottom to avoid breaking the layout
   // when the user inserts emojis
   // win, left side, right side, top side, bottom side,
   // corners: top left, top right, bottom left, bottom right
-  wborder(chatWinBox.handle, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
-  chatWinBox.height = height;
+  wborder(wrapper.handle, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
+  wrapper.height = height;
 
   // Draw title
   size_t titleLength = strlen(title);
-  mvwaddch(chatWinBox.handle, 0, (screen->cols / 2) - titleLength / 2 - 1 , ACS_RTEE);
-  mvwaddstr(chatWinBox.handle, 0, (screen->cols / 2) - titleLength / 2, title);
-  mvwaddch(chatWinBox.handle, 0, (screen->cols / 2) + titleLength / 2 + 1, ACS_LTEE);
-  wrefresh(chatWinBox.handle);
+  mvwaddch(wrapper.handle, 0, (screen->cols / 2) - titleLength / 2 - 1 , ACS_RTEE);
+  mvwaddstr(wrapper.handle, 0, (screen->cols / 2) - titleLength / 2, title);
+  mvwaddch(wrapper.handle, 0, (screen->cols / 2) + titleLength / 2 + 1, ACS_LTEE);
+  wrefresh(wrapper.handle);
 
   // Set the internal window as scrollable
-  scrollok(chatWin.handle, TRUE);
-  leaveok(chatWin.handle, TRUE);
-  wrefresh(chatWin.handle);
-  getmaxyx(chatWin.handle, chatWin.lines, chatWin.cols);
+  scrollok(this.handle, TRUE);
+  leaveok(this.handle, TRUE);
+  wrefresh(this.handle);
+  getmaxyx(this.handle, this.lines, this.cols);
 
   // Available display lines
   // (writing on the last line will make the window scroll)
-  chatWin.pageSize = chatWin.lines - 1;
+  this.pageSize = this.lines - 1;
 
   // Add content rendering here
 }
 
-void UIChatWin_logMessage(const char *buffer, size_t length) {
-  (void)length;
-  // 1 Add the message to the messages list/queue
-  // 2 Display the message if the chat window is in 'follow' mode
-  wprintw(chatWin.handle, "[%s] %s\n", "TIMESTAMP", buffer);
-  wrefresh(chatWin.handle);
+/**
+ * Returns a custom color for a given user name
+ */
+int GetUserColor(char *userName) {
+  static int nextColor = -1;
+  if (nextColor < 0) {
+    // Initialise a default color using a random number
+    // from kColorPairDefault to kColorPairGreenOnDefault
+    nextColor = rand() % colors;
+
+    // Use extended colors if available
+    if (extendedColors) {
+      Debug("Using extended colors for user %s", userName);
+      nextColor += kColorPairWhiteOnRed;
+    }
+  }
+
+  // Check if a user already has a color
+  int *color = (int *)Hash_getValue(users, userName);
+  if (color == NULL) {
+    // First time we see this user, use the next available color
+    int userColor = nextColor;
+
+    // Update the next color
+    if (++nextColor > colors) nextColor = -1;
+
+    // Add the user's color to the hash
+    if (!Hash_set(users, userName, &userColor, sizeof(int))) {
+      userColor = 0; // Just in case, we return the default
+    }
+    return userColor;
+  }
+  // Return a copy of the value pointed by color
+  return *color;
 }
 
-// void UIChatWinBox_destroy() {
-//   UIWindow_destroy(chatWinBox.handle);
-//   memset(&chatWinBox, 0, sizeof(UIChatWinBox));
-// }
+void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
+  if (entry == NULL || entry->length == 0) return;
+
+  #define WRITE(color, format, ...) {                       \
+    wattron(this.handle, COLOR_PAIR(color));                \
+    wprintw(this.handle, format __VA_OPT__(,) __VA_ARGS__); \
+    wattroff(this.handle, COLOR_PAIR(color));               \
+  }
+
+  switch (entry->type) {
+    case kMessageTypeErr:
+      WRITE(
+        kColorPairWhiteOnRed,
+        "[%s] [ERROR] %s\n", entry->timestamp, entry->content
+      );
+    break;
+    case kMessageTypeOk:
+      WRITE(
+        kColorPairRedOnDefault,
+        "[%s] [SERVER] %s\n", entry->timestamp, entry->content
+      );
+    break;
+    case kMessageTypeLog:
+      WRITE(
+        kColorPairRedOnDefault,
+        "[%s] [SERVER] %s\n", entry->timestamp, entry->content
+      );
+    break;
+    case kMessageTypeMsg:
+      {
+        int userColor = (strlen(entry->username)) ? GetUserColor(entry->username) : kColorPairDefault;
+        WRITE(
+          userColor,
+          "[%s] %s\n", entry->timestamp, entry->content
+        );
+      }
+    break;
+    default:
+      // Print up to byte_received from the server
+      wprintw(
+        this.handle, "[%s] Received (%zu bytes): %.*s\n",
+        entry->timestamp, entry->length, (int) entry->length, entry->content
+      );
+    break;
+  }
+  if (refresh) wrefresh(this.handle);
+}
+
+void UIChatWin_logMessage(const char *buffer, size_t length) {
+  // Process the server data into a temporary entry
+  ChatLogEntry *entry = ChatLogEntry_create((char *)buffer, length);
+  if (entry == NULL) return;
+  if (entry->type == kMessageTypeQuit) {
+    // Should be managed outside
+    ChatLogEntry_free(&entry);
+    return;
+  }
+
+  // Append the entry to the buffer list...
+  List_append(chatlog, entry, sizeof(ChatLogEntry));
+  // ...and delete the oldest node if we reach the max allowed buffer
+  if (chatlog->length > kMaxCachedLines) {
+    List_delete(chatlog, 0);
+  }
+
+  // Do other actions based on entry content (e.g. deleting a user from the Hash list)
+
+  // Intercept user disconnection message to get user name from the message i
+  // and remove it from the users hash
+  if (entry->type == kMessageTypeLog && strlen(entry->username)
+    && strstr(entry->content, "left the chat") != NULL) {
+    if (!Hash_delete(users, entry->username)) {
+      Error(
+        "Unable to remove user '%s' from internal hash",
+        entry->username
+      );
+    }
+  }
+
+  // Display the message on the log window if in 'follow' mode
+  if (this.status == kChatWinStatusLive) UIChatWin_write(entry, true);
+
+  // Destroy the temporary entry
+  ChatLogEntry_free(&entry);
+}
 
 void UIChatWin_destroy() {
-  UIWindow_destroy(chatWin.handle);
-  memset(&chatWin, 0, sizeof(UIChatWin));
-  UIWindow_destroy(chatWinBox.handle);
-  memset(&chatWinBox, 0, sizeof(UIChatWinBox));
+  UIWindow_destroy(this.handle);
+  memset(&this, 0, sizeof(UIChatWin));
+
+  UIWindow_destroy(wrapper.handle);
+  memset(&wrapper, 0, sizeof(UIChatWinBox));
+
+  Hash_free(&users);
+  List_free(&chatlog);
 }
 
 UIChatWinStatus UIChatWin_getStatus() {
-  return chatWin.status;
+  return this.status;
 }

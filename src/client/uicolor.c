@@ -38,7 +38,7 @@ void UIColor_init() {
   init_pair(kColorPairWhiteOnRed, COLOR_WHITE, COLOR_RED);
 
   if (can_change_color() && COLORS > kColorPairWhiteOnRed) {
-    Debug("This terminal can define custom colors");
+    Info("This terminal can define custom colors");
 
     // Fetch background color and check luminance
     short fg = 0, bg = 0;
@@ -73,4 +73,8 @@ void UIColor_init() {
       }
     }
   }
+}
+
+int UIColor_getCount() {
+  return pairCount;
 }

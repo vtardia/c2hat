@@ -251,6 +251,7 @@ void App_run() {
       terminate = true;
       break;
     } else if (res == kUIUpdate) {
+      // There are new incoming messages to display
       while (true) {
         QueueData *item = CQueue_tryPop(messages);
         if (item == NULL) break;

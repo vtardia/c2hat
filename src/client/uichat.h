@@ -10,19 +10,6 @@
     kChatWinStatusBrowse = 2
   } UIChatWinStatus;
 
-  typedef struct {
-    WINDOW *handle;
-    int height;
-  } UIChatWinBox;
-
-  typedef struct {
-    WINDOW *handle;
-    int lines;
-    int cols;
-    size_t pageSize;
-    UIChatWinStatus status;
-  } UIChatWin;
-
   /// Renders the chat window and its contents
   void UIChatWin_render(const UIScreen *screen, size_t height, const char *title);
 
@@ -40,4 +27,7 @@
 
   /// Returns the current status of the chat window: live or browse mode
   UIChatWinStatus UIChatWin_getStatus();
+
+  /// Initialises the chat window and its data structures
+  bool UIChatWin_init();
 #endif

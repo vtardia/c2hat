@@ -52,10 +52,10 @@ else
 		VALGRIND =
 		CFLAGS += -I$(HOMEBREW_CELLAR)/ncurses/6.3/include/ncursesw \
 			-I$(HOMEBREW_CELLAR)/ncurses/6.3/include \
-			-I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1o/include
-		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1o/lib
+			-I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/include
+		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/lib
 		CLIENTLIBS += -L$(HOMEBREW_CELLAR)/ncurses/6.3/lib -Wl,-search_paths_first \
-			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1n/lib
+			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/lib
 	endif
 	ifeq ($(UNAME_S),FreeBSD)
 		CC = cc

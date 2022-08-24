@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <execinfo.h>
 
 #include "wtrim/wtrim.h"
 #include "app.h"
@@ -51,12 +52,52 @@ void App_cleanup() {
   if (messages != NULL) CQueue_free(&messages);
 }
 
+/// Sets the termination flag on SIGINT or SIGTERM
+void App_terminate(int signal) {
+  if (signal == SIGINT || signal == SIGTERM) {
+    terminate = true;
+    UITerminate();
+  } else if (signal == SIGUSR2) {
+    UIUpdateChatLog();
+  } else if (signal == SIGSEGV) {
+    // Should prevent terminal messup on crash
+    if (!isendwin()) endwin();
+
+    if (settings.logLevel <= LOG_DEBUG) {
+      void *trace[20] = {};
+      size_t size;
+      size = backtrace(trace, sizeof(trace));
+      char *error = "❌ Segmentation fault happened, backtrace below:\n";
+      write(STDERR_FILENO, error, strlen(error));
+      backtrace_symbols_fd(trace, size, STDERR_FILENO);
+    } else {
+      char *error = "❌ Segmentation fault happened, enable debug to see the stacktrace\n";
+      write(STDERR_FILENO, error, strlen(error));
+    }
+    exit(EXIT_FAILURE);
+  }
+}
+
+/// Catches interrupt signals
+int App_catch(int sig, void (*handler)(int)) {
+   struct sigaction action = {};
+   action.sa_handler = handler;
+   sigemptyset(&action.sa_mask);
+   action.sa_flags = 0;
+   return sigaction (sig, &action, NULL);
+}
+
 /// Initialise the application resources
 void App_init(ClientOptions *options) {
   if (client != NULL) return; // Already initialised
 
   // Register shutdown function
   atexit(App_cleanup);
+
+  // Copy the settings for later use
+  memcpy(&settings, options, sizeof(ClientOptions));
+
+  App_catch(SIGSEGV, App_terminate);
 
 // Initialise sockets on Windows
 #if defined(_WIN32)
@@ -66,9 +107,6 @@ void App_init(ClientOptions *options) {
     exit(EXIT_FAILURE);
   }
 #endif
-
-  // Copy the settings for later use
-  memcpy(&settings, options, sizeof(ClientOptions));
 
   // Create chat client...
   client = Client_create(&settings);
@@ -118,28 +156,6 @@ void App_authenticate() {
   if (!Client_authenticate(client, nickname)) {
     exit(EXIT_FAILURE);
   }
-}
-
-/// Sets the termination flag on SIGINT or SIGTERM
-void App_terminate(int signal) {
-  if (signal == SIGINT || signal == SIGTERM) {
-    terminate = true;
-    UITerminate();
-  } else if (signal == SIGUSR2) {
-    UIUpdateChatLog();
-  } else if (signal == SIGSEGV) {
-    // Should prevent terminal messup on crash
-    if (!isendwin()) endwin();
-  }
-}
-
-/// Catches interrupt signals
-int App_catch(int sig, void (*handler)(int)) {
-   struct sigaction action = {};
-   action.sa_handler = handler;
-   sigemptyset(&action.sa_mask);
-   action.sa_flags = 0;
-   return sigaction (sig, &action, NULL);
 }
 
 /**

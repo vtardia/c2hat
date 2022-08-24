@@ -20,7 +20,6 @@
 #include <openssl/err.h>
 
 enum {
-  kMaxClientConnections = 5,
   kMaxClientHostLength = NI_MAXHOST,
   kAuthenticationTimeout = 30, // seconds
   kChatTimeout = 3 * 60 // 3 minutes
@@ -363,7 +362,7 @@ void Server_start(Server *this) {
       Info("SSL connection using %s", SSL_get_cipher(client.ssl));
 
       pthread_t clientThreadID = 0;
-      if (clients->length < kMaxClientConnections) {
+      if (clients->length < server->maxConnections) {
 
         // Add client to the list (the client is cloned)
         pthread_mutex_lock(&clientsLock);

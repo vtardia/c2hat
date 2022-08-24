@@ -122,7 +122,7 @@ void UIInit() {
 }
 
 /// First responder
-int UIInputLoop(wchar_t *buffer, size_t length) {
+int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
   memset(buffer, 0, length * sizeof(wchar_t));
 
   wint_t ch = 0;
@@ -137,7 +137,8 @@ int UIInputLoop(wchar_t *buffer, size_t length) {
         break;
       } else if (update) {
         update = false;
-        return kUIUpdate;
+        updateHandler();
+        continue;
       // } else if ( resize ) {
       //   return kUIResize;
       } else if (errno == EINTR) {

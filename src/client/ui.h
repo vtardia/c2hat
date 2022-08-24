@@ -36,8 +36,9 @@
    *
    * param[in] buffer Array of Unicode characters
    * param[in] length Max characters to be stored into the buffer
+   * param[in] updateHandler A function to be called to update the chatlog
    */
-  int UIInputLoop(wchar_t *buffer, size_t length);
+  int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)());
 
   // Signals the UI to terminate
   // Required to interrupt the input loop

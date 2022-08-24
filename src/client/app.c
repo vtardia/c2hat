@@ -229,6 +229,19 @@ void *App_listen(void *data) {
 }
 
 /**
+ * Handler to be injected into the input loop
+ * to manage chatlog updates
+ */
+void App_updateHandler() {
+  while (true) {
+    QueueData *item = CQueue_tryPop(messages);
+    if (item == NULL) break;
+    UILogMessage(item->content, item->length);
+    QueueData_free(&item);
+  }
+}
+
+/**
  * Starts the application infinite loop
  * It needs to be called after UIInit()
  */
@@ -238,7 +251,7 @@ void App_run() {
 
   wchar_t buffer[kMaxMessageLength] = {};
   while (!terminate) {
-    int res = UIInputLoop(buffer, kMaxMessageLength);
+    int res = UIInputLoop(buffer, kMaxMessageLength, App_updateHandler);
     if (res > 0) {
       // Message to be sent to server
       // Clean input buffer
@@ -266,14 +279,6 @@ void App_run() {
     } else if (res == kUITerminate) {
       terminate = true;
       break;
-    } else if (res == kUIUpdate) {
-      // There are new incoming messages to display
-      while (true) {
-        QueueData *item = CQueue_tryPop(messages);
-        if (item == NULL) break;
-        UILogMessage(item->content, item->length);
-        QueueData_free(&item);
-      }
     } else if (res == kUIResize) {
       // Trigger a resize
     }

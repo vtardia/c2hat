@@ -30,11 +30,11 @@ enum config {
 };
 
 #define UISetInputCounter() { \
-  int current = 0; \
-  int max = 0; \
-  UIInputWin_getCount(&current, &max);\
+  int current = 0;                                              \
+  int max = 0;                                                  \
+  UIInputWin_getCount(&current, &max);                          \
   UIStatus_set(kUIStatusPositionRight, "%4d/%d", current, max); \
-  UIInputWin_getCursor(); \
+  UIInputWin_getCursor();                                       \
 }
 
 /**
@@ -121,20 +121,7 @@ void UIInit() {
   UIRender();
 }
 
-/**
- * First responder
- *
- * Manages errors and special characters
- *
- * Returns:
- *
- *  0   on F1/terminate
- *  >0  on new input message to send
- *  -1  on messages available
- *  -2  on resize
- *  -10 on other error
- */
-//
+/// First responder
 int UIInputLoop(wchar_t *buffer, size_t length) {
   memset(buffer, 0, length * sizeof(wchar_t));
 
@@ -193,10 +180,11 @@ int UIInputLoop(wchar_t *buffer, size_t length) {
       break;
 
       case kKeyESC:
-        if (UIChatWin_getStatus() == kChatWinStatusBrowse) {
+        if (UIChatWin_getMode() == kChatWinModeBrowse) {
           // If in browse mode, exit and go live
-          // UISetChatModeLive();
-          // UIDrawChatWinContent();
+          UIChatWin_setMode(kChatWinModeLive);
+          UISetStatus(""); // Updates mode on status bar
+          UIInputWin_getCursor();
         } else {
           // If in Live mode, cancel any input operation and reset everything
           UIInputWin_reset();
@@ -231,12 +219,21 @@ int UIInputLoop(wchar_t *buffer, size_t length) {
       break;
 
       case KEY_PPAGE: // Page up
-        // If Browse mode: display previous page if available
-        // If Live mode: set browse mode
+        if (UIChatWin_getMode() == kChatWinModeBrowse) {
+          // Display the previous screen if available
+          UIChatWin_previousPage();
+        } else {
+          // Set browse mode
+          UIChatWin_setMode(kChatWinModeBrowse);
+          UISetStatus(""); // Updates mode on status bar
+        }
       break;
 
       case KEY_NPAGE: // Page down
-        // If Browse mode: display next page if available
+        if (UIChatWin_getMode() == kChatWinModeBrowse) {
+          // Display the next screen if available
+          UIChatWin_nextPage();
+        }
       break;
 
       default:
@@ -250,7 +247,6 @@ int UIInputLoop(wchar_t *buffer, size_t length) {
   }
   // An input error happened, cleanup and return error
   memset(buffer, 0, length * sizeof(wchar_t));
-  // TODO reset inputwin?
   return kUITerminate;
 }
 
@@ -299,7 +295,7 @@ bool UISetStatus(char *format, ...) {
   return UIStatus_set(
     kUIStatusPositionLeft,
     "[%s] [%d,%d] %s",
-    UIChatWin_getStatus() == kChatWinStatusBrowse ? "B" : "C",
+    UIChatWin_getMode() == kChatWinModeBrowse ? "B" : "C",
     screen.lines, screen.cols,
     message
   );

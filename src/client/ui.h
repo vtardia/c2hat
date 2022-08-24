@@ -20,7 +20,17 @@
   void UIClean();
 
   /**
-   * Runs the UI input loop
+   * Runs the main UI input loop as a first responder
+   *
+   * Manages errors, interrupts and special characters
+   *
+   * Returns values:
+   *
+   *    0   on F1/terminate
+   *   >0   on new input message to send
+   *   -1   on messages available
+   *   -2   on resize
+   *  -10   on other error
    *
    * NOTE: the real size of buffer is length * sizeof(wchar_t)
    *

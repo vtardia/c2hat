@@ -148,7 +148,6 @@ void UIInputWin_reset() {
   this.cursor = 0;
   this.eom = 0;
   memset(this.buffer, 0, this.length * sizeof(wchar_t));
-  // UISetInputCounter(inputWinEom, inputWinEob);
 }
 
 void UIInputWin_init(wchar_t *buffer, size_t length) {

@@ -5,10 +5,10 @@
 
   typedef enum {
     /// The chat window is currently receiving messages in real time
-    kChatWinStatusLive = 1,
+    kChatWinModeLive = 1,
     /// The user is currently navigating the chat window with page keys
-    kChatWinStatusBrowse = 2
-  } UIChatWinStatus;
+    kChatWinModeBrowse = 2
+  } UIChatWinMode;
 
   /// Renders the chat window and its contents
   void UIChatWin_render(const UIScreen *screen, size_t height, const char *title);
@@ -25,9 +25,19 @@
 
   void UIChatWin_destroy();
 
-  /// Returns the current status of the chat window: live or browse mode
-  UIChatWinStatus UIChatWin_getStatus();
+  /// Returns the current display mode of the chat window: live or browse mode
+  UIChatWinMode UIChatWin_getMode();
+
+  /// Modifies the display mode of the chat window
+  void UIChatWin_setMode(UIChatWinMode mode);
 
   /// Initialises the chat window and its data structures
   bool UIChatWin_init();
+
+  /// Navigates to the previous screen if browse mode is set and content is available
+  void UIChatWin_previousPage();
+
+  /// Navigates to the next screen if browse mode is set and content is available
+  void UIChatWin_nextPage();
+
 #endif

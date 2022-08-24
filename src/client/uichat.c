@@ -18,7 +18,8 @@ typedef struct {
   int lines;
   int cols;
   size_t pageSize;
-  UIChatWinStatus status;
+  int currentLine;
+  UIChatWinMode mode;
 } UIChatWin;
 
 enum {
@@ -30,7 +31,7 @@ enum {
 static UIChatWinBox wrapper = {};
 
 /// The internal scrollable chat log window
-static UIChatWin this = { .status = kChatWinStatusLive };
+static UIChatWin this = { .mode = kChatWinModeLive };
 
 /// Dynamic list that caches the chatlog content
 static List *chatlog = NULL;
@@ -43,6 +44,8 @@ static int colors = kColorPairGreenOnDefault + 1;
 
 /// Set to true on init if the terminal supports more colors
 static bool extendedColors = false;
+
+void UIChatWin_write(ChatLogEntry *entry, bool refresh);
 
 bool UIChatWin_init() {
   // Initialise Users hash
@@ -64,6 +67,40 @@ bool UIChatWin_init() {
   extendedColors = (colors > (kColorPairWhiteOnRed + 1));
 
   return true;
+}
+
+void UIChatWin_updateContent(bool refresh) {
+  if (chatlog == NULL || chatlog->length == 0) return;
+
+  // Writing on the last line will make the window scroll
+  int start = 0;
+  wclear(this.handle);
+  wmove(this.handle, 0, 0);
+
+  if (this.mode == kChatWinModeLive) {
+    start = chatlog->length - this.pageSize;
+    if (start < 0) start = 0;
+    for (int line = start; line < chatlog->length; line++) {
+      ChatLogEntry *entry = (ChatLogEntry *) List_item(chatlog, line);
+      if (entry != NULL) {
+        UIChatWin_write(entry, false);
+      }
+    }
+  } else if (this.mode == kChatWinModeBrowse) {
+    // A page up/down key handler will manage the current line pointer
+    start = this.currentLine;
+    int end = start + this.pageSize;
+    if (end >= chatlog->length) end = chatlog->length;
+    int line = start;
+    while (line < end) {
+      ChatLogEntry *entry = (ChatLogEntry *) List_item(chatlog, line);
+      if (entry != NULL) {
+        UIChatWin_write(entry, false);
+      }
+      line++;
+    }
+  }
+  if (refresh) wrefresh(this.handle);
 }
 
 void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) {
@@ -94,7 +131,6 @@ void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) 
   // Set the internal window as scrollable
   scrollok(this.handle, TRUE);
   leaveok(this.handle, TRUE);
-  wrefresh(this.handle);
   getmaxyx(this.handle, this.lines, this.cols);
 
   // Available display lines
@@ -102,6 +138,8 @@ void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) 
   this.pageSize = this.lines - 1;
 
   // Add content rendering here
+  UIChatWin_updateContent(false);
+  wrefresh(this.handle);
 }
 
 /**
@@ -220,7 +258,7 @@ void UIChatWin_logMessage(const char *buffer, size_t length) {
   }
 
   // Display the message on the log window if in 'follow' mode
-  if (this.status == kChatWinStatusLive) UIChatWin_write(entry, true);
+  if (this.mode == kChatWinModeLive) UIChatWin_write(entry, true);
 
   // Destroy the temporary entry
   ChatLogEntry_free(&entry);
@@ -237,6 +275,39 @@ void UIChatWin_destroy() {
   List_free(&chatlog);
 }
 
-UIChatWinStatus UIChatWin_getStatus() {
-  return this.status;
+UIChatWinMode UIChatWin_getMode() {
+  return this.mode;
+}
+
+void UIChatWin_setMode(UIChatWinMode mode) {
+  if (this.mode == mode) return;
+
+  this.mode = mode;
+  if (this.mode == kChatWinModeBrowse) {
+    if (chatlog && chatlog->length > this.lines) {
+      // Position the line pointer at the start ot the page
+      this.currentLine = chatlog->length - this.lines;
+    }
+    curs_set(kCursorStateInvisible);
+  } else /* default to kChatWinModeLive */ {
+    if (chatlog && chatlog->length > 0) {
+      this.currentLine = chatlog->length -1;
+    }
+    curs_set(kCursorStateNormal);
+  }
+  UIChatWin_updateContent(true);
+}
+
+void UIChatWin_previousPage() {
+  this.currentLine -= this.pageSize;
+  if (this.currentLine < 0) this.currentLine = 0;
+  UIChatWin_updateContent(true);
+}
+
+void UIChatWin_nextPage() {
+  if (this.currentLine < (int)(chatlog->length - this.pageSize)) {
+    this.currentLine += this.pageSize;
+    if (this.currentLine > chatlog->length) this.currentLine -= chatlog->length - 1;
+    UIChatWin_updateContent(true);
+  }
 }

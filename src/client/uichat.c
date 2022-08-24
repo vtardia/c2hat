@@ -271,8 +271,8 @@ void UIChatWin_destroy() {
   UIWindow_destroy(wrapper.handle);
   memset(&wrapper, 0, sizeof(UIChatWinBox));
 
-  Hash_free(&users);
-  List_free(&chatlog);
+  if (users != NULL) Hash_free(&users);
+  if (chatlog != NULL) List_free(&chatlog);
 }
 
 UIChatWinMode UIChatWin_getMode() {

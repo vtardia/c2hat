@@ -11,7 +11,7 @@ CFLAGS = -Wall -Wextra -Werror -std=c17 -O3 -I src/lib
 LDFLAGS = -L lib
 LDLIBS = -lpthread -lssl -lcrypto
 SERVERLIBS =
-CLIENTLIBS = -ldl -lncursesw
+CLIENTLIBS = -ldl -lncursesw -lm
 TESTCONFIGLIBS =
 
 # Installation prefix

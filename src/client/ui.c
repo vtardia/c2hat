@@ -4,6 +4,7 @@
 #include <time.h>
 #include <stdatomic.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "../c2hat.h"
 #include "logger/logger.h"

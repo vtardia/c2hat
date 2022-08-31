@@ -1,5 +1,6 @@
 #include "uiinput.h"
 #include <string.h>
+#include <wctype.h>
 
 typedef struct {
   WINDOW *handle;

@@ -8,9 +8,7 @@
   #include <ncurses.h>
 
   enum UIInputLoopStatus {
-    kUITerminate = 0,
-    kUIUpdate = -1,
-    kUIResize = -2
+    kUITerminate = 0
   };
 
   // Initialises the UI engine
@@ -28,9 +26,7 @@
    *
    *    0   on F1/terminate
    *   >0   on new input message to send
-   *   -1   on messages available
-   *   -2   on resize
-   *  -10   on other error
+   *   -1   on other error
    *
    * NOTE: the real size of buffer is length * sizeof(wchar_t)
    *
@@ -43,6 +39,9 @@
   // Signals the UI to terminate
   // Required to interrupt the input loop
   void UITerminate();
+
+  /// Signals the UI to trigger a resize
+  void UIResize();
 
   // Signals the UI to update the chat log
   // Required to interrupt the input loop

@@ -8,14 +8,19 @@
   };
 
   typedef enum {
-    kUIStatusPositionLeft = 0,
-    kUIStatusPositionRight = 1
-  } UIStatusPosition;
+    kUIStatusMode = 0,
+    kUIStatusTerminalSize = 1,
+    kUIStatusMessage = 2,
+    kUIStatusinputCounter = 3
+  } UIStatusArea;
 
   void UIStatusBar_render(const UIScreen *screen);
 
   void UIStatusBar_destroy();
 
-  /// Updates the status bar text at the given position
-  bool UIStatus_set(UIStatusPosition position, char *format, ...);
+  /// Updates the status bar text for the area area
+  bool UIStatus_set(UIStatusArea area, char *format, ...);
+
+  /// Retrieves the current status message (left side)
+  void UIStatus_get(char *buffer, size_t length);
 #endif

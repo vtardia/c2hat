@@ -1,10 +1,10 @@
 #include "uiinput.h"
 #include <string.h>
-#include "logger/logger.h"
 
 typedef struct {
   WINDOW *handle;
-  int height;
+  int lines;
+  int cols;
 } UIInputWinBox;
 
 typedef struct {
@@ -13,8 +13,6 @@ typedef struct {
   int cols;
   int y;           //< current cursor line
   int x;           //< current cursor column
-  int maxY;        //< max cursor line
-  int maxX;        //< max cursor column
   int cursor;      //< Variable index pointer that follow the cursor on the window
   int eom;         //< Variable index pointer that point to the end of the typed message
   int eob;         //< Keeps track of character limit for the input message,
@@ -32,29 +30,30 @@ static UIInputWinBox wrapper = {};
 static UIInputWin this = {};
 
 // Gets the position of the cursor in the current window
-#define UIInputWin_locate() { \
-  getyx(this.handle, this.y, this.x); \
-  getmaxyx(this.handle, this.maxY, this.maxX); \
+#define UIInputWin_locate() {                   \
+  getyx(this.handle, this.y, this.x);           \
+  getmaxyx(this.handle, this.lines, this.cols); \
 }
 
 void UIInputWin_render(const UIScreen *screen, size_t height, size_t start) {
+  // This happens on resize: it's safer and faster to destroy and recreate the window
+  if (this.handle != NULL) UIWindow_destroy(this.handle);
+  if (wrapper.handle != NULL) UIWindow_destroy(wrapper.handle);
+
   // Input box container: 20% tall, 100% wide, starts at the bottom of the chat box
-  if (wrapper.handle == NULL) {
-    wrapper.handle = subwin(screen->handle, height, screen->cols, start, 0);
-    wborder(wrapper.handle, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
-    wrefresh(wrapper.handle);
-  }
+  wrapper.handle = derwin(screen->handle, height, screen->cols, start, 0);
+  getmaxyx(wrapper.handle, wrapper.lines, wrapper.cols);
+  wborder(wrapper.handle, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
 
   // Input box, within the container
-  if (this.handle == NULL) {
-    this.handle = subwin(wrapper.handle, (height - 2), (screen->cols - 2), (start + 1), 1);
-    wrefresh(this.handle);
-  }
+  this.handle = derwin(wrapper.handle, (wrapper.lines - 2), (wrapper.cols - 2), 1, 1);
 
-  // To be done after each resize
-  getmaxyx(this.handle, this.maxY, this.maxX);
+  UIInputWin_locate();
+  wnoutrefresh(wrapper.handle);
+  wnoutrefresh(this.handle);
 }
 
+/// Cleanup mamory and resources
 void UIInputWin_destroy() {
   UIWindow_destroy(this.handle);
   memset(&this, 0, sizeof(UIInputWin));
@@ -62,19 +61,22 @@ void UIInputWin_destroy() {
   memset(&wrapper, 0, sizeof(UIInputWinBox));
 }
 
+/// Grab the cursor
 void UIInputWin_getCursor() {
   wcursyncup(this.handle);
 }
 
+/**
+ * Deletes the character at the current position,
+ * and move to a new position and update the counters
+ */
 void UIInputWin_delete() {
   UIInputWin_locate();
-  // Delete the character at the current position,
-  // move to a new position and update the counters
   if (this.cursor > 0) {
     int newX, newY;
     if (this.x == 0) {
       // Y must be > 0 if we have text (cursor > 0)
-      newX = this.maxX - 1;
+      newX = this.cols - 1;
       newY = this.y - 1;
     } else {
       // X > 0, Y = whatever
@@ -86,10 +88,10 @@ void UIInputWin_delete() {
       this.eom--;
       wrefresh(this.handle);
     }
-    // UISetInputCounter(this.eom, this.eob);
   }
 }
 
+/// Adds a character to the input window at the current cursor position
 void UIInputWin_addChar(wint_t ch) {
   UIInputWin_locate();
   // If we have space, AND the input character is not a control char,
@@ -104,7 +106,7 @@ void UIInputWin_addChar(wint_t ch) {
     }
     // Inserting content in the middle of a line
     if (this.cursor < this.eom && (wins_wstr(this.handle, wstr) != ERR)) {
-      if (this.x < this.maxX && wmove(this.handle, this.y, this.x + wccols) != ERR) {
+      if (this.x < this.cols && wmove(this.handle, this.y, this.x + wccols) != ERR) {
         this.cursor += wccols;
         this.eom += wccols;
       } else if (wmove(this.handle, this.y + 1, 0) != ERR) {
@@ -114,33 +116,42 @@ void UIInputWin_addChar(wint_t ch) {
       // Don't update the cursor if you can't move
     }
     wrefresh(this.handle);
-    // UISetInputCounter(inputWinEom, inputWinEob);
   }
 }
 
+/**
+ * Collects the content of the input window into a message
+ * and returns it to the calling function
+ */
 size_t UIInputWin_commit() {
+  if (this.buffer == NULL || this.eom == 0) return 0;
+
   // Points to the end of every read block
   wchar_t *cur = this.buffer;
   // mvwinnwstr() reads only one line at a time so we need a loop
-  for (int i = 0; i < this.maxY; i++) {
+  for (int i = 0; i < this.lines; i++) {
     // thisEob - (cur - buffer) = remaning available unread bytes in the buffer
     int read = mvwinnwstr(this.handle, i, 0, cur, (this.eob - (cur - this.buffer)));
     if (read != ERR) {
       cur += read;
     }
   }
+  int total = this.eom;
+
   // Once the input message is collected, clean the window
   wmove(this.handle, 0, 0);
   wclear(this.handle);
   wrefresh(this.handle);
   this.eom = 0;
+
   // ...and return it to the caller
-  if ((cur - this.buffer) > 0) {
-    return wcslen(this.buffer) + 1;
+  if (total > 0) {
+    return total + 1;
   }
   return 0; // Nothing to read
 }
 
+/// Resets the content and cursor position
 void UIInputWin_reset() {
   wmove(this.handle, 0, 0);
   wclear(this.handle);
@@ -150,6 +161,7 @@ void UIInputWin_reset() {
   memset(this.buffer, 0, this.length * sizeof(wchar_t));
 }
 
+/// Prepares the input window for receiving data
 void UIInputWin_init(wchar_t *buffer, size_t length) {
   this.cursor = 0;
   this.buffer = buffer;
@@ -167,11 +179,12 @@ void UIInputWin_init(wchar_t *buffer, size_t length) {
   wclear(this.handle);
   wrefresh(this.handle);
   getyx(this.handle, this.y, this.x);
-  if (this.eob > (this.maxX * this.maxY)) {
-    this.eob = this.maxX * this.maxY;
+  if (this.eob > (this.cols * this.lines)) {
+    this.eob = this.cols * this.lines;
   }
 }
 
+/// Gets the current and max length of the input content
 void UIInputWin_getCount(int *current, int *max) {
   *current = this.eom;
   *max = this.eob;
@@ -182,7 +195,7 @@ void MoveLeft() {
   if (this.y > 0 && this.x == 0) {
     // The text cursor is at the beginning of line 2+,
     // move at the end of the previous line
-    if (wmove(this.handle, this.y - 1, this.maxX - 1) != ERR) {
+    if (wmove(this.handle, this.y - 1, this.cols - 1) != ERR) {
       wrefresh(this.handle);
       if (this.cursor > 0) this.cursor--;
     }
@@ -194,13 +207,12 @@ void MoveLeft() {
       if (this.cursor > 0) this.cursor--;
     }
   }
-  // UISetInputCounter(this.eom, this.eob);
 }
 
 void MoveRight() {
   // Move the cursor back, if possible
   // We can move to the right only of there is already text
-  if (this.eom > ((this.y * this.maxX) + this.x)) {
+  if (this.eom > ((this.y * this.cols) + this.x)) {
     if (wmove(this.handle, this.y, this.x + 1) != ERR) {
       wrefresh(this.handle);
       this.cursor++;
@@ -215,7 +227,7 @@ void MoveUp() {
   if (this.y > 0) {
     if (wmove(this.handle, this.y - 1, this.x) != ERR) {
       wrefresh(this.handle);
-      this.cursor -= this.maxX;
+      this.cursor -= this.cols;
     }
   }
 }
@@ -223,10 +235,10 @@ void MoveUp() {
 void MoveDown() {
   // Move the cursor to the line below,
   // but only if there is enough text in the line below
-  if (this.y < (this.maxY - 1) && this.eom >= (this.maxX + this.x)) {
+  if (this.y < (this.lines - 1) && this.eom >= (this.cols + this.x)) {
     if (wmove(this.handle, this.y + 1, this.x) != ERR) {
       wrefresh(this.handle);
-      this.cursor += this.maxX;
+      this.cursor += this.cols;
     }
   }
 }

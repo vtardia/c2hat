@@ -10,7 +10,8 @@
 
 typedef struct {
   WINDOW *handle;
-  int height;
+  int lines;
+  int cols;
 } UIChatWinBox;
 
 typedef struct {
@@ -69,6 +70,7 @@ bool UIChatWin_init() {
   return true;
 }
 
+/// Updates the content of the chat window with the content of the data buffer
 void UIChatWin_updateContent(bool refresh) {
   if (chatlog == NULL || chatlog->length == 0) return;
 
@@ -78,6 +80,7 @@ void UIChatWin_updateContent(bool refresh) {
   wmove(this.handle, 0, 0);
 
   if (this.mode == kChatWinModeLive) {
+    // Display the content of the last page (tail)
     start = chatlog->length - this.pageSize;
     if (start < 0) start = 0;
     for (int line = start; line < chatlog->length; line++) {
@@ -87,7 +90,7 @@ void UIChatWin_updateContent(bool refresh) {
       }
     }
   } else if (this.mode == kChatWinModeBrowse) {
-    // A page up/down key handler will manage the current line pointer
+    // Display the content of the current page, updated with page up/down keys
     start = this.currentLine;
     int end = start + this.pageSize;
     if (end >= chatlog->length) end = chatlog->length;
@@ -103,23 +106,38 @@ void UIChatWin_updateContent(bool refresh) {
   if (refresh) wrefresh(this.handle);
 }
 
+/// Creates or resizes the chat window
 void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) {
   if (wrapper.handle == NULL) {
     // Create the chat window container as a sub window of the main screen:
     // ~80% tall, 100% wide, starts at top left
     wrapper.handle = derwin(screen->handle, height, screen->cols, 0, 0);
+  } else {
+    // Resize
+    UIWindow_reset(wrapper.handle);
+    mvderwin(wrapper.handle, 0, 0);
+    wresize(wrapper.handle, height, screen->cols);
+    wnoutrefresh(wrapper.handle);
   }
+  getmaxyx(wrapper.handle, wrapper.lines, wrapper.cols);
+
   if (this.handle == NULL) {
     // Draw the scrollable chat log box, within the chat window
-    this.handle = subwin(wrapper.handle, (height - 1), (screen->cols - 2), 1, 1);
+    this.handle = derwin(wrapper.handle, (wrapper.lines - 1), (wrapper.cols - 2) , 1, 1);
+  } else {
+    // Resize
+    UIWindow_reset(this.handle);
+    mvderwin(this.handle, 1, 1);
+    wresize(this.handle, (wrapper.lines - 1), (wrapper.cols - 2));
+    wnoutrefresh(this.handle);
   }
+  getmaxyx(this.handle, this.lines, this.cols);
 
   // Add border, just top and bottom to avoid breaking the layout
   // when the user inserts emojis
   // win, left side, right side, top side, bottom side,
   // corners: top left, top right, bottom left, bottom right
   wborder(wrapper.handle, ' ', ' ', 0, ' ', ' ', ' ', ' ', ' ');
-  wrapper.height = height;
 
   // Draw title
   size_t titleLength = strlen(title);
@@ -131,15 +149,17 @@ void UIChatWin_render(const UIScreen *screen, size_t height, const char *title) 
   // Set the internal window as scrollable
   scrollok(this.handle, TRUE);
   leaveok(this.handle, TRUE);
-  getmaxyx(this.handle, this.lines, this.cols);
 
   // Available display lines
   // (writing on the last line will make the window scroll)
   this.pageSize = this.lines - 1;
 
-  // Add content rendering here
+  // Update the content if the buffer has data
   UIChatWin_updateContent(false);
-  wrefresh(this.handle);
+
+  // Refresh everything
+  wnoutrefresh(wrapper.handle);
+  wnoutrefresh(this.handle);
 }
 
 /**
@@ -154,7 +174,6 @@ int GetUserColor(char *userName) {
 
     // Use extended colors if available
     if (extendedColors) {
-      Debug("Using extended colors for user %s", userName);
       nextColor += kColorPairWhiteOnRed;
     }
   }
@@ -178,6 +197,7 @@ int GetUserColor(char *userName) {
   return *color;
 }
 
+/// Writes a single log entry to the chat window, with different formatting
 void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
   if (entry == NULL || entry->length == 0) return;
 
@@ -226,6 +246,7 @@ void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
   if (refresh) wrefresh(this.handle);
 }
 
+/// Adds a message/entry in the data/log buffer
 void UIChatWin_logMessage(const char *buffer, size_t length) {
   // Process the server data into a temporary entry
   ChatLogEntry *entry = ChatLogEntry_create((char *)buffer, length);
@@ -243,9 +264,9 @@ void UIChatWin_logMessage(const char *buffer, size_t length) {
     List_delete(chatlog, 0);
   }
 
-  // Do other actions based on entry content (e.g. deleting a user from the Hash list)
+  // Do some other actions based on entry content...
 
-  // Intercept user disconnection message to get user name from the message i
+  // Intercept user disconnection message to get user name from the message
   // and remove it from the users hash
   if (entry->type == kMessageTypeLog && strlen(entry->username)
     && strstr(entry->content, "left the chat") != NULL) {
@@ -264,6 +285,7 @@ void UIChatWin_logMessage(const char *buffer, size_t length) {
   ChatLogEntry_free(&entry);
 }
 
+/// Cleanup and free resources
 void UIChatWin_destroy() {
   UIWindow_destroy(this.handle);
   memset(&this, 0, sizeof(UIChatWin));
@@ -275,10 +297,12 @@ void UIChatWin_destroy() {
   if (chatlog != NULL) List_free(&chatlog);
 }
 
+/// Returns the current display mode of the chatlog window
 UIChatWinMode UIChatWin_getMode() {
   return this.mode;
 }
 
+/// Updates the display mode of the chat window and refreshes the content
 void UIChatWin_setMode(UIChatWinMode mode) {
   if (this.mode == mode) return;
 
@@ -298,12 +322,14 @@ void UIChatWin_setMode(UIChatWinMode mode) {
   UIChatWin_updateContent(true);
 }
 
+/// Displays the previous page of buffered data
 void UIChatWin_previousPage() {
   this.currentLine -= this.pageSize;
   if (this.currentLine < 0) this.currentLine = 0;
   UIChatWin_updateContent(true);
 }
 
+/// Displays the next page of buffered data
 void UIChatWin_nextPage() {
   if (this.currentLine < (int)(chatlog->length - this.pageSize)) {
     this.currentLine += this.pageSize;

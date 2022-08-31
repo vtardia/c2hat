@@ -53,12 +53,14 @@ void App_cleanup() {
 }
 
 /// Sets the termination flag on SIGINT or SIGTERM
-void App_terminate(int signal) {
+void App_handleSignal(int signal) {
   if (signal == SIGINT || signal == SIGTERM) {
     terminate = true;
     UITerminate();
   } else if (signal == SIGUSR2) {
     UIUpdateChatLog();
+  } else if (signal == SIGWINCH) {
+    UIResize();
   } else if (signal == SIGSEGV) {
     // Should prevent terminal messup on crash
     if (!isendwin()) endwin();
@@ -75,6 +77,8 @@ void App_terminate(int signal) {
       write(STDERR_FILENO, error, strlen(error));
     }
     exit(EXIT_FAILURE);
+  } else {
+    Info("Unhandled signal received %s", strerror(errno));
   }
 }
 
@@ -97,7 +101,7 @@ void App_init(ClientOptions *options) {
   // Copy the settings for later use
   memcpy(&settings, options, sizeof(ClientOptions));
 
-  App_catch(SIGSEGV, App_terminate);
+  App_catch(SIGSEGV, App_handleSignal);
 
 // Initialise sockets on Windows
 #if defined(_WIN32)
@@ -261,26 +265,30 @@ void App_run() {
       char messageBuffer[kBufferSize] = {};
       wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
 
-      int messageType = Message_getType(messageBuffer);
-      if (messageType == kMessageTypeQuit) break;
+      // Send it to the server if non empty
+      if (strlen(messageBuffer) > 0) {
+        int messageType = Message_getType(messageBuffer);
+        if (messageType == kMessageTypeQuit) break;
 
-      // If the input is not a command, wrap it into a message payload
-      char message[kBufferSize] = {};
-      if (!messageType) {
-        Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
-      } else {
-        // Send the message as is
-        memcpy(message, messageBuffer, res);
+        // If the input is not a command, wrap it into a message payload
+        char message[kBufferSize] = {};
+        if (!messageType) {
+          Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
+        } else {
+          // Send the message as is
+          memcpy(message, messageBuffer, res);
+        }
+        int sent = Client_send(client, message, strlen(message) + 1);
+
+        // If the connection drops, break and close
+        if (sent < 0) break;
       }
-      int sent = Client_send(client, message, strlen(message) + 1);
-
-      // If the connection drops, break and close
-      if (sent < 0) break;
     } else if (res == kUITerminate) {
       terminate = true;
       break;
-    } else if (res == kUIResize) {
-      // Trigger a resize
+    } else {
+      Error("Unhandled input loop error: %s", strerror(errno));
+      break;
     }
   }
 
@@ -291,15 +299,15 @@ void App_run() {
 int App_start() {
   messages = CQueue_new();
   if (messages == NULL) {
-    Error("Unable to initialise message queue: %s\n", strerror(errno));
+    Error("Unable to initialise message queue: %s", strerror(errno));
     return EXIT_FAILURE;
   }
 
   // Set up event handlers
-  App_catch(SIGINT, App_terminate);
-  App_catch(SIGTERM, App_terminate);
-  App_catch(SIGUSR2, App_terminate);
-  // App_catch(SIGWINCH, UIResizeHandler);
+  App_catch(SIGINT, App_handleSignal);
+  App_catch(SIGTERM, App_handleSignal);
+  App_catch(SIGUSR2, App_handleSignal);
+  App_catch(SIGWINCH, App_handleSignal);
 
   // Initialise NCurses UI engine
   UIInit();

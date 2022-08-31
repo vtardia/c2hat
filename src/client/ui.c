@@ -24,6 +24,9 @@ static atomic_bool terminate = false;
 /// Input loop update-ready flag
 static atomic_bool update = false;
 
+/// Input loop resize flag
+static atomic_bool resize = false;
+
 enum config {
   /// Max message length, in characters, including the NULL terminator
   kMaxMessageLength = 281
@@ -33,9 +36,13 @@ enum config {
   int current = 0;                                              \
   int max = 0;                                                  \
   UIInputWin_getCount(&current, &max);                          \
-  UIStatus_set(kUIStatusPositionRight, "%4d/%d", current, max); \
+  UIStatus_set(kUIStatusinputCounter, "%4d/%d", current, max);  \
   UIInputWin_getCursor();                                       \
 }
+
+#define UISetStatusMode() UIStatus_set(kUIStatusMode, "%c", UIChatWin_getMode() == kChatWinModeBrowse ? 'B' : 'C');
+
+#define UISetStatusSize() UIStatus_set(kUIStatusTerminalSize, "%d,%d", screen.lines, screen.cols);
 
 /**
  * Cleans up the visual environment
@@ -51,9 +58,17 @@ void UIClean() {
   endwin();
 }
 
-void UIRender() {
-  if (UIScreen_isBigEnough(&screen, kMaxMessageLength)) {
+void UIRender(bool resized) {
+  if (resized) {
+    UIWindow_reset(screen.handle);
+    getmaxyx(screen.handle, screen.lines, screen.cols);
+    if (wresize(screen.handle, screen.lines, screen.cols) != OK) {
+      Error("Problems while resizing the main screen");
+    }
+    wclear(screen.handle);
+  }
 
+  if (UIScreen_isBigEnough(&screen, kMaxMessageLength)) {
     // Set the sizes of container windows based on the current terminal
     // With narrow terminals we need 4 input lines to fit the whole message
     // so the chat log will be smaller. With wider terminals we can get away
@@ -64,10 +79,20 @@ void UIRender() {
     size_t chatWinBoxHeight = inputWinBoxStart;
 
     UIChatWin_render(&screen, chatWinBoxHeight, " C2Hat ");
+
     UIInputWin_render(&screen, inputWinBoxHeight, inputWinBoxStart);
+    UIInputWin_reset();
+
     UIStatusBar_render(&screen);
-    curs_set(kCursorStateNormal);
-    UIInputWin_getCursor();
+    UISetStatusMode();
+    UISetStatusSize();
+
+    if (UIChatWin_getMode() == kChatWinModeLive) {
+      curs_set(kCursorStateNormal);
+      UIInputWin_getCursor();
+    }
+    wnoutrefresh(screen.handle);
+    doupdate();
     return;
   }
   UIRender_terminalTooSmall(&screen);
@@ -118,7 +143,7 @@ void UIInit() {
 
   if (!UIChatWin_init()) exit(EXIT_FAILURE);
 
-  UIRender();
+  UIRender(false);
 }
 
 /// First responder
@@ -133,27 +158,35 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
 
     if (res == ERR) /* Including EINTR */ {
       if (terminate) {
-        Debug("Loop break on terminate");
         break;
       } else if (update) {
         update = false;
-        updateHandler();
+        if (UIScreen_isBigEnough(&screen, kMaxMessageLength)) {
+          updateHandler();
+        }
         continue;
-      // } else if ( resize ) {
-      //   return kUIResize;
+      } else if (resize) {
+        resize = false;
+        Info("Resize requested (flag)");
+        ch = KEY_RESIZE;
       } else if (errno == EINTR) {
         // Let event handlers take care of this
         continue;
       } else {
-        return -10; // Other error
-        // Or display error and continue
+        return -1; // Other error
       }
     }
 
     // Exit on F1
     if (ch == KEY_F(1)) {
-      Debug("Loop break on F1");
       break;
+    }
+
+    if (ch == KEY_RESIZE) {
+      Info("Resize requested (key resize)");
+      UIRender(true);
+      UISetInputCounter();
+      continue;
     }
 
     // The responsibility here should be of the Input Window
@@ -162,7 +195,6 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
       case kKeyBackspace:
       case kKeyDel:
       case KEY_BACKSPACE:
-        Debug("Delete pressed");
         // Delete the character at the current position,
         // move to a new position and update the counters
         UIInputWin_delete();
@@ -171,7 +203,6 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
 
       case kKeyEnter:
       case kKeyEOT: // Ctrl + D
-        Debug("Enter pressed");
         // Read the content of the window up to the given limit
         // and returns it to the caller function
         {
@@ -184,7 +215,7 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
         if (UIChatWin_getMode() == kChatWinModeBrowse) {
           // If in browse mode, exit and go live
           UIChatWin_setMode(kChatWinModeLive);
-          UISetStatus(""); // Updates mode on status bar
+          UISetStatusMode(); // Updates mode on status bar
           UIInputWin_getCursor();
         } else {
           // If in Live mode, cancel any input operation and reset everything
@@ -194,26 +225,22 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
       break;
 
       case KEY_LEFT:
-        Debug("Left arrow pressed");
         // Advance the cursor if possible
         UIInputWin_moveCursor(KEY_LEFT);
       break;
 
       case KEY_RIGHT:
-        Debug("Right arrow pressed");
         // Move the cursor back, if possible
         // We can move to the right only of there is already text
         UIInputWin_moveCursor(KEY_RIGHT);
       break;
 
       case KEY_UP:
-        Debug("Up arrow pressed");
         // Move the cursor to the line above, if possible
         UIInputWin_moveCursor(KEY_UP);
       break;
 
       case KEY_DOWN:
-        Debug("Down pressed");
         // Move the cursor to the line below,
         // but only if there is enough text in the line below
         UIInputWin_moveCursor(KEY_DOWN);
@@ -226,7 +253,7 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
         } else {
           // Set browse mode
           UIChatWin_setMode(kChatWinModeBrowse);
-          UISetStatus(""); // Updates mode on status bar
+          UISetStatusMode(); // Updates mode on status bar
         }
       break;
 
@@ -238,7 +265,6 @@ int UIInputLoop(wchar_t *buffer, size_t length, void(*updateHandler)()) {
       break;
 
       default:
-        Debug("Got input: %c", ch);
         // If we have space, AND the input character is not a control char,
         // add the new character to the message window
         UIInputWin_addChar(ch);
@@ -259,6 +285,13 @@ void UITerminate() {
 /// Sets update notification flag
 void UIUpdateChatLog() {
   update = true;
+}
+
+/// Sets resize flag
+void UIResize() {
+  resize = true;
+  endwin();
+  refresh();
 }
 
 /// Adds a message to the chat log queue
@@ -291,13 +324,5 @@ bool UISetStatus(char *format, ...) {
     args
   );
   va_end(args);
-
-  // Create a new format with the app data and source message
-  return UIStatus_set(
-    kUIStatusPositionLeft,
-    "[%s] [%d,%d] %s",
-    UIChatWin_getMode() == kChatWinModeBrowse ? "B" : "C",
-    screen.lines, screen.cols,
-    message
-  );
+  return UIStatus_set(kUIStatusMessage, "%s", message);
 }

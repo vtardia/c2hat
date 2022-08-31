@@ -21,8 +21,7 @@
    */
   void UIChatWin_logMessage(const char *buffer, size_t length);
 
-  // void UIChatWinBox_destroy();
-
+  /// Cleanup resources
   void UIChatWin_destroy();
 
   /// Returns the current display mode of the chat window: live or browse mode

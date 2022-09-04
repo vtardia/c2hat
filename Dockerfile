@@ -47,6 +47,7 @@ RUN apk -U add --no-cache \
     ncurses-terminfo \
     ncurses-terminfo-base \
     ca-certificates \
+    libexecinfo-dev \
  && make client \
  && mv bin/* /usr/local/bin/ \
  && make clean \

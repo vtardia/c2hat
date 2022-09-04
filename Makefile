@@ -46,6 +46,11 @@ else
 		SERVERLIBS += -lrt
 		TESTCONFIGLIBS +=  -lrt
 		CLIENTLIBS += -L/usr/lib
+        DISTRO := $(shell cat /etc/os-release | grep "NAME=" | grep -ic "Alpine")
+		ifneq ($(DISTRO),0)
+			# We have Alpine Linux
+			CLIENTLIBS += -lexecinfo
+	    endif
 	endif
 	ifeq ($(UNAME_S),Darwin)
 		OSFLAG += -D MACOS -D_XOPEN_CURSES -D_DARWIN_C_SOURCE

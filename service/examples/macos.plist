@@ -1,0 +1,34 @@
+<!--
+  Example file for a macOS launch agent (user space) or daemon (system)
+
+  Customise the details below then:
+   - save it to /Library/LaunchDaemons/<app-ID>.plist
+   - run sudo launchctl load /Library/LaunchDaemons/<app-ID>.plist to load the service
+   - run sudo launchctl unload /Library/LaunchDaemons/<app-ID>.plist to stop the service
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>dev.tardia.vito.c2hat-server</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/c2hat-server</string>
+      <string>start</string>
+      <string>--foreground</string>
+    </array>
+    <key>UserName</key>
+    <string>_c2hat</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+  	<key>StandardErrorPath</key>
+  	<string>/usr/local/c2hat/server.log</string>
+  	<key>StandardOutPath</key>
+  	<string>/usr/local/c2hat/server.log</string>
+  	<key>WorkingDirectory</key>
+  	<string>/usr/local/c2hat</string>
+  </dict>
+</plist>

@@ -284,7 +284,14 @@ C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
   message->type = Message_getType(messageData);
   char *messageContent = Message_getContent(messageData, message->type, kBufferSize);
   if (messageContent != NULL) {
-    memcpy(message->content, messageContent, kBufferSize);
+    Message_getUser(messageData, message->user, kMaxNicknameSize);
+    int userLength = strlen(message->user);
+    // If we have a user name, we extract it from the message content
+    memcpy(
+      message->content,
+      messageContent + (userLength > 0 ? userLength + 3 : 0),
+      kBufferSize
+    );
   } else {
     C2HMessage_free(&message); // set to NULL
   }

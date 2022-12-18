@@ -895,25 +895,21 @@ void* Server_handleClient(void* data) {
       }
 
       if (received > 0) {
-        int messageType = 0;
-        char *response = NULL;
+        bool quit = false;
+        C2HMessage *message = NULL;
         // Retrieve all messages available from the client's buffer
         do {
-          response = Message_get(&(client->buffer));
-          if (!response) break;
+          message = C2HMessage_get(&(client->buffer));
+          if (!message) break;
 
-          Debug("Server_handleClient - received: (%d bytes) %.*s", received, received, response);
-
-          messageType = Message_getType(response);
-          if (messageType == kMessageTypeQuit) {
-            Message_free(&response);
+          if (message->type == kMessageTypeQuit) {
+            C2HMessage_free(&message);
+            quit = true;
           } else {
-            char *messageContent = Message_getContent(response, kMessageTypeMsg, kBufferSize);
-            Message_free(&response);
             char broadcastBuffer[kBroadcastBufferSize] = {};
-            switch (messageType) {
+            switch (message->type) {
               case kMessageTypeMsg:
-                if (messageContent != NULL && strlen(messageContent) > 0) {
+                if (strlen(message->content) > 0) {
 
                   // Send /ok to the client to acknowledge the correct message
                   memset(messageBuffer, '\0', sizeof(messageBuffer));
@@ -923,18 +919,18 @@ void* Server_handleClient(void* data) {
                   // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
                   Message_format(
                     kMessageTypeMsg, broadcastBuffer, sizeof(broadcastBuffer),
-                    "[%s] %s", client->nickname, messageContent
+                    "[%s] %s", client->nickname, message->content
                   );
                   Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
-                  Message_free(&messageContent);
+                  C2HMessage_free(&message);
                 }
               break;
               default:
                 ; // Ignore for now...
             }
           }
-        } while(messageType != kMessageTypeQuit && response != NULL);
-        if (messageType == kMessageTypeQuit) break;
+        } while(message != NULL && !quit);
+        if (quit) break; // Stop listening
       }
     }
 

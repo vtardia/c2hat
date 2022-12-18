@@ -408,7 +408,7 @@ void TestC2HMessage_get() {
       '/', 'm', 's', 'g', ' ', 'H', 'e', 'l', 'l', 'o', 0, // 0-10 = 11 chars
       '/', 'm', 's', 'g', ' ', 'C', 'o', 'm', 'o', ' ', 'e', 's', 't', 'a', 's', '?', 0, // 11-27 = 17 chars
       '/', 'm', 's', 'g', // 28-31 = 4 chars
-      ' ', 'M', 'y', ' ', 'n', 'a', 'm', 'e', ' ', 'i', 's', ' ', 'J', 'o', 'h', 'n', 0, // 32-48 = 17 chars
+      ' ', '[', 'J', 'o', 'e', ']', ' ', 'I', ' ', 'a', 'm', ' ', 'J', 'o', 'h', 'n', 0, // 32-48 = 17 chars
     }
   };
   C2HMessage *message = NULL;
@@ -434,9 +434,11 @@ void TestC2HMessage_get() {
   message = C2HMessage_get(&buffer);
   assert(message->type == kMessageTypeMsg);
   printf(".");
-  assert(strlen(message->user) == 0);
+  assert(strlen(message->user) == 3);
   printf(".");
-  assert(strncmp(message->content, "My name is John", kBufferSize) == 0);
+  assert(strncmp(message->user, "Joe", kMaxNicknameSize) == 0);
+  printf(".");
+  assert(strncmp(message->content, "I am John", kBufferSize) == 0);
   printf(".");
   C2HMessage_free(&message);
 }

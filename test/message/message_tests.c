@@ -26,8 +26,6 @@
 
 #include "message/message.h"
 
-const int kMaxNicknameLength = 12;
-
 void TestMessage_getType() {
 
   // Testing error conditions
@@ -134,7 +132,7 @@ void TestMessage_getContent() {
   message = "/nick 01234567890123456789";
   content = Message_getContent(message, kMessageTypeNick, kMaxNicknameLength + 7);
   assert(content != NULL);
-  assert(strcmp(content, "012345678901") == 0);
+  assert(strcmp(content, "012345678901234") == 0);
   Message_free(&content);
   printf(".");
 
@@ -402,4 +400,43 @@ void TestMessage_get() {
 
   assert(buffer.start == NULL);
   printf(".");
+}
+
+void TestC2HMessage_get() {
+  MessageBuffer buffer = {
+    .data = {
+      '/', 'm', 's', 'g', ' ', 'H', 'e', 'l', 'l', 'o', 0, // 0-10 = 11 chars
+      '/', 'm', 's', 'g', ' ', 'C', 'o', 'm', 'o', ' ', 'e', 's', 't', 'a', 's', '?', 0, // 11-27 = 17 chars
+      '/', 'm', 's', 'g', // 28-31 = 4 chars
+      ' ', 'M', 'y', ' ', 'n', 'a', 'm', 'e', ' ', 'i', 's', ' ', 'J', 'o', 'h', 'n', 0, // 32-48 = 17 chars
+    }
+  };
+  C2HMessage *message = NULL;
+
+  message = C2HMessage_get(&buffer);
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strncmp(message->content, "Hello", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  message = C2HMessage_get(&buffer);
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strncmp(message->content, "Como estas?", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  message = C2HMessage_get(&buffer);
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strncmp(message->content, "My name is John", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
 }

@@ -274,12 +274,44 @@ char *Message_get(MessageBuffer *buffer) {
 }
 
 /**
+ * Extracts a message's content into a C2HMessage structure
+ * The returned structure needs to be freed with C2HMessage_free()
+ * @param[in] buffer
+ */
+C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
+  char *messageData = Message_get(buffer);
+  C2HMessage *message = calloc(1, sizeof(C2HMessage));
+  message->type = Message_getType(messageData);
+  char *messageContent = Message_getContent(messageData, message->type, kBufferSize);
+  if (messageContent != NULL) {
+    memcpy(message->content, messageContent, kBufferSize);
+  } else {
+    C2HMessage_free(&message); // set to NULL
+  }
+  Message_free(&messageContent);
+  Message_free(&messageData);
+  return message;
+}
+
+/**
  * Frees memory space for a message allocated by Message_getContent()
  * @param[in] message
  */
 void Message_free(char **message) {
   if (message != NULL && *message != NULL) {
     memset(*message, 0, strlen(*message));
+    free(*message);
+    *message = NULL;
+  }
+}
+
+/**
+ * Frees memory space for a message allocated by C2HMessage_get()
+ * @param[in] message
+ */
+void C2HMessage_free(C2HMessage **message) {
+  if (message != NULL && *message != NULL) {
+    memset(*message, 0, sizeof(C2HMessage));
     free(*message);
     *message = NULL;
   }

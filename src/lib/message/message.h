@@ -21,10 +21,11 @@
 
 #ifndef MESSAGE_H
 #define MESSAGE_H
+  #include "../c2hat.h"
   #include <stddef.h>
   #include <stdbool.h>
 
-  enum {
+  enum MessageType {
     kMessageTypeNick = 100,
     kMessageTypeAuth = 110,
     kMessageTypeHelp = 120,
@@ -41,11 +42,19 @@
     kMessageBufferSize = 2048
   };
 
+  typedef enum MessageType C2HMessageType;
+
   /// Holds data read from a client's connection
   typedef struct {
     char data[kMessageBufferSize];
     char *start;
   } MessageBuffer;
+
+  typedef struct {
+    C2HMessageType type;
+    char content[kBufferSize];
+    char user[kMaxNicknameSize];
+  } C2HMessage;
 
   // Returns the type of a given message
   int Message_getType(const char *message);
@@ -65,5 +74,11 @@
 
   // Gets the next available message from a message buffer
   char *Message_get(MessageBuffer *buffer);
+
+  // Gets the next available message from a message buffer
+  C2HMessage *C2HMessage_get(MessageBuffer *buffer);
+
+  // Frees memory space for a parsed message
+  void C2HMessage_free(C2HMessage **);
 
 #endif

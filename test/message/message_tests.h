@@ -26,4 +26,5 @@
   void TestMessage_format();
   void TestMessage_getUser();
   void TestMessage_get();
+  void TestC2HMessage_get();
 #endif

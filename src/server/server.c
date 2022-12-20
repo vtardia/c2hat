@@ -705,18 +705,11 @@ bool Server_authenticate(Client *client) {
     if (FD_ISSET(client->socket, &reads)) {
       int received = Server_receive(client);
       if (received > 0) {
-        char *response = Message_get(&(client->buffer));
-        if (!response) break;
+        C2HMessage *message = C2HMessage_get(&(client->buffer));
+        if (!message) break;
 
-        if (kMessageTypeNick == Message_getType(response)) {
-          // The client has sent a nick in the format '/nick Name'
-          // In order to have a full 20 chars nickname,
-          // we need to add a 7 chars pad to the length:
-          // 5chars for the /nick prefix, + 1 space + null-terminator
-          char *nick = Message_getContent(
-            response, kMessageTypeNick, kMaxNicknameSize + 7
-          );
-          Message_free(&response);
+        if (kMessageTypeNick == message->type) {
+          char *nick = message->content;
 
           // User name validation
           if (!Client_nicknameIsValid(nick)) {
@@ -726,7 +719,7 @@ bool Server_authenticate(Client *client) {
               kErrorMessageInvalidUsername
             );
             Server_send(client, request, strlen(request) + 1);
-            Message_free(&nick);
+            C2HMessage_free(&message);
             break;
           }
 
@@ -744,18 +737,19 @@ bool Server_authenticate(Client *client) {
                 "User %s (%d bytes) authenticated successfully!",
                 clientInfo->nickname, strlen(clientInfo->nickname)
               );
-              Message_free(&nick);
+              C2HMessage_free(&message);
               return true;
             }
             Error(
               "Authentication: client info not found for client %lu",
               pthread_self()
             );
-            Message_free(&nick);
+            C2HMessage_free(&message);
             return false;
           }
           Info("Client with nick '%s' is already logged in", nick);
-          Message_free(&nick);
+          C2HMessage_free(&message);
+          return false;
         }
       }
       if (received == 0) {

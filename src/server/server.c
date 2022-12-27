@@ -732,7 +732,12 @@ bool Server_authenticate(Client *client) {
             clientInfo = Server_getClientInfoForThread(pthread_self());
             if (clientInfo != NULL && clientInfo == client) {
               // Update client entry
-              snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
+              int res = snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
+              if (res < 0) {
+                Error("Authentication: unable to read client nickname");
+                C2HMessage_free(&message);
+                return false;
+              }
               Info(
                 "User %s (%d bytes) authenticated successfully!",
                 clientInfo->nickname, strlen(clientInfo->nickname)

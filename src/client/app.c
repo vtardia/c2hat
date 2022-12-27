@@ -220,13 +220,12 @@ void *App_listen(void *data) {
         terminate = true;
         break;
       }
-      // char *response = NULL;
       while (true) {
-        char *response = Message_get(buffer);
+        C2HMessage *response = C2HMessage_get(buffer);
         if (response == NULL) break;
         // Push the message to be read by the main thread
-        CQueue_push(messages, response, strlen(response) + 1);
-        Message_free(&response);
+        CQueue_push(messages, response, sizeof(C2HMessage));
+        C2HMessage_free(&response);
       }
 
       // Alert the main thread that there are messages to read
@@ -255,9 +254,11 @@ void *App_listen(void *data) {
  */
 void App_updateHandler() {
   while (true) {
+    // Item content (void*) is actually a C2HMessage*,
+    // length is sizeof(C2HMessage)
     QueueData *item = CQueue_tryPop(messages);
     if (item == NULL) break;
-    UILogMessage(item->content, item->length);
+    UILogMessage(item->content);
     QueueData_free(&item);
   }
 }

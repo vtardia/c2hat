@@ -23,6 +23,7 @@
 #define UILOG_H
 
   #include "../c2hat.h"
+  #include "message/message.h"
 
   /// Represents a single message in the chat log
   typedef struct {
@@ -34,7 +35,7 @@
   } ChatLogEntry;
 
   // Creates a log entry from a raw server message
-  ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length);
+  ChatLogEntry *ChatLogEntry_create(const C2HMessage *buffer);
 
   // Deallocate the memory for a log entry
   void ChatLogEntry_free(ChatLogEntry **entry);

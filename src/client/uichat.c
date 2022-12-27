@@ -244,7 +244,7 @@ void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
     case kMessageTypeLog:
       WRITE(
         kColorPairRedOnDefault,
-        "[%s] [SERVER] %s\n", entry->timestamp, entry->content
+        "[%s] [SERVER] [%s] %s\n", entry->timestamp, entry->username, entry->content
       );
     break;
     case kMessageTypeMsg:
@@ -252,7 +252,7 @@ void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
         int userColor = (strlen(entry->username)) ? GetUserColor(entry->username) : kColorPairDefault;
         WRITE(
           userColor,
-          "[%s] %s\n", entry->timestamp, entry->content
+          "[%s] [%s] %s\n", entry->timestamp, entry->username, entry->content
         );
       }
     break;
@@ -268,15 +268,12 @@ void UIChatWin_write(ChatLogEntry *entry, bool refresh) {
 }
 
 /// Adds a message/entry in the data/log buffer
-void UIChatWin_logMessage(const char *buffer, size_t length) {
+void UIChatWin_logMessage(const C2HMessage *buffer) {
+  if (buffer->type == kMessageTypeQuit) return;
+
   // Process the server data into a temporary entry
-  ChatLogEntry *entry = ChatLogEntry_create((char *)buffer, length);
+  ChatLogEntry *entry = ChatLogEntry_create(buffer);
   if (entry == NULL) return;
-  if (entry->type == kMessageTypeQuit) {
-    // Should be managed outside
-    ChatLogEntry_free(&entry);
-    return;
-  }
 
   // Append the entry to the buffer list...
   List_append(chatlog, entry, sizeof(ChatLogEntry));

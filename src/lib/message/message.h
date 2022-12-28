@@ -26,6 +26,7 @@
   #include <stdbool.h>
 
   enum MessageType {
+    kMessageTypeNull = 0,
     kMessageTypeNick = 100,
     kMessageTypeAuth = 110,
     kMessageTypeHelp = 120,
@@ -61,10 +62,10 @@
 
   // Returns the user part of a given message
   // The length of user MUST be > length
-  bool Message_getUser(const char *message, char *user, size_t length);
+  int Message_getUser(const char *message, C2HMessageType type, char *user, size_t length);
 
   // Returns the content part of a message
-  char *Message_getContent(const char *message, unsigned int type, size_t length);
+  // char *Message_getContent(const char *message, unsigned int type, size_t length);
 
   // Wraps an outgoing message into the given command type
   void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);

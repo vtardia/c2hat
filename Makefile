@@ -73,7 +73,7 @@ endif
 SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 
-COMMON_LIBRARIES = logger socket list queue cqueue message fsutil
+COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim
 SERVER_LIBRARIES = config validate ini encrypt
 CLIENT_LIBRARIES = hash wtrim nccolor
 
@@ -180,6 +180,7 @@ test/queue: prereq/tests
 
 test/message: prereq/tests
 	$(CC) -g $(CFLAGS) -I src/server $(OSFLAG) test/message/*.c src/lib/message/*.c \
+		src/lib/trim/*.c \
 		$(LDFLAGS) -o bin/test/message
 	$(VALGRIND) bin/test/message
 

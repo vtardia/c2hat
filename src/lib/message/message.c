@@ -26,30 +26,44 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+#include "trim/trim.h"
+
+static const char kMessageTypePrefixMsg[]  = "/msg";
+static const char kMessageTypePrefixNick[] = "/nick";
+static const char kMessageTypePrefixQuit[] = "/quit"; // Optional trailing space/content
+static const char kMessageTypePrefixLog[]  = "/log";
+static const char kMessageTypePrefixErr[]  = "/err";
+static const char kMessageTypePrefixOk[]   = "/ok";   // Optional trailing space/content
+
 /**
  * Finds the type of a given message
  * @param[in] message The server or client message content
  * @param[out] The message type code or 0 on failure
  */
 int Message_getType(const char *message) {
+  // sizeof may be faster than strlen because it is known at compile time
+  // but it includes the NULL terminator, so we need -1
+  #define MATCH(prefix) (strncmp(message, prefix, sizeof(prefix) - 1) == 0)
+  #define SPACE_AFTER(prefix) (*(message + sizeof(prefix) -1) == ' ')
   if (message != NULL) {
-    if (strncmp(message, "/nick ", 6) == 0) {
+    if (MATCH(kMessageTypePrefixNick) && SPACE_AFTER(kMessageTypePrefixNick)) {
       return kMessageTypeNick;
     }
-    if (strncmp(message, "/msg ", 5) == 0) {
+    if (MATCH(kMessageTypePrefixMsg) && SPACE_AFTER(kMessageTypePrefixMsg)) {
       return kMessageTypeMsg;
     }
-    if (strncmp(message, "/quit", 5) == 0) {
+    if (MATCH(kMessageTypePrefixQuit)) {
+      // Trailing space and additional content is optional
       return kMessageTypeQuit;
     }
-    if (strncmp(message, "/log ", 5) == 0) {
+    if (MATCH(kMessageTypePrefixLog) && SPACE_AFTER(kMessageTypePrefixLog)) {
       return kMessageTypeLog;
     }
-    if (strncmp(message, "/err ", 5) == 0) {
+    if (MATCH(kMessageTypePrefixErr) && SPACE_AFTER(kMessageTypePrefixErr)) {
       return kMessageTypeErr;
     }
-    if (strncmp(message, "/ok", 3) == 0) {
-      // Trailing space and additional content is optional on OK
+    if (MATCH(kMessageTypePrefixOk)) {
+      // Trailing space and additional content is optional
       return kMessageTypeOk;
     }
   }
@@ -62,14 +76,13 @@ int Message_getType(const char *message) {
  * @param[in] message The server or client message content
  * @param[in] user    Contains the extracted user name
  * @param[in] length The maximum length of the returned content
- * @param[out] Success/failure
+ * @param[out] The offset position where the username should start
  */
-bool Message_getUser(const char *message, char *user, size_t length) {
+int Message_getUser(const char *message, C2HMessageType type, char *user, size_t length) {
   const char kUserNameStartTag  = '[';
   const char kUserNameEndTag  = ']';
-  int messageType = Message_getType(message);
-  if (messageType == kMessageTypeMsg || messageType == kMessageTypeLog) {
-    char *start = strchr(message, kUserNameStartTag);
+  if (type == kMessageTypeMsg || type == kMessageTypeLog) {
+    char *start = strchr(message, kUserNameStartTag); // Normally message[5]
     if (start != NULL) {
       // We have a starting point
       start++; // User name starts after the bracket
@@ -79,91 +92,30 @@ bool Message_getUser(const char *message, char *user, size_t length) {
         if (userLength > 0 && userLength <= length) {
           memcpy(user, start, userLength);
           *(user + userLength) = 0; // Enforce a NULL terminator
-          return true;
+          return (start - 1) - message;
         }
       }
     }
+    if (type == kMessageTypeMsg) return sizeof(kMessageTypePrefixMsg);
+    if (type == kMessageTypeLog) return sizeof(kMessageTypePrefixLog);
   }
-  return false;
-}
-
-/**
- * Returns the content part of a given message up to the specified length
- * The return value MUST be freed. The value at [length - 1] is the NULL terminator
- * @param[in] message The message to parse
- * @param[in] type The type of message we are extracting
- * @param[in] length The maximum length of the returned content
- * @param[out] The trimmed content of the string
- */
-char *Message_getContent(const char *message, unsigned int type, size_t length) {
-  // We are assuming here that message is null terminated,
-  // the behaviour is undefined otherwise
-  if (length == 0 || message == NULL || strlen(message) == 0) return NULL;
-
-  unsigned int prefixLength = 0;
-  size_t maxLength = length;
-  char *prefix;
-  switch (type) {
-    case kMessageTypeMsg:
-      prefix = "/msg";
-    break;
-    case kMessageTypeNick:
-      prefix = "/nick";
-    break;
-    case kMessageTypeQuit:
-      prefix = "/quit";
-    break;
-    case kMessageTypeOk:
-      prefix = "/ok";
-    break;
-    case kMessageTypeErr:
-      prefix = "/err";
-    break;
-    case kMessageTypeLog:
-      prefix = "/log";
-    break;
-    default:
-      prefix = "";
-      return NULL; // Invalid message type
+  if (type == kMessageTypeNick) return sizeof(kMessageTypePrefixNick);
+  if (type == kMessageTypeErr) return sizeof(kMessageTypePrefixErr);
+  if (type == kMessageTypeOk) {
+    if (*(message + sizeof(kMessageTypePrefixOk)) == ' ') {
+      // There may be content
+      return sizeof(kMessageTypePrefixOk) + 1;
+    }
+    return sizeof(kMessageTypePrefixOk);
   }
-  prefixLength = strlen(prefix);
-  maxLength -= prefixLength;
-  if (maxLength <= 0 || prefixLength > strlen(message)) return NULL;
-
-  // The message does not contain the prefix
-  if (!strstr(message, prefix)) return NULL;
-
-  // Points to start of the parse
-  char *pStart = (char *)message + prefixLength;
-
-  // Trimming spaces at the beginning of the string and adjust max length
-  const char *spaces = "\t\n\v\f\r ";
-  size_t lTrimSize = strspn(pStart, spaces);
-  pStart += lTrimSize;
-  maxLength -= lTrimSize;
-
-  if (0 >= (signed long)maxLength) return NULL;
-
-  // Now in order to RTrim we need to clone the source
-  // because the source is const. We alloc macLength + 1 for the null terminator
-  char *buffer = calloc(1, maxLength + 1);
-  if (buffer == NULL) return NULL;
-  memcpy(buffer, pStart, maxLength);
-
-  // Start now points to the cloned string
-  pStart = buffer;
-
-  // End now points to the end of the string
-  char *pEnd = pStart + maxLength - 1;
-
-  // Ensure we have at least a null terminator at the end
-  // and trim all trailing spaces
-  do {
-    *pEnd = 0;
-    pEnd--;
-  } while (pEnd >= pStart && strchr(spaces, *pEnd) != NULL);
-
-  return pStart;
+  if (type == kMessageTypeQuit) {
+    if (*(message + sizeof(kMessageTypePrefixQuit)) == ' ') {
+      // There may be content
+      return sizeof(kMessageTypePrefixQuit);
+    }
+    return sizeof(kMessageTypePrefixQuit);
+  }
+  return 0;
 }
 
 /**
@@ -177,22 +129,22 @@ char *Message_getContent(const char *message, unsigned int type, size_t length) 
 void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...) {
   if (dest == NULL) return;
 
-  char *commandPrefix = "";
+  const char *commandPrefix = "";
   switch (type) {
     case kMessageTypeNick:
-      commandPrefix = "/nick";
+      commandPrefix = kMessageTypePrefixNick;
     break;
     case kMessageTypeMsg:
-      commandPrefix = "/msg";
+      commandPrefix = kMessageTypePrefixMsg;
     break;
     case kMessageTypeLog:
-      commandPrefix = "/log";
+      commandPrefix = kMessageTypePrefixLog;
     break;
     case kMessageTypeOk:
-      commandPrefix = "/ok";
+      commandPrefix = kMessageTypePrefixOk;
     break;
     case kMessageTypeErr:
-      commandPrefix = "/err";
+      commandPrefix = kMessageTypePrefixErr;
     break;
     default:
       return; // Unknown message type
@@ -273,6 +225,40 @@ char *Message_get(MessageBuffer *buffer) {
   return message;
 }
 
+// Temporary, since getType is used by the app.c
+C2HMessageType Message_getRawType(char **message) {
+  // sizeof may be faster than strlen because it is known at compile time
+  // but it includes the NULL terminator, so we need -1
+  #define RMATCH(prefix) (strncmp(*message, prefix, sizeof(prefix) - 1) == 0)
+  if (*message != NULL) {
+    if (RMATCH(kMessageTypePrefixNick)) {
+      *message += (sizeof(kMessageTypePrefixNick) - 1);
+      return kMessageTypeNick;
+    }
+    if (RMATCH(kMessageTypePrefixMsg)) {
+      *message += (sizeof(kMessageTypePrefixMsg) - 1);
+      return kMessageTypeMsg;
+    }
+    if (RMATCH(kMessageTypePrefixQuit)) {
+      *message += (sizeof(kMessageTypePrefixQuit) - 1);
+      return kMessageTypeQuit;
+    }
+    if (RMATCH(kMessageTypePrefixLog)) {
+      *message += (sizeof(kMessageTypePrefixLog) - 1);
+      return kMessageTypeLog;
+    }
+    if (RMATCH(kMessageTypePrefixErr)) {
+      *message += (sizeof(kMessageTypePrefixErr) - 1);
+      return kMessageTypeErr;
+    }
+    if (RMATCH(kMessageTypePrefixOk)) {
+      *message += (sizeof(kMessageTypePrefixOk) - 1);
+      return kMessageTypeOk;
+    }
+  }
+  return kMessageTypeNull;
+}
+
 /**
  * Extracts a message's content into a C2HMessage structure
  * The returned structure needs to be freed with C2HMessage_free()
@@ -280,22 +266,36 @@ char *Message_get(MessageBuffer *buffer) {
  */
 C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
   char *messageData = Message_get(buffer);
+  if (messageData == NULL) return NULL;
+
   C2HMessage *message = calloc(1, sizeof(C2HMessage));
-  message->type = Message_getType(messageData);
-  char *messageContent = Message_getContent(messageData, message->type, kBufferSize);
-  if (messageContent != NULL) {
-    Message_getUser(messageData, message->user, kMaxNicknameSize);
-    int userLength = strlen(message->user);
-    // If we have a user name, we extract it from the message content
-    memcpy(
-      message->content,
-      messageContent + (userLength > 0 ? userLength + 3 : 0),
-      kBufferSize
-    );
-  } else {
-    C2HMessage_free(&message); // set to NULL
+  char *cursor = messageData;
+  char *end = messageData + strlen(messageData);
+
+  message->type = Message_getRawType(&cursor);
+  // cursor has now been advanced by the length of the type prefix
+  if (message->type == kMessageTypeNull) {
+    C2HMessage_free(&message);
+    Message_free(&messageData);
+    return NULL;
   }
-  Message_free(&messageContent);
+  cursor = trim(cursor, NULL);
+
+  // Dealing with optional content
+  if (message->type == kMessageTypeOk || message->type == kMessageTypeQuit) {
+    if (strlen(cursor) == 0) {
+      // No content
+      Message_free(&messageData);
+      return message;
+    }
+  }
+
+  if (message->type == kMessageTypeMsg || message->type == kMessageTypeLog) {
+    Message_getUser(messageData, message->type, message->user, kMaxNicknameSize);
+  }
+  int userLength = strlen(message->user);
+  if (userLength > 0) cursor += userLength + 3; // Add [] and trailing space
+  memcpy(message->content, cursor, end - cursor);
   Message_free(&messageData);
   return message;
 }

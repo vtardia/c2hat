@@ -142,50 +142,50 @@ void TestMessage_getUser() {
   // Test that fails if type is not /msg or /log
   length = 20;
   message = "/err [SomeUser] did something";
-  assert(Message_getUser(message, kMessageTypeErr, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeErr, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Fails when there is no [
   message = "/msg SomeUser] did something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Fails when there is no ]
   message = "/msg [SomeUser did something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Fails when there is no []
   message = "/msg SomeUser did something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Fails when user length is <= 0
   message = "/msg [] did something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   message = "/msg ][ did something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Fails when user length is > max length
   length = 5;
   message = "/msg [Vercingetorix] said something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length) == false);
   assert(strlen(user) == 0);
   printf(".");
 
   // Returns a correct user
   length = 20;
   message = "/msg [Vercingetorix] said something";
-  assert(Message_getUser(message, kMessageTypeMsg, user, length) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, user, length));
   assert(strlen(user) == 13);
   assert(strncmp(user, "Vercingetorix", 13) == 0);
   printf(".");
@@ -197,7 +197,7 @@ void TestMessage_getUser() {
   char otherUser[5] = {};
   message = "/msg [Abcde] said something";
   // Buffer too short to contain the username
-  assert(Message_getUser(message, kMessageTypeMsg, otherUser, sizeof(otherUser) -1) == 5);
+  assert(Message_getUser(message, kMessageTypeMsg, otherUser, sizeof(otherUser) -1) == false);
   printf(".");
 
   // Test a user name within a /quit message

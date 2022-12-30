@@ -76,9 +76,8 @@ int Message_getType(const char *message) {
  * @param[in] message The server or client message content
  * @param[in] user    Contains the extracted user name
  * @param[in] length The maximum length of the returned content
- * @param[out] The offset position where the username should start
  */
-int Message_getUser(const char *message, C2HMessageType type, char *user, size_t length) {
+bool Message_getUser(const char *message, C2HMessageType type, char *user, size_t length) {
   const char kUserNameStartTag  = '[';
   const char kUserNameEndTag  = ']';
   if (type == kMessageTypeMsg || type == kMessageTypeLog) {
@@ -92,30 +91,12 @@ int Message_getUser(const char *message, C2HMessageType type, char *user, size_t
         if (userLength > 0 && userLength <= length) {
           memcpy(user, start, userLength);
           *(user + userLength) = 0; // Enforce a NULL terminator
-          return (start - 1) - message;
+          return true;
         }
       }
     }
-    if (type == kMessageTypeMsg) return sizeof(kMessageTypePrefixMsg);
-    if (type == kMessageTypeLog) return sizeof(kMessageTypePrefixLog);
   }
-  if (type == kMessageTypeNick) return sizeof(kMessageTypePrefixNick);
-  if (type == kMessageTypeErr) return sizeof(kMessageTypePrefixErr);
-  if (type == kMessageTypeOk) {
-    if (*(message + sizeof(kMessageTypePrefixOk)) == ' ') {
-      // There may be content
-      return sizeof(kMessageTypePrefixOk) + 1;
-    }
-    return sizeof(kMessageTypePrefixOk);
-  }
-  if (type == kMessageTypeQuit) {
-    if (*(message + sizeof(kMessageTypePrefixQuit)) == ' ') {
-      // There may be content
-      return sizeof(kMessageTypePrefixQuit);
-    }
-    return sizeof(kMessageTypePrefixQuit);
-  }
-  return 0;
+  return false;
 }
 
 /**

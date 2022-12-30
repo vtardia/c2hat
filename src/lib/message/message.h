@@ -62,7 +62,7 @@
 
   // Returns the user part of a given message
   // The length of user MUST be > length
-  int Message_getUser(const char *message, C2HMessageType type, char *user, size_t length);
+  bool Message_getUser(const char *message, C2HMessageType type, char *user, size_t length);
 
   // Returns the content part of a message
   // char *Message_getContent(const char *message, unsigned int type, size_t length);

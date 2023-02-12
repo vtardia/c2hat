@@ -392,3 +392,197 @@ void TestC2HMessage_get() {
   printf(".");
   C2HMessage_free(&message);
 }
+
+void TestC2HMessage_create() {
+  // Nick
+  char *username = "JoePerry";
+  C2HMessage *message = C2HMessage_create(kMessageTypeNick, "%s", username);
+  assert(message->type == kMessageTypeNick);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == 8);
+  printf(".");
+  assert(strncmp(message->content, "JoePerry", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Error
+  message = C2HMessage_create(kMessageTypeErr, "Authentication timeout expired!");
+  assert(message->type == kMessageTypeErr);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Authentication timeout expired!"));
+  printf(".");
+  assert(strncmp(message->content, "Authentication timeout expired!", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Simple OK
+  message = C2HMessage_create(kMessageTypeOk, "");
+  assert(message->type == kMessageTypeOk);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == 0);
+  printf(".");
+  assert(strncmp(message->content, "", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // OK with message
+  message = C2HMessage_create(kMessageTypeOk, "Hello %s!", username);
+  assert(message->type == kMessageTypeOk);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Hello JoePerry!"));
+  printf(".");
+  assert(strncmp(message->content, "Hello JoePerry!", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Log
+  message = C2HMessage_create(kMessageTypeLog, "[%s] just joined the chat", username);
+  assert(message->type == kMessageTypeLog);
+  printf(".");
+  assert(strlen(message->user) == 8);
+  printf(".");
+  assert(strncmp(message->user, "JoePerry", kMaxNicknameSize) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("just joined the chat"));
+  printf(".");
+  assert(strncmp(message->content, "just joined the chat", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Simple Quit
+  message = C2HMessage_create(kMessageTypeQuit, "");
+  assert(message->type == kMessageTypeQuit);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == 0);
+  printf(".");
+  assert(strncmp(message->content, "", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Quit with reason
+  message = C2HMessage_create(kMessageTypeQuit, "See you later!");
+  assert(message->type == kMessageTypeQuit);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("See you later!"));
+  printf(".");
+  assert(strncmp(message->content, "See you later!", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Message (from client)
+  message = C2HMessage_create(kMessageTypeMsg, "Hello folks, how are you doing?");
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Hello folks, how are you doing?"));
+  printf(".");
+  assert(strncmp(message->content, "Hello folks, how are you doing?", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // Message (from server with username)
+  message = C2HMessage_create(kMessageTypeMsg, "[JoePerry] Hello folks, how are you doing?");
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 8);
+  printf(".");
+  assert(strncmp(message->user, "JoePerry", kMaxNicknameSize) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Hello folks, how are you doing?"));
+  printf(".");
+  assert(strncmp(message->content, "Hello folks, how are you doing?", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+}
+
+void TestC2HMessage_createFromString() {
+  // in raw string out message
+  C2HMessage *message = C2HMessage_createFromString("Hello, how are you?", strlen("Hello, how are you?"));
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Hello, how are you?"));
+  printf(".");
+  assert(strncmp(message->content, "Hello, how are you?", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // in message, out message
+  message = C2HMessage_createFromString("/msg Hello, how are you?", strlen("/msg Hello, how are you?"));
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("Hello, how are you?"));
+  printf(".");
+  assert(strncmp(message->content, "Hello, how are you?", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // in quit out quit
+  message = C2HMessage_createFromString("/quit", strlen("/quit"));
+  assert(message->type == kMessageTypeQuit);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == 0);
+  printf(".");
+  assert(strncmp(message->content, "", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // in nick out nick
+  message = C2HMessage_createFromString("/nick Joe24", strlen("/nick Joe24"));
+  assert(message->type == kMessageTypeNick);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == 5);
+  printf(".");
+  assert(strncmp(message->content, "Joe24", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // in unrecognised command out message wrap
+  message = C2HMessage_createFromString("/help", strlen("/help"));
+  assert(message->type == kMessageTypeMsg);
+  printf(".");
+  assert(strlen(message->user) == 0);
+  printf(".");
+  assert(strlen(message->content) == strlen("/help"));
+  printf(".");
+  assert(strncmp(message->content, "/help", kBufferSize) == 0);
+  printf(".");
+  C2HMessage_free(&message);
+
+  // in log out null
+  message = C2HMessage_createFromString("/log Something", strlen("/log Something"));
+  assert(message == NULL);
+  printf(".");
+
+  // in ok out null
+  message = C2HMessage_createFromString("/ok", strlen("/ok"));
+  assert(message == NULL);
+  printf(".");
+
+  // in err out null
+  message = C2HMessage_createFromString("/err Some error", strlen("/err Some error"));
+  assert(message == NULL);
+  printf(".");
+
+  message = C2HMessage_createFromString("", 0);
+}

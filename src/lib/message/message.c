@@ -72,7 +72,7 @@ int Message_getType(const char *message) {
 
 /**
  * Finds the user name of a given message
- * The message type must be /msg
+ * The message type must be /msg or /log
  * @param[in] message The server or client message content
  * @param[in] user    Contains the extracted user name
  * @param[in] length The maximum length of the returned content
@@ -206,23 +206,49 @@ char *Message_get(MessageBuffer *buffer) {
   return message;
 }
 
+/**
+ * Creates a C2HMessage structure of a known type from a formatted string
+ * The returned structure needs to be freed with C2HMessage_free()
+ */
+C2HMessage *C2HMessage_create(C2HMessageType type, const char *format, ...) {
+  C2HMessage *message = calloc(1, sizeof(C2HMessage));
+  if (message == NULL) return NULL;
+
+  message->type = type;
+
+  char buffer[kBufferSize] = {};
+  char *start = buffer;
+  char *end = buffer + kBufferSize -1;
+
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, kBufferSize, format, args);
+  va_end(args);
+
+  if (message->type == kMessageTypeMsg || message->type == kMessageTypeLog) {
+    Message_getUser(buffer, type, message->user, kMaxNicknameSize);
+  }
+  // Remove user from message body
+  int userLength = strlen(message->user);
+  if (userLength > 0) start += userLength + 3; // Add [] and trailing space
+  memcpy(message->content, start, end - start);
+
+  return message;
+}
+
 // Temporary, since getType is used by the app.c
-C2HMessageType Message_getRawType(char **message) {
+C2HMessageType Message_getRawType(char **message, size_t length) {
   // sizeof may be faster than strlen because it is known at compile time
   // but it includes the NULL terminator, so we need -1
-  #define RMATCH(prefix) (strncmp(*message, prefix, sizeof(prefix) - 1) == 0)
+  #define RMATCH(prefix) (length >= (sizeof(prefix) -1) && strncmp(*message, prefix, sizeof(prefix) - 1) == 0)
   if (*message != NULL) {
-    if (RMATCH(kMessageTypePrefixNick)) {
-      *message += (sizeof(kMessageTypePrefixNick) - 1);
-      return kMessageTypeNick;
+    if (RMATCH(kMessageTypePrefixOk)) {
+      *message += (sizeof(kMessageTypePrefixOk) - 1);
+      return kMessageTypeOk;
     }
     if (RMATCH(kMessageTypePrefixMsg)) {
       *message += (sizeof(kMessageTypePrefixMsg) - 1);
       return kMessageTypeMsg;
-    }
-    if (RMATCH(kMessageTypePrefixQuit)) {
-      *message += (sizeof(kMessageTypePrefixQuit) - 1);
-      return kMessageTypeQuit;
     }
     if (RMATCH(kMessageTypePrefixLog)) {
       *message += (sizeof(kMessageTypePrefixLog) - 1);
@@ -232,12 +258,48 @@ C2HMessageType Message_getRawType(char **message) {
       *message += (sizeof(kMessageTypePrefixErr) - 1);
       return kMessageTypeErr;
     }
-    if (RMATCH(kMessageTypePrefixOk)) {
-      *message += (sizeof(kMessageTypePrefixOk) - 1);
-      return kMessageTypeOk;
+    if (RMATCH(kMessageTypePrefixQuit)) {
+      *message += (sizeof(kMessageTypePrefixQuit) - 1);
+      return kMessageTypeQuit;
+    }
+    if (RMATCH(kMessageTypePrefixNick)) {
+      *message += (sizeof(kMessageTypePrefixNick) - 1);
+      return kMessageTypeNick;
     }
   }
   return kMessageTypeNull;
+}
+
+/**
+ * Parses an input string into a C2HMessage
+ * 
+ * If the input string includes a message type prefix, it will be used
+ * otherwise a standard /msg will be created.
+ *
+ * The returned structure needs to be freed with C2HMessage_free()
+ */
+C2HMessage *C2HMessage_createFromString(char *buffer, size_t size) {
+  if (size == 0) return NULL;
+
+  C2HMessageType type = Message_getRawType(&buffer, size);
+  if (type == kMessageTypeNull) {
+    // Regular string, wrap into a message
+    return C2HMessage_create(kMessageTypeMsg, "%s", buffer);
+  }
+
+  // Limiting user-created messages to available types
+  if (type == kMessageTypeMsg || type == kMessageTypeNick || type == kMessageTypeQuit) {
+
+    // Buffer has now been advanced by the length of the type prefix
+    char *copyOfBuffer = strdup(buffer); // Or trim will crash
+    copyOfBuffer = trim(copyOfBuffer, NULL);
+
+    // Built a message using the parsed type
+    C2HMessage *message = C2HMessage_create(type, "%s", copyOfBuffer);
+    free(copyOfBuffer);
+    return message;
+  }
+  return NULL;
 }
 
 /**
@@ -251,9 +313,10 @@ C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
 
   C2HMessage *message = calloc(1, sizeof(C2HMessage));
   char *cursor = messageData;
-  char *end = messageData + strlen(messageData);
+  size_t messageDataLength = strlen(messageData);
+  char *end = messageData + messageDataLength;
 
-  message->type = Message_getRawType(&cursor);
+  message->type = Message_getRawType(&cursor, messageDataLength);
   // cursor has now been advanced by the length of the type prefix
   if (message->type == kMessageTypeNull) {
     C2HMessage_free(&message);

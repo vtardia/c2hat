@@ -27,4 +27,6 @@
   void TestMessage_getUser();
   void TestMessage_get();
   void TestC2HMessage_get();
+  void TestC2HMessage_create();
+  void TestC2HMessage_createFromString();
 #endif

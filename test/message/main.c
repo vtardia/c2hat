@@ -32,6 +32,8 @@ int main() {
   TestMessage_getUser();
   TestMessage_get();
   TestC2HMessage_get();
+  TestC2HMessage_create();
+  TestC2HMessage_createFromString();
 
   printf("\n");
   return 0;

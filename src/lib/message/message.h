@@ -79,6 +79,12 @@
   // Gets the next available message from a message buffer
   C2HMessage *C2HMessage_get(MessageBuffer *buffer);
 
+  // Creates a new message given a formatted string
+  C2HMessage *C2HMessage_create(C2HMessageType type, const char *format, ...);
+
+  // Creates a new message given a raw string
+  C2HMessage *C2HMessage_createFromString(char *buffer, size_t size);
+
   // Frees memory space for a parsed message
   void C2HMessage_free(C2HMessage **);
 

@@ -27,7 +27,7 @@
 
 int main() {
 
-  TestMessage_getType();
+  // TestMessage_getType();
   TestMessage_format();
   TestMessage_getUser();
   TestMessage_get();

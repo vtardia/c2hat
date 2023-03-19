@@ -24,6 +24,7 @@
   #include <stdio.h>
   #include <stdbool.h>
   #include "socket/socket.h"
+  #include "message/message.h"
   #include "../c2hat.h"
 
   enum {
@@ -63,7 +64,7 @@
   void *Client_getBuffer(C2HatClient *this);
 
   // Sends data through the client's socket
-  int Client_send(const C2HatClient *client, const char *buffer, size_t length);
+  int Client_send(const C2HatClient *client, const C2HMessage *message);
 
   // Receives data through the client's socket
   int Client_receive(C2HatClient *client);

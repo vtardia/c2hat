@@ -36,38 +36,15 @@ static const char kMessageTypePrefixErr[]  = "/err";
 static const char kMessageTypePrefixOk[]   = "/ok";   // Optional trailing space/content
 
 /**
- * Finds the type of a given message
- * @param[in] message The server or client message content
- * @param[out] The message type code or 0 on failure
+ * Frees memory space for a message allocated by Message_getContent()
+ * @param[in] message
  */
-int Message_getType(const char *message) {
-  // sizeof may be faster than strlen because it is known at compile time
-  // but it includes the NULL terminator, so we need -1
-  #define MATCH(prefix) (strncmp(message, prefix, sizeof(prefix) - 1) == 0)
-  #define SPACE_AFTER(prefix) (*(message + sizeof(prefix) -1) == ' ')
-  if (message != NULL) {
-    if (MATCH(kMessageTypePrefixNick) && SPACE_AFTER(kMessageTypePrefixNick)) {
-      return kMessageTypeNick;
-    }
-    if (MATCH(kMessageTypePrefixMsg) && SPACE_AFTER(kMessageTypePrefixMsg)) {
-      return kMessageTypeMsg;
-    }
-    if (MATCH(kMessageTypePrefixQuit)) {
-      // Trailing space and additional content is optional
-      return kMessageTypeQuit;
-    }
-    if (MATCH(kMessageTypePrefixLog) && SPACE_AFTER(kMessageTypePrefixLog)) {
-      return kMessageTypeLog;
-    }
-    if (MATCH(kMessageTypePrefixErr) && SPACE_AFTER(kMessageTypePrefixErr)) {
-      return kMessageTypeErr;
-    }
-    if (MATCH(kMessageTypePrefixOk)) {
-      // Trailing space and additional content is optional
-      return kMessageTypeOk;
-    }
+void Message_free(char **message) {
+  if (message != NULL && *message != NULL) {
+    memset(*message, 0, strlen(*message));
+    free(*message);
+    *message = NULL;
   }
-  return 0;
 }
 
 /**
@@ -127,6 +104,9 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
     case kMessageTypeErr:
       commandPrefix = kMessageTypePrefixErr;
     break;
+    case kMessageTypeQuit:
+      commandPrefix = kMessageTypePrefixQuit;
+    break;
     default:
       return; // Unknown message type
   }
@@ -146,6 +126,23 @@ void Message_format(unsigned int type, char *dest, size_t size, const char *form
     snprintf(dest, size, "%s %s", commandPrefix, buffer);
   else
     snprintf(dest, size, "%s", commandPrefix);
+}
+
+
+/**
+ * Formats a C2Message into a string ready for transmission
+ * Returns the number of bytes written (including null-terminator)
+ * @param[in] message Source message object
+ * @param[in] dest    Destination char array
+ * @param[in] size    Maximum size of the message to generate (including null-term)
+ */
+size_t C2HMessage_format(const C2HMessage *message, char *dest, size_t size) {
+  if (strlen(message->user) > 0) {
+    Message_format(message->type, dest, size, "[%s] %s", message->user, message->content);
+  } else {
+    Message_format(message->type, dest, size, "%s", message->content);
+  }
+  return strlen(dest) + 1;
 }
 
 /**
@@ -236,8 +233,14 @@ C2HMessage *C2HMessage_create(C2HMessageType type, const char *format, ...) {
   return message;
 }
 
-// Temporary, since getType is used by the app.c
-C2HMessageType Message_getRawType(char **message, size_t length) {
+/**
+ * Finds the type of a given message
+ * NOTE: the input message will be modified by removing the type prefix
+ * @param[in] message The server or client (null-terminated) message content
+ * @param[out] The message type code or 0 on failure
+ */
+C2HMessageType Message_getType(char **message) {
+  size_t length = strlen(*message);
   // sizeof may be faster than strlen because it is known at compile time
   // but it includes the NULL terminator, so we need -1
   #define RMATCH(prefix) (length >= (sizeof(prefix) -1) && strncmp(*message, prefix, sizeof(prefix) - 1) == 0)
@@ -277,11 +280,13 @@ C2HMessageType Message_getRawType(char **message, size_t length) {
  * otherwise a standard /msg will be created.
  *
  * The returned structure needs to be freed with C2HMessage_free()
+ * @param[in] buffer  The input string
+ * @param[in] size    The string's length not including the null-terminator
  */
 C2HMessage *C2HMessage_createFromString(char *buffer, size_t size) {
   if (size == 0) return NULL;
 
-  C2HMessageType type = Message_getRawType(&buffer, size);
+  C2HMessageType type = Message_getType(&buffer);
   if (type == kMessageTypeNull) {
     // Regular string, wrap into a message
     return C2HMessage_create(kMessageTypeMsg, "%s", buffer);
@@ -316,7 +321,7 @@ C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
   size_t messageDataLength = strlen(messageData);
   char *end = messageData + messageDataLength;
 
-  message->type = Message_getRawType(&cursor, messageDataLength);
+  message->type = Message_getType(&cursor);
   // cursor has now been advanced by the length of the type prefix
   if (message->type == kMessageTypeNull) {
     C2HMessage_free(&message);
@@ -342,18 +347,6 @@ C2HMessage *C2HMessage_get(MessageBuffer *buffer) {
   memcpy(message->content, cursor, end - cursor);
   Message_free(&messageData);
   return message;
-}
-
-/**
- * Frees memory space for a message allocated by Message_getContent()
- * @param[in] message
- */
-void Message_free(char **message) {
-  if (message != NULL && *message != NULL) {
-    memset(*message, 0, strlen(*message));
-    free(*message);
-    *message = NULL;
-  }
 }
 
 /**

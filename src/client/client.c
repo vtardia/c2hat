@@ -443,12 +443,14 @@ int Client_receive(C2HatClient *this) {
  * to ensure all the given data is sent
  *
  * @param[in] this C2HatClient structure holding the connection information
- * @param[in] buffer The bytes ot data to send
- * @param[in] length Size of the data to send
- * @param[out] Number of bytes sent
+ * @param[in] message The C2HMessage object to send
+ * @param[out] Number of bytes sent, -1 on error
  */
-int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
+int Client_send(const C2HatClient *this, const C2HMessage *message) {
   size_t total = 0;
+
+  char buffer[kBufferSize] = {};
+  size_t length = C2HMessage_format(message, buffer, sizeof(buffer));
 
   // Cursor pointing to the beginning of the message
   char *data = (char*)buffer;
@@ -519,9 +521,11 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   C2HMessage_free(&response);
 
   // Send credentials
-  char message[kBufferSize] = {};
-  Message_format(kMessageTypeNick, message, sizeof(message), "%s", username);
-  int sent = Client_send(this, message, strlen(message) + 1);
+  // char message[kBufferSize] = {};
+  // Message_format(kMessageTypeNick, message, sizeof(message), "%s", username);
+  C2HMessage *message = C2HMessage_create(kMessageTypeNick, "%s", username);
+  int sent = Client_send(this, message);
+  C2HMessage_free(&message);
   if (sent < 0) {
     fprintf(
       this->out,

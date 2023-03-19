@@ -57,24 +57,8 @@
     char user[kMaxNicknameSize];
   } C2HMessage;
 
-  // Returns the type of a given message
-  int Message_getType(const char *message);
-
-  // Returns the user part of a given message
-  // The length of user MUST be > length
-  bool Message_getUser(const char *message, C2HMessageType type, char *user, size_t length);
-
-  // Returns the content part of a message
-  // char *Message_getContent(const char *message, unsigned int type, size_t length);
-
   // Wraps an outgoing message into the given command type
   void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
-
-  // Frees memory space for a parsed message
-  void Message_free(char **);
-
-  // Gets the next available message from a message buffer
-  char *Message_get(MessageBuffer *buffer);
 
   // Gets the next available message from a message buffer
   C2HMessage *C2HMessage_get(MessageBuffer *buffer);
@@ -84,6 +68,9 @@
 
   // Creates a new message given a raw string
   C2HMessage *C2HMessage_createFromString(char *buffer, size_t size);
+
+  // Converts a C2HMessage into a formatted string
+  size_t C2HMessage_format(const C2HMessage *message, char *dest, size_t size);
 
   // Frees memory space for a parsed message
   void C2HMessage_free(C2HMessage **);

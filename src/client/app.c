@@ -284,19 +284,19 @@ void App_run() {
       wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
 
       // Send it to the server if non empty
-      if (strlen(messageBuffer) > 0) {
-        int messageType = Message_getType(messageBuffer);
-        if (messageType == kMessageTypeQuit) break;
-
-        // If the input is not a command, wrap it into a message payload
-        char message[kBufferSize] = {};
-        if (!messageType) {
-          Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
-        } else {
-          // Send the message as is
-          memcpy(message, messageBuffer, res);
+      size_t messageBufferLength = strlen(messageBuffer);
+      if (messageBufferLength > 0) {
+        C2HMessage *message = C2HMessage_createFromString(
+          messageBuffer,
+          messageBufferLength
+        );
+        if (message->type == kMessageTypeQuit) {
+          C2HMessage_free(&message);
+          break;
         }
-        int sent = Client_send(client, message, strlen(message) + 1);
+
+        int sent = Client_send(client, message);
+        C2HMessage_free(&message);
 
         // If the connection drops, break and close
         if (sent < 0) break;
@@ -311,7 +311,8 @@ void App_run() {
   }
 
   // Try a clean clean exit
-  Client_send(client, "/quit", strlen("/quit") + 1);
+  C2HMessage quit = { .type = kMessageTypeQuit };
+  Client_send(client, &quit);
 }
 
 int App_start() {

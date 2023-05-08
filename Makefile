@@ -159,7 +159,7 @@ $(CLIENT_LIBRARIES):
 # logger, socket, message are the only one we need
 bot: prereq $(COMMON_LIBRARIES)
 	mkdir -p bin/test
-	$(CC) $(CFLAGS) -I src/client \
+	$(CC) -g $(CFLAGS) -I src/client \
 		test/bot/main.c src/client/client.c obj/lib/*.o \
 		$(OSFLAG) $(LDFLAGS) $(LDLIBS) -o bin/test/bot
 

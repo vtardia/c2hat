@@ -27,6 +27,7 @@
 #include <time.h>
 #include <getopt.h>
 #include <libgen.h>
+#include <execinfo.h>
 
 #include "client.h"
 #include "message/message.h"
@@ -77,20 +78,36 @@ void maskSignal() {
 }
 
 void Bot_stop(int signal) {
-  terminate = true;
-  printf(
-    "Received signal %d in thread %lu\n",
-    signal, (unsigned long)pthread_self()
-  );
+  if (signal == SIGINT || signal == SIGTERM) {
+    terminate = true;
+    printf(
+      "Received signal %d in thread %lu\n",
+      signal, (unsigned long)pthread_self()
+    );
+  } else if (signal == SIGSEGV) {
+    if (clientOptions.logLevel <= LOG_DEBUG) {
+      void *trace[20] = {};
+      size_t size;
+      size = backtrace(trace, sizeof(trace));
+      char *error = "❌ Segmentation fault happened, backtrace below:\n";
+      write(STDERR_FILENO, error, strlen(error));
+      backtrace_symbols_fd(trace, size, STDERR_FILENO);
+    } else {
+      char *error = "❌ Segmentation fault happened, enable debug to see the stacktrace\n";
+      write(STDERR_FILENO, error, strlen(error));
+    }
+    exit(EXIT_FAILURE);
+  } else {
+    Info("Unhandled signal received %s", strerror(errno));
+  }
 }
 
 // Catch interrupt signals
 int Bot_catch(int sig, void (*handler)(int)) {
-   struct sigaction action = {
-     .sa_handler = handler,
-     .sa_flags = 0
-   };
+   struct sigaction action = {};
+   action.sa_handler = handler;
    sigemptyset(&action.sa_mask);
+   action.sa_flags = 0;
    return sigaction (sig, &action, NULL);
 }
 
@@ -175,9 +192,20 @@ void* RunBot(void* data) {
     int probability = rand() % 100;
     if (probability < 30) {
       int messageID = rand() % 100;
-      char message[kBufferSize] = {};
-      snprintf(message, sizeof(message) -1, "/msg %s", messages[messageID]);
-      int sent = Client_send(bot, message, strlen(message) + 1);
+      C2HMessage *message = C2HMessage_createFromString(
+        messages[messageID],
+        strlen(messages[messageID])
+      );
+      if (message == NULL) {
+        fprintf(
+          stderr, "[%s] Unable to create message: %s\n",
+          nickname, strerror(errno)
+        );
+        C2HMessage_free(&message);
+        continue;
+      }
+      int sent = Client_send(bot, message);
+      C2HMessage_free(&message);
       if (sent <= 0) {
         fprintf(
           stderr, "[%s] Unable to send message: %s\n",
@@ -190,7 +218,8 @@ void* RunBot(void* data) {
 
   // Signal received, prepare to close
   printf("[%s] Closing connection...\n", nickname);
-  int sent = Client_send(bot, "/quit", strlen("/quit") + 1);
+  C2HMessage quit = { .type = kMessageTypeQuit };
+  int sent = Client_send(bot, &quit);
   if (sent <= 0) {
     fprintf(
       stderr, "[%s] Unable close connection: %s\n",
@@ -237,7 +266,35 @@ int BotCleanup(int result) {
   return result;
 }
 
+int test() {
+  printf("Testing, bye!\n");
+  LoadMessages();
+  for (int i = 0; i < kMaxMessages; i++) {
+    printf("%d - %s\n", i, messages[i]);
+    C2HMessage *message = C2HMessage_createFromString(
+      messages[i],
+      strlen(messages[i])
+    );
+    if (message == NULL) {
+      fprintf(
+        stderr, "[TEST] Unable to create message %d: %s\n",
+        i, strerror(errno)
+      );
+      continue;
+    }
+    char buffer[kBufferSize] = {};
+    size_t length = C2HMessage_format(message, buffer, sizeof(buffer));
+    printf("Length: %ld\n", length);
+    C2HMessage_free(&message);
+  }
+  return EXIT_SUCCESS;
+}
+
 int main(int argc, ARGV argv) {
+  if (argc > 1 && strcmp(argv[1], "--test") == 0) {
+    return test();
+  }
+
   // Check command line options and arguments
   parseOptions(argc, argv, &options);
 
@@ -247,6 +304,8 @@ int main(int argc, ARGV argv) {
 
   Bot_catch(SIGINT, Bot_stop);
   Bot_catch(SIGTERM, Bot_stop);
+  Bot_catch(SIGSEGV, Bot_stop);
+  Bot_catch(SIGPIPE, SIG_IGN);
 
   pthread_t threadId[options.maxBots];
   int values[options.maxBots];

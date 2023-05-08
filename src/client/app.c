@@ -290,6 +290,10 @@ void App_run() {
           messageBuffer,
           messageBufferLength
         );
+        if (message == NULL) {
+          Error("Received NULL message");
+          continue;
+        }
         if (message->type == kMessageTypeQuit) {
           C2HMessage_free(&message);
           break;

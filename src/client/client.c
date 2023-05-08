@@ -447,6 +447,15 @@ int Client_receive(C2HatClient *this) {
  * @param[out] Number of bytes sent, -1 on error
  */
 int Client_send(const C2HatClient *this, const C2HMessage *message) {
+  if (this == NULL) {
+    Error("Invalid client instance");
+    return -1;
+  }
+  if (message == NULL) {
+    Error("Invalid message");
+    return -1;
+  }
+
   size_t total = 0;
 
   char buffer[kBufferSize] = {};
@@ -521,8 +530,6 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
   C2HMessage_free(&response);
 
   // Send credentials
-  // char message[kBufferSize] = {};
-  // Message_format(kMessageTypeNick, message, sizeof(message), "%s", username);
   C2HMessage *message = C2HMessage_create(kMessageTypeNick, "%s", username);
   int sent = Client_send(this, message);
   C2HMessage_free(&message);

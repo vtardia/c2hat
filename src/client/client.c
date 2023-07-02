@@ -531,6 +531,14 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
 
   // Send credentials
   C2HMessage *message = C2HMessage_create(kMessageTypeNick, "%s", username);
+  if (message == NULL) {
+    fprintf(
+      this->out,
+      "❌ Error: Unable to authenticate\nCannot create credentials payload, please retry later\n"
+    );
+    Client_disconnect(this);
+    return false;
+  }
   int sent = Client_send(this, message);
   C2HMessage_free(&message);
   if (sent < 0) {

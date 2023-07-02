@@ -101,7 +101,7 @@ int Server_catch(int sig, void (*handler)(int));
 void Server_stop(int signal);
 
 // Send and receive data from client sockets
-int Server_send(Client *client, const char* message, size_t length);
+int Server_send(Client *client, const C2HMessage *message);
 int Server_receive(Client *client);
 
 // Manages a client's thread
@@ -402,8 +402,11 @@ void Server_start(Server *this) {
         pthread_mutex_unlock(&clientsLock);
         pthread_detach(clientThreadID);
       } else {
-        char *err = "/err connection limits reached";
-        Server_send(&client, err, strlen(err) + 1);
+        C2HMessage err = {
+          .type = kMessageTypeErr,
+          .content =  "connection limits reached"
+        };
+        Server_send(&client, &err);
         Info("Connection limits reached", err);
         Server_dropClient(&client);
       }
@@ -442,12 +445,22 @@ void Server_start(Server *this) {
 /**
  * Sends data to a socket using a loop to ensure all data is sent
  * @param[in] client The Client object containing a valid socket
- * @param[in] message The message to send
- * @param[in] length The length of the message to send
+ * @param[in] message The C2HMessage object to send
  */
-int Server_send(Client *client, const char* message, size_t length) {
+int Server_send(Client *client, const C2HMessage *message) {
+  if (client == NULL) {
+    Error("Invalid client instance");
+    return -1;
+  }
+  if (message == NULL) {
+    Error("Invalid message");
+    return -1;
+  }
   size_t sentTotal = 0;
-  char *data = (char*)message; // points to the beginning of the message
+  char buffer[kBufferSize] = {};
+  size_t length = C2HMessage_format(message, buffer, sizeof(buffer));
+
+  char *data = (char*)buffer; // points to the beginning of the message
   do {
     if (!SOCKET_isValid(client->socket)) return -1;
     int sent = SSL_write(client->ssl, data, length - sentTotal);
@@ -655,14 +668,16 @@ bool Client_nicknameIsValid(const char *username) {
  * @param[out] Success or failure
  */
 bool Server_authenticate(Client *client) {
-  char request[kBufferSize] = {};
+  C2HMessage *request = NULL;
   struct timeval timeout;
 
-  Message_format(
-    kMessageTypeNick, request, sizeof(request),
-    "Please enter a nickname:"
-  );
-  Server_send(client, request, strlen(request) + 1);
+  request = C2HMessage_create(kMessageTypeNick, "Please enter a nickname:");
+  if (NULL == request) {
+    Error("Unable to create message request");
+    return false;
+  }
+  Server_send(client, request);
+  C2HMessage_free(&request);
 
   fd_set reads;
   fd_set errors;
@@ -692,12 +707,16 @@ bool Server_authenticate(Client *client) {
 
     // Timeout expired
     if (rc == 0) {
-      memset(request, '\0', sizeof(request));
-      Message_format(
-        kMessageTypeErr, request, sizeof(request),
+      request = C2HMessage_create(
+        kMessageTypeErr,
         "Authentication timeout expired!"
       );
-      Server_send(client, request, strlen(request) + 1);
+      if (NULL == request) {
+        Error("Unable to create message request");
+        break;
+      }
+      Server_send(client, request);
+      C2HMessage_free(&request);
       break;
     }
 
@@ -713,12 +732,17 @@ bool Server_authenticate(Client *client) {
 
           // User name validation
           if (!Client_nicknameIsValid(nick)) {
-            memset(request, '\0', sizeof(request));
-            Message_format(
-              kMessageTypeErr, request, sizeof(request),
+            request = C2HMessage_create(
+              kMessageTypeErr,
               kErrorMessageInvalidUsername
             );
-            Server_send(client, request, strlen(request) + 1);
+            if (NULL == request) {
+              Error("Unable to create message request");
+              C2HMessage_free(&message);
+              break;
+            }
+            Server_send(client, request);
+            C2HMessage_free(&request);
             C2HMessage_free(&message);
             break;
           }
@@ -792,45 +816,62 @@ void* Server_handleClient(void* data) {
     Error("Client thread id mismatch (client: %lu, me: %lu)", client->threadID, me);
     Server_dropClient(client);
   }
-  char messageBuffer[kBufferSize] = {};
+  C2HMessage *messageBuffer = NULL;
 
   Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
-  Message_format(
-    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
+  messageBuffer = C2HMessage_create(
+    kMessageTypeOk,
     "Welcome to C2hat!"
   );
-  // Using strlen() +1 ensures the NULL terminator is sent
-  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+  if (NULL == messageBuffer) {
+    Error("Unable to create message buffer");
+    Server_dropClient(client);
+  }
+  Server_send(client, messageBuffer);
+  C2HMessage_free(&messageBuffer);
 
   // Ask for a nickname
   if (!Server_authenticate(client)) {
     Info("Authentication failed for client thread %lu", client->threadID);
-    memset(messageBuffer, '\0', sizeof(messageBuffer));
-    Message_format(
-      kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
+    messageBuffer = C2HMessage_create(
+      kMessageTypeErr,
       "Authentication failed"
     );
-    Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+    if (NULL == messageBuffer) {
+      Error("Unable to create message buffer");
+      Server_dropClient(client);
+    }
+    Server_send(client, messageBuffer);
+    C2HMessage_free(&messageBuffer);
     Server_dropClient(client);
   }
 
   // Say Hello to the new user
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
+  messageBuffer = C2HMessage_create(
+    kMessageTypeOk,
     "Hello %s!", client->nickname
   );
-  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+  if (NULL == messageBuffer) {
+    Error("Unable to create message buffer");
+    Server_dropClient(client);
+  }
+  Server_send(client, messageBuffer);
+  C2HMessage_free(&messageBuffer);
 
   // Broadcast that a new client has joined
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
+  messageBuffer = C2HMessage_create(
+    kMessageTypeLog,
     "[%s] just joined the chat", client->nickname
   );
-  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
+  if (NULL == messageBuffer) {
+    Error("Unable to create message buffer");
+    Server_dropClient(client);
+  }
+  Server_broadcast(messageBuffer, sizeof(C2HMessage));
+  // Message buffer is copied, in order to be queued, we can free
+  C2HMessage_free(&messageBuffer);
 
   fd_set reads;
   fd_set errors;
@@ -845,9 +886,6 @@ void* Server_handleClient(void* data) {
 
   // Start the chat
   while(!terminate) {
-    // Initialise buffer for client data
-    memset(messageBuffer, '\0', sizeof(messageBuffer));
-
     int rc = select(maxSocket + 1, &reads, 0, &errors, &timeout);
     if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
@@ -863,11 +901,16 @@ void* Server_handleClient(void* data) {
 
     // Timeout expired
     if (rc == 0) {
-      Message_format(
-        kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
+      messageBuffer = C2HMessage_create(
+        kMessageTypeErr,
         "Connection timed out, you've been disconnected!"
       );
-      Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+      if (NULL == messageBuffer) {
+        Error("Unable to create message buffer");
+        break;
+      }
+      Server_send(client, messageBuffer);
+      C2HMessage_free(&messageBuffer);
       break;
     }
 
@@ -905,23 +948,33 @@ void* Server_handleClient(void* data) {
             C2HMessage_free(&message);
             quit = true;
           } else {
-            char broadcastBuffer[kBroadcastBufferSize] = {};
             switch (message->type) {
               case kMessageTypeMsg:
                 if (strlen(message->content) > 0) {
 
                   // Send /ok to the client to acknowledge the correct message
-                  memset(messageBuffer, '\0', sizeof(messageBuffer));
-                  Message_format(kMessageTypeOk, messageBuffer, sizeof(messageBuffer), "");
-                  if (Server_send(client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
+                  messageBuffer = C2HMessage_create(kMessageTypeOk, "");
+                  if (NULL == messageBuffer) {
+                    Error("Unable to create message buffer");
+                    break;
+                  }
+                  int ack = Server_send(client, messageBuffer);
+                  C2HMessage_free(&messageBuffer);
+                  if (ack < 0) break;
 
-                  // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-                  Message_format(
-                    kMessageTypeMsg, broadcastBuffer, sizeof(broadcastBuffer),
+                  // Broadcast the message to all clients using the format
+                  // '/msg [<20charUsername>]: ...'
+                  C2HMessage *broadcastBuffer = C2HMessage_create(
+                    kMessageTypeMsg,
                     "[%s] %s", client->nickname, message->content
                   );
-                  Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
+                  if (NULL == broadcastBuffer) {
+                    Error("Unable to create broadcast buffer");
+                    break;
+                  }
+                  Server_broadcast(broadcastBuffer, sizeof(C2HMessage));
                   C2HMessage_free(&message);
+                  C2HMessage_free(&broadcastBuffer);
                 }
               break;
               default:
@@ -945,12 +998,16 @@ void* Server_handleClient(void* data) {
   }
 
   // Broadcast that client has left
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
+  messageBuffer  = C2HMessage_create(
+    kMessageTypeLog,
     "[%s] just left the chat", client->nickname
   );
-  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
+  if (NULL == messageBuffer) {
+    Error("Unable to create message buffer");
+  } else {
+    Server_broadcast(messageBuffer, sizeof(C2HMessage));
+    C2HMessage_free(&messageBuffer);    
+  }
 
   // Close the connection
   Server_dropClient(client);
@@ -994,7 +1051,7 @@ void* Server_handleBroadcast(void* data) {
         // The client may have been disconnected with a /quit message
         // the server will hang if tries to send a message
         if (SOCKET_isValid(client->socket)) {
-          int sent = Server_send(client, (char*)item->content, item->length);
+          int sent = Server_send(client, (C2HMessage*)item->content);
           if (sent <= 0) Server_dropClient(client);
         }
       }

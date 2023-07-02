@@ -57,9 +57,6 @@
     char user[kMaxNicknameSize];
   } C2HMessage;
 
-  // Wraps an outgoing message into the given command type
-  void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
-
   // Gets the next available message from a message buffer
   C2HMessage *C2HMessage_get(MessageBuffer *buffer);
 

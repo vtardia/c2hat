@@ -35,6 +35,9 @@ char *Message_get(MessageBuffer *buffer);
 // (private) Frees memory space for a parsed message
 void Message_free(char **);
 
+// (private) Wraps an outgoing message into the given command type
+void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
+
 
 // @TODO rewrite tests by testing the wrapper function
 // void TestMessage_getType() {

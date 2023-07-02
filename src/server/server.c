@@ -91,10 +91,10 @@ pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Adds a message to the broadcast queue
- * @param[in] message Message to enqueue
- * @param[in] length Size of the data to enqueue
+ * @param[in] type Type of message
+ * @param[in] format String formatted with placeholders
  */
-#define Server_broadcast(message, length) CQueue_push(messages, message, length)
+bool Server_broadcastMessage(C2HMessageType type, const char *format, ...);
 
 // Signal handling
 int Server_catch(int sig, void (*handler)(int));
@@ -102,6 +102,7 @@ void Server_stop(int signal);
 
 // Send and receive data from client sockets
 int Server_send(Client *client, const C2HMessage *message);
+bool Server_sendMessage(Client *client, C2HMessageType type, const char *format, ...);
 int Server_receive(Client *client);
 
 // Manages a client's thread
@@ -402,12 +403,8 @@ void Server_start(Server *this) {
         pthread_mutex_unlock(&clientsLock);
         pthread_detach(clientThreadID);
       } else {
-        C2HMessage err = {
-          .type = kMessageTypeErr,
-          .content =  "connection limits reached"
-        };
-        Server_send(&client, &err);
-        Info("Connection limits reached", err);
+        Server_sendMessage(&client, kMessageTypeErr, "connection limits reached");
+        Info("Connection limits reached");
         Server_dropClient(&client);
       }
     }
@@ -668,16 +665,11 @@ bool Client_nicknameIsValid(const char *username) {
  * @param[out] Success or failure
  */
 bool Server_authenticate(Client *client) {
-  C2HMessage *request = NULL;
   struct timeval timeout;
 
-  request = C2HMessage_create(kMessageTypeNick, "Please enter a nickname:");
-  if (NULL == request) {
-    Error("Unable to create message request");
+  if (!Server_sendMessage(client, kMessageTypeNick, "Please enter a nickname:")) {
     return false;
   }
-  Server_send(client, request);
-  C2HMessage_free(&request);
 
   fd_set reads;
   fd_set errors;
@@ -707,16 +699,7 @@ bool Server_authenticate(Client *client) {
 
     // Timeout expired
     if (rc == 0) {
-      request = C2HMessage_create(
-        kMessageTypeErr,
-        "Authentication timeout expired!"
-      );
-      if (NULL == request) {
-        Error("Unable to create message request");
-        break;
-      }
-      Server_send(client, request);
-      C2HMessage_free(&request);
+      Server_sendMessage(client, kMessageTypeErr, "Authentication timeout expired!");
       break;
     }
 
@@ -732,17 +715,7 @@ bool Server_authenticate(Client *client) {
 
           // User name validation
           if (!Client_nicknameIsValid(nick)) {
-            request = C2HMessage_create(
-              kMessageTypeErr,
-              kErrorMessageInvalidUsername
-            );
-            if (NULL == request) {
-              Error("Unable to create message request");
-              C2HMessage_free(&message);
-              break;
-            }
-            Server_send(client, request);
-            C2HMessage_free(&request);
+            Server_sendMessage(client, kMessageTypeErr, kErrorMessageInvalidUsername);
             C2HMessage_free(&message);
             break;
           }
@@ -816,62 +789,31 @@ void* Server_handleClient(void* data) {
     Error("Client thread id mismatch (client: %lu, me: %lu)", client->threadID, me);
     Server_dropClient(client);
   }
-  C2HMessage *messageBuffer = NULL;
 
   Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
-  messageBuffer = C2HMessage_create(
-    kMessageTypeOk,
-    "Welcome to C2hat!"
-  );
-  if (NULL == messageBuffer) {
-    Error("Unable to create message buffer");
+  if (!Server_sendMessage(client, kMessageTypeOk, "Welcome to C2hat!")) {
     Server_dropClient(client);
   }
-  Server_send(client, messageBuffer);
-  C2HMessage_free(&messageBuffer);
 
   // Ask for a nickname
   if (!Server_authenticate(client)) {
     Info("Authentication failed for client thread %lu", client->threadID);
-    messageBuffer = C2HMessage_create(
-      kMessageTypeErr,
-      "Authentication failed"
-    );
-    if (NULL == messageBuffer) {
-      Error("Unable to create message buffer");
-      Server_dropClient(client);
-    }
-    Server_send(client, messageBuffer);
-    C2HMessage_free(&messageBuffer);
+    Server_sendMessage(client, kMessageTypeErr, "Authentication failed");
     Server_dropClient(client);
   }
 
   // Say Hello to the new user
-  messageBuffer = C2HMessage_create(
-    kMessageTypeOk,
-    "Hello %s!", client->nickname
-  );
-  if (NULL == messageBuffer) {
-    Error("Unable to create message buffer");
+  if (!Server_sendMessage(client, kMessageTypeOk, "Hello %s!", client->nickname)) {
     Server_dropClient(client);
   }
-  Server_send(client, messageBuffer);
-  C2HMessage_free(&messageBuffer);
 
   // Broadcast that a new client has joined
-  messageBuffer = C2HMessage_create(
+  Server_broadcastMessage(
     kMessageTypeLog,
     "[%s] just joined the chat", client->nickname
   );
-  if (NULL == messageBuffer) {
-    Error("Unable to create message buffer");
-    Server_dropClient(client);
-  }
-  Server_broadcast(messageBuffer, sizeof(C2HMessage));
-  // Message buffer is copied, in order to be queued, we can free
-  C2HMessage_free(&messageBuffer);
 
   fd_set reads;
   fd_set errors;
@@ -901,16 +843,11 @@ void* Server_handleClient(void* data) {
 
     // Timeout expired
     if (rc == 0) {
-      messageBuffer = C2HMessage_create(
+      Server_sendMessage(
+        client,
         kMessageTypeErr,
         "Connection timed out, you've been disconnected!"
       );
-      if (NULL == messageBuffer) {
-        Error("Unable to create message buffer");
-        break;
-      }
-      Server_send(client, messageBuffer);
-      C2HMessage_free(&messageBuffer);
       break;
     }
 
@@ -953,28 +890,15 @@ void* Server_handleClient(void* data) {
                 if (strlen(message->content) > 0) {
 
                   // Send /ok to the client to acknowledge the correct message
-                  messageBuffer = C2HMessage_create(kMessageTypeOk, "");
-                  if (NULL == messageBuffer) {
-                    Error("Unable to create message buffer");
-                    break;
-                  }
-                  int ack = Server_send(client, messageBuffer);
-                  C2HMessage_free(&messageBuffer);
-                  if (ack < 0) break;
+                  if (!Server_sendMessage(client, kMessageTypeOk, "")) break;
 
                   // Broadcast the message to all clients using the format
                   // '/msg [<20charUsername>]: ...'
-                  C2HMessage *broadcastBuffer = C2HMessage_create(
+                  Server_broadcastMessage(
                     kMessageTypeMsg,
                     "[%s] %s", client->nickname, message->content
                   );
-                  if (NULL == broadcastBuffer) {
-                    Error("Unable to create broadcast buffer");
-                    break;
-                  }
-                  Server_broadcast(broadcastBuffer, sizeof(C2HMessage));
                   C2HMessage_free(&message);
-                  C2HMessage_free(&broadcastBuffer);
                 }
               break;
               default:
@@ -998,16 +922,10 @@ void* Server_handleClient(void* data) {
   }
 
   // Broadcast that client has left
-  messageBuffer  = C2HMessage_create(
+  Server_broadcastMessage(
     kMessageTypeLog,
     "[%s] just left the chat", client->nickname
   );
-  if (NULL == messageBuffer) {
-    Error("Unable to create message buffer");
-  } else {
-    Server_broadcast(messageBuffer, sizeof(C2HMessage));
-    C2HMessage_free(&messageBuffer);    
-  }
 
   // Close the connection
   Server_dropClient(client);
@@ -1063,4 +981,40 @@ void* Server_handleBroadcast(void* data) {
 
   Info("Closing broadcast thread %lu", me);
   pthread_exit(data);
+}
+
+bool Server_sendMessage(Client *client, C2HMessageType type, const char *format, ...) {
+  // We cannot transfer the arguments directly, we need to pre-parse
+  va_list args;
+  va_start(args, format);
+  char buffer[kBufferSize] = {};
+  vsnprintf(buffer, kBufferSize, format, args);
+  va_end(args);
+
+  C2HMessage *message = C2HMessage_create(type, buffer);
+  if (NULL == message) {
+    Error("Unable to build message");
+    return false;
+  }
+  int res = Server_send(client, message);
+  C2HMessage_free(&message);
+  return res > 0;
+}
+
+bool Server_broadcastMessage(C2HMessageType type, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  char buffer[kBufferSize] = {};
+  vsnprintf(buffer, kBufferSize, format, args);
+  va_end(args);
+
+  C2HMessage *message = C2HMessage_create(type, buffer);
+  if (NULL == message) {
+    Error("Unable to build message");
+    return false;
+  }
+  bool res = CQueue_push(messages, message, sizeof(C2HMessage));
+  // Message is copied to be enqueued so it's safe to free
+  C2HMessage_free(&message);
+  return res;
 }

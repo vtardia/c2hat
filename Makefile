@@ -179,7 +179,7 @@ test/queue: prereq/tests
 	$(VALGRIND) bin/test/queue
 
 test/message: prereq/tests
-	$(CC) -g $(CFLAGS) -I src/server $(OSFLAG) test/message/*.c src/lib/message/*.c \
+	$(CC) -g $(CFLAGS) -I src/server $(OSFLAG) src/lib/message/*.c \
 		src/lib/trim/*.c \
 		$(LDFLAGS) -o bin/test/message
 	$(VALGRIND) bin/test/message

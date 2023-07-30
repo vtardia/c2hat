@@ -51,6 +51,7 @@
     char *start;
   } MessageBuffer;
 
+  /// Represents a chat message object
   typedef struct {
     C2HMessageType type;
     char content[kBufferSize];
@@ -61,9 +62,10 @@
   C2HMessage *C2HMessage_get(MessageBuffer *buffer);
 
   // Creates a new message given a formatted string
+  // e.g. C2Message *hello = C2HMessage_create(kMessageTypeMsg, "Hello %s!", userName);
   C2HMessage *C2HMessage_create(C2HMessageType type, const char *format, ...);
 
-  // Creates a new message given a raw string
+  // Creates a new message given a raw string (e.g. '/msg Hello World!')
   C2HMessage *C2HMessage_createFromString(char *buffer, size_t size);
 
   // Converts a C2HMessage into a formatted string

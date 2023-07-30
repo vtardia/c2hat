@@ -91,17 +91,18 @@ pthread_mutex_t clientsLock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Adds a message to the broadcast queue
- * @param[in] message Message to enqueue
- * @param[in] length Size of the data to enqueue
+ * @param[in] type Type of message
+ * @param[in] format String formatted with placeholders
  */
-#define Server_broadcast(message, length) CQueue_push(messages, message, length)
+bool Server_broadcastMessage(C2HMessageType type, const char *format, ...);
 
 // Signal handling
 int Server_catch(int sig, void (*handler)(int));
 void Server_stop(int signal);
 
 // Send and receive data from client sockets
-int Server_send(Client *client, const char* message, size_t length);
+int Server_send(Client *client, const C2HMessage *message);
+bool Server_sendMessage(Client *client, C2HMessageType type, const char *format, ...);
 int Server_receive(Client *client);
 
 // Manages a client's thread
@@ -402,9 +403,8 @@ void Server_start(Server *this) {
         pthread_mutex_unlock(&clientsLock);
         pthread_detach(clientThreadID);
       } else {
-        char *err = "/err connection limits reached";
-        Server_send(&client, err, strlen(err) + 1);
-        Info("Connection limits reached", err);
+        Server_sendMessage(&client, kMessageTypeErr, "connection limits reached");
+        Info("Connection limits reached");
         Server_dropClient(&client);
       }
     }
@@ -442,12 +442,22 @@ void Server_start(Server *this) {
 /**
  * Sends data to a socket using a loop to ensure all data is sent
  * @param[in] client The Client object containing a valid socket
- * @param[in] message The message to send
- * @param[in] length The length of the message to send
+ * @param[in] message The C2HMessage object to send
  */
-int Server_send(Client *client, const char* message, size_t length) {
+int Server_send(Client *client, const C2HMessage *message) {
+  if (client == NULL) {
+    Error("Invalid client instance");
+    return -1;
+  }
+  if (message == NULL) {
+    Error("Invalid message");
+    return -1;
+  }
   size_t sentTotal = 0;
-  char *data = (char*)message; // points to the beginning of the message
+  char buffer[kBufferSize] = {};
+  size_t length = C2HMessage_format(message, buffer, sizeof(buffer));
+
+  char *data = (char*)buffer; // points to the beginning of the message
   do {
     if (!SOCKET_isValid(client->socket)) return -1;
     int sent = SSL_write(client->ssl, data, length - sentTotal);
@@ -655,14 +665,11 @@ bool Client_nicknameIsValid(const char *username) {
  * @param[out] Success or failure
  */
 bool Server_authenticate(Client *client) {
-  char request[kBufferSize] = {};
   struct timeval timeout;
 
-  Message_format(
-    kMessageTypeNick, request, sizeof(request),
-    "Please enter a nickname:"
-  );
-  Server_send(client, request, strlen(request) + 1);
+  if (!Server_sendMessage(client, kMessageTypeNick, "Please enter a nickname:")) {
+    return false;
+  }
 
   fd_set reads;
   fd_set errors;
@@ -692,12 +699,7 @@ bool Server_authenticate(Client *client) {
 
     // Timeout expired
     if (rc == 0) {
-      memset(request, '\0', sizeof(request));
-      Message_format(
-        kMessageTypeErr, request, sizeof(request),
-        "Authentication timeout expired!"
-      );
-      Server_send(client, request, strlen(request) + 1);
+      Server_sendMessage(client, kMessageTypeErr, "Authentication timeout expired!");
       break;
     }
 
@@ -705,28 +707,16 @@ bool Server_authenticate(Client *client) {
     if (FD_ISSET(client->socket, &reads)) {
       int received = Server_receive(client);
       if (received > 0) {
-        char *response = Message_get(&(client->buffer));
-        if (!response) break;
+        C2HMessage *message = C2HMessage_get(&(client->buffer));
+        if (!message) break;
 
-        if (kMessageTypeNick == Message_getType(response)) {
-          // The client has sent a nick in the format '/nick Name'
-          // In order to have a full 20 chars nickname,
-          // we need to add a 7 chars pad to the length:
-          // 5chars for the /nick prefix, + 1 space + null-terminator
-          char *nick = Message_getContent(
-            response, kMessageTypeNick, kMaxNicknameSize + 7
-          );
-          Message_free(&response);
+        if (kMessageTypeNick == message->type) {
+          char *nick = message->content;
 
           // User name validation
           if (!Client_nicknameIsValid(nick)) {
-            memset(request, '\0', sizeof(request));
-            Message_format(
-              kMessageTypeErr, request, sizeof(request),
-              kErrorMessageInvalidUsername
-            );
-            Server_send(client, request, strlen(request) + 1);
-            Message_free(&nick);
+            Server_sendMessage(client, kMessageTypeErr, kErrorMessageInvalidUsername);
+            C2HMessage_free(&message);
             break;
           }
 
@@ -739,23 +729,29 @@ bool Server_authenticate(Client *client) {
             clientInfo = Server_getClientInfoForThread(pthread_self());
             if (clientInfo != NULL && clientInfo == client) {
               // Update client entry
-              snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
+              int res = snprintf(clientInfo->nickname, kMaxNicknameSize, "%s", nick);
+              if (res < 0) {
+                Error("Authentication: unable to read client nickname");
+                C2HMessage_free(&message);
+                return false;
+              }
               Info(
                 "User %s (%d bytes) authenticated successfully!",
                 clientInfo->nickname, strlen(clientInfo->nickname)
               );
-              Message_free(&nick);
+              C2HMessage_free(&message);
               return true;
             }
             Error(
               "Authentication: client info not found for client %lu",
               pthread_self()
             );
-            Message_free(&nick);
+            C2HMessage_free(&message);
             return false;
           }
           Info("Client with nick '%s' is already logged in", nick);
-          Message_free(&nick);
+          C2HMessage_free(&message);
+          return false;
         }
       }
       if (received == 0) {
@@ -793,45 +789,31 @@ void* Server_handleClient(void* data) {
     Error("Client thread id mismatch (client: %lu, me: %lu)", client->threadID, me);
     Server_dropClient(client);
   }
-  char messageBuffer[kBufferSize] = {};
 
   Info("Starting new client thread %lu", client->threadID);
 
   // Send a welcome message
-  Message_format(
-    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
-    "Welcome to C2hat!"
-  );
-  // Using strlen() +1 ensures the NULL terminator is sent
-  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+  if (!Server_sendMessage(client, kMessageTypeOk, "Welcome to C2hat!")) {
+    Server_dropClient(client);
+  }
 
   // Ask for a nickname
   if (!Server_authenticate(client)) {
     Info("Authentication failed for client thread %lu", client->threadID);
-    memset(messageBuffer, '\0', sizeof(messageBuffer));
-    Message_format(
-      kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
-      "Authentication failed"
-    );
-    Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+    Server_sendMessage(client, kMessageTypeErr, "Authentication failed");
     Server_dropClient(client);
   }
 
   // Say Hello to the new user
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeOk, messageBuffer, sizeof(messageBuffer),
-    "Hello %s!", client->nickname
-  );
-  Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
+  if (!Server_sendMessage(client, kMessageTypeOk, "Hello %s!", client->nickname)) {
+    Server_dropClient(client);
+  }
 
   // Broadcast that a new client has joined
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
+  Server_broadcastMessage(
+    kMessageTypeLog,
     "[%s] just joined the chat", client->nickname
   );
-  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   fd_set reads;
   fd_set errors;
@@ -846,9 +828,6 @@ void* Server_handleClient(void* data) {
 
   // Start the chat
   while(!terminate) {
-    // Initialise buffer for client data
-    memset(messageBuffer, '\0', sizeof(messageBuffer));
-
     int rc = select(maxSocket + 1, &reads, 0, &errors, &timeout);
     if (rc < 0) {
       if (EINTR == SOCKET_getErrorNumber()) {
@@ -864,11 +843,11 @@ void* Server_handleClient(void* data) {
 
     // Timeout expired
     if (rc == 0) {
-      Message_format(
-        kMessageTypeErr, messageBuffer, sizeof(messageBuffer),
+      Server_sendMessage(
+        client,
+        kMessageTypeErr,
         "Connection timed out, you've been disconnected!"
       );
-      Server_send(client, messageBuffer, strlen(messageBuffer) + 1);
       break;
     }
 
@@ -895,46 +874,39 @@ void* Server_handleClient(void* data) {
       }
 
       if (received > 0) {
-        int messageType = 0;
-        char *response = NULL;
+        bool quit = false;
+        C2HMessage *message = NULL;
         // Retrieve all messages available from the client's buffer
         do {
-          response = Message_get(&(client->buffer));
-          if (!response) break;
+          message = C2HMessage_get(&(client->buffer));
+          if (!message) break;
 
-          Debug("Server_handleClient - received: (%d bytes) %.*s", received, received, response);
-
-          messageType = Message_getType(response);
-          if (messageType == kMessageTypeQuit) {
-            Message_free(&response);
+          if (message->type == kMessageTypeQuit) {
+            C2HMessage_free(&message);
+            quit = true;
           } else {
-            char *messageContent = Message_getContent(response, kMessageTypeMsg, kBufferSize);
-            Message_free(&response);
-            char broadcastBuffer[kBroadcastBufferSize] = {};
-            switch (messageType) {
+            switch (message->type) {
               case kMessageTypeMsg:
-                if (messageContent != NULL && strlen(messageContent) > 0) {
+                if (strlen(message->content) > 0) {
 
                   // Send /ok to the client to acknowledge the correct message
-                  memset(messageBuffer, '\0', sizeof(messageBuffer));
-                  Message_format(kMessageTypeOk, messageBuffer, sizeof(messageBuffer), "");
-                  if (Server_send(client, messageBuffer, strlen(messageBuffer) + 1) < 0) break;
+                  if (!Server_sendMessage(client, kMessageTypeOk, "")) break;
 
-                  // Broadcast the message to all clients using the format '/msg [<20charUsername>]: ...'
-                  Message_format(
-                    kMessageTypeMsg, broadcastBuffer, sizeof(broadcastBuffer),
-                    "[%s] %s", client->nickname, messageContent
+                  // Broadcast the message to all clients using the format
+                  // '/msg [<20charUsername>]: ...'
+                  Server_broadcastMessage(
+                    kMessageTypeMsg,
+                    "[%s] %s", client->nickname, message->content
                   );
-                  Server_broadcast(broadcastBuffer, strlen(broadcastBuffer) + 1);
-                  Message_free(&messageContent);
+                  C2HMessage_free(&message);
                 }
               break;
               default:
                 ; // Ignore for now...
             }
           }
-        } while(messageType != kMessageTypeQuit && response != NULL);
-        if (messageType == kMessageTypeQuit) break;
+        } while(message != NULL && !quit);
+        if (quit) break; // Stop listening
       }
     }
 
@@ -950,12 +922,10 @@ void* Server_handleClient(void* data) {
   }
 
   // Broadcast that client has left
-  memset(messageBuffer, '\0', sizeof(messageBuffer));
-  Message_format(
-    kMessageTypeLog, messageBuffer, sizeof(messageBuffer),
+  Server_broadcastMessage(
+    kMessageTypeLog,
     "[%s] just left the chat", client->nickname
   );
-  Server_broadcast(messageBuffer, strlen(messageBuffer) + 1);
 
   // Close the connection
   Server_dropClient(client);
@@ -999,7 +969,7 @@ void* Server_handleBroadcast(void* data) {
         // The client may have been disconnected with a /quit message
         // the server will hang if tries to send a message
         if (SOCKET_isValid(client->socket)) {
-          int sent = Server_send(client, (char*)item->content, item->length);
+          int sent = Server_send(client, (C2HMessage*)item->content);
           if (sent <= 0) Server_dropClient(client);
         }
       }
@@ -1011,4 +981,40 @@ void* Server_handleBroadcast(void* data) {
 
   Info("Closing broadcast thread %lu", me);
   pthread_exit(data);
+}
+
+bool Server_sendMessage(Client *client, C2HMessageType type, const char *format, ...) {
+  // We cannot transfer the arguments directly, we need to pre-parse
+  va_list args;
+  va_start(args, format);
+  char buffer[kBufferSize] = {};
+  vsnprintf(buffer, kBufferSize, format, args);
+  va_end(args);
+
+  C2HMessage *message = C2HMessage_create(type, buffer);
+  if (NULL == message) {
+    Error("Unable to build message");
+    return false;
+  }
+  int res = Server_send(client, message);
+  C2HMessage_free(&message);
+  return res > 0;
+}
+
+bool Server_broadcastMessage(C2HMessageType type, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  char buffer[kBufferSize] = {};
+  vsnprintf(buffer, kBufferSize, format, args);
+  va_end(args);
+
+  C2HMessage *message = C2HMessage_create(type, buffer);
+  if (NULL == message) {
+    Error("Unable to build message");
+    return false;
+  }
+  bool res = CQueue_push(messages, message, sizeof(C2HMessage));
+  // Message is copied to be enqueued so it's safe to free
+  C2HMessage_free(&message);
+  return res;
 }

@@ -317,18 +317,21 @@ void UIResize() {
 }
 
 /// Adds a message to the chat log queue
-void UILogMessage(char *buffer, size_t length) {
-  if (Message_getType(buffer) == kMessageTypeQuit) {
+void UILogMessage(const C2HMessage *message) {
+  if (message->type == kMessageTypeQuit) {
     // The server sent a disconnect command
-    char *error = "/err You have been disconnected";
-    UIChatWin_logMessage(error, strlen(error));
+    C2HMessage error = {
+      .type = kMessageTypeErr,
+      .content = "You have been disconnected"
+    };
+    UIChatWin_logMessage(&error);
     Info("Session terminated by the server");
     pthread_kill(pthread_self(), SIGTERM);
     return;
   }
 
   // Other type of message
-  UIChatWin_logMessage(buffer, length);
+  UIChatWin_logMessage(message);
   UIInputWin_getCursor();
 }
 

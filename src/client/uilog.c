@@ -37,7 +37,7 @@
 /**
  * Creates a new log entry from the given data
  */
-ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length) {
+ChatLogEntry *ChatLogEntry_create(const C2HMessage *buffer) {
   ChatLogEntry *entry = calloc(sizeof(ChatLogEntry), 1);
   if (entry != NULL) {
     // Get local time
@@ -46,13 +46,11 @@ ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length) {
     if (result <= 0) memset(entry->timestamp, 0, 15);
 
     // Get entry type
-    entry->type = Message_getType(buffer);
+    entry->type = buffer->type;
 
     // Get message content and length
-    char *content = Message_getContent(buffer, entry->type, length);
-    strncpy(entry->content, content, kBroadcastBufferSize - 1);
+    strncpy(entry->content, buffer->content, kBroadcastBufferSize - 1);
     entry->length = strlen(entry->content);
-    Message_free(&content);
 
     // If the message is empty (e.g /ok with no detail), cleanup and return NULL
     if (entry->length == 0) {
@@ -63,7 +61,7 @@ ChatLogEntry *ChatLogEntry_create(char *buffer, size_t length) {
     }
 
     // Extract the user name
-    Message_getUser(buffer, entry->username, kMaxNicknameSize);
+    strncpy(entry->username, buffer->user, kMaxNicknameSize);
     return entry;
   }
   return NULL;

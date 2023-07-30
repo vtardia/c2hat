@@ -23,6 +23,7 @@
 #define UI_CHAT_H
   #include <ncurses.h>
   #include "uiterm.h"
+  #include "message/message.h"
 
   typedef enum {
     /// The chat window is currently receiving messages in real time
@@ -40,7 +41,7 @@
    * The message is appended to a list buffer, which is then rendered
    * depending on the chat window mode
    */
-  void UIChatWin_logMessage(const char *buffer, size_t length);
+  void UIChatWin_logMessage(const C2HMessage *buffer);
 
   /// Cleanup resources
   void UIChatWin_destroy();

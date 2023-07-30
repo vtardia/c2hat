@@ -57,10 +57,10 @@ else
 		VALGRIND =
 		CFLAGS += -I$(HOMEBREW_CELLAR)/ncurses/6.3/include/ncursesw \
 			-I$(HOMEBREW_CELLAR)/ncurses/6.3/include \
-			-I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/include
-		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/lib
+			-I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/include
+		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/lib
 		CLIENTLIBS += -L$(HOMEBREW_CELLAR)/ncurses/6.3/lib -Wl,-search_paths_first \
-			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1p/lib
+			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/lib
 	endif
 	ifeq ($(UNAME_S),FreeBSD)
 		CC = cc
@@ -73,7 +73,7 @@ endif
 SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 
-COMMON_LIBRARIES = logger socket list queue cqueue message fsutil
+COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim
 SERVER_LIBRARIES = config validate ini encrypt
 CLIENT_LIBRARIES = hash wtrim nccolor
 
@@ -159,7 +159,7 @@ $(CLIENT_LIBRARIES):
 # logger, socket, message are the only one we need
 bot: prereq $(COMMON_LIBRARIES)
 	mkdir -p bin/test
-	$(CC) $(CFLAGS) -I src/client \
+	$(CC) -g $(CFLAGS) -I src/client \
 		test/bot/main.c src/client/client.c obj/lib/*.o \
 		$(OSFLAG) $(LDFLAGS) $(LDLIBS) -o bin/test/bot
 
@@ -179,7 +179,8 @@ test/queue: prereq/tests
 	$(VALGRIND) bin/test/queue
 
 test/message: prereq/tests
-	$(CC) -g $(CFLAGS) -I src/server $(OSFLAG) test/message/*.c src/lib/message/*.c \
+	$(CC) -g $(CFLAGS) -I src/server $(OSFLAG) src/lib/message/*.c \
+		src/lib/trim/*.c \
 		$(LDFLAGS) -o bin/test/message
 	$(VALGRIND) bin/test/message
 

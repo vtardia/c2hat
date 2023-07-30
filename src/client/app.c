@@ -220,13 +220,12 @@ void *App_listen(void *data) {
         terminate = true;
         break;
       }
-      // char *response = NULL;
       while (true) {
-        char *response = Message_get(buffer);
+        C2HMessage *response = C2HMessage_get(buffer);
         if (response == NULL) break;
         // Push the message to be read by the main thread
-        CQueue_push(messages, response, strlen(response) + 1);
-        Message_free(&response);
+        CQueue_push(messages, response, sizeof(C2HMessage));
+        C2HMessage_free(&response);
       }
 
       // Alert the main thread that there are messages to read
@@ -255,9 +254,11 @@ void *App_listen(void *data) {
  */
 void App_updateHandler() {
   while (true) {
+    // Item content (void*) is actually a C2HMessage*,
+    // length is sizeof(C2HMessage)
     QueueData *item = CQueue_tryPop(messages);
     if (item == NULL) break;
-    UILogMessage(item->content, item->length);
+    UILogMessage(item->content);
     QueueData_free(&item);
   }
 }
@@ -283,19 +284,23 @@ void App_run() {
       wcstombs(messageBuffer, trimmedBuffer, kBufferSize);
 
       // Send it to the server if non empty
-      if (strlen(messageBuffer) > 0) {
-        int messageType = Message_getType(messageBuffer);
-        if (messageType == kMessageTypeQuit) break;
-
-        // If the input is not a command, wrap it into a message payload
-        char message[kBufferSize] = {};
-        if (!messageType) {
-          Message_format(kMessageTypeMsg, message, kBufferSize, "%s", messageBuffer);
-        } else {
-          // Send the message as is
-          memcpy(message, messageBuffer, res);
+      size_t messageBufferLength = strlen(messageBuffer);
+      if (messageBufferLength > 0) {
+        C2HMessage *message = C2HMessage_createFromString(
+          messageBuffer,
+          messageBufferLength
+        );
+        if (message == NULL) {
+          Error("Received NULL message");
+          continue;
         }
-        int sent = Client_send(client, message, strlen(message) + 1);
+        if (message->type == kMessageTypeQuit) {
+          C2HMessage_free(&message);
+          break;
+        }
+
+        int sent = Client_send(client, message);
+        C2HMessage_free(&message);
 
         // If the connection drops, break and close
         if (sent < 0) break;
@@ -310,7 +315,8 @@ void App_run() {
   }
 
   // Try a clean clean exit
-  Client_send(client, "/quit", strlen("/quit") + 1);
+  C2HMessage quit = { .type = kMessageTypeQuit };
+  Client_send(client, &quit);
 }
 
 int App_start() {

@@ -21,10 +21,12 @@
 
 #ifndef MESSAGE_H
 #define MESSAGE_H
+  #include "../c2hat.h"
   #include <stddef.h>
   #include <stdbool.h>
 
-  enum {
+  enum MessageType {
+    kMessageTypeNull = 0,
     kMessageTypeNick = 100,
     kMessageTypeAuth = 110,
     kMessageTypeHelp = 120,
@@ -41,29 +43,35 @@
     kMessageBufferSize = 2048
   };
 
+  typedef enum MessageType C2HMessageType;
+
   /// Holds data read from a client's connection
   typedef struct {
     char data[kMessageBufferSize];
     char *start;
   } MessageBuffer;
 
-  // Returns the type of a given message
-  int Message_getType(const char *message);
-
-  // Returns the user part of a given message
-  // The length of user MUST be > length
-  bool Message_getUser(const char *message, char *user, size_t length);
-
-  // Returns the content part of a message
-  char *Message_getContent(const char *message, unsigned int type, size_t length);
-
-  // Wraps an outgoing message into the given command type
-  void Message_format(unsigned int type, char *dest, size_t size, const char *format, ...);
-
-  // Frees memory space for a parsed message
-  void Message_free(char **);
+  /// Represents a chat message object
+  typedef struct {
+    C2HMessageType type;
+    char content[kBufferSize];
+    char user[kMaxNicknameSize];
+  } C2HMessage;
 
   // Gets the next available message from a message buffer
-  char *Message_get(MessageBuffer *buffer);
+  C2HMessage *C2HMessage_get(MessageBuffer *buffer);
+
+  // Creates a new message given a formatted string
+  // e.g. C2Message *hello = C2HMessage_create(kMessageTypeMsg, "Hello %s!", userName);
+  C2HMessage *C2HMessage_create(C2HMessageType type, const char *format, ...);
+
+  // Creates a new message given a raw string (e.g. '/msg Hello World!')
+  C2HMessage *C2HMessage_createFromString(char *buffer, size_t size);
+
+  // Converts a C2HMessage into a formatted string
+  size_t C2HMessage_format(const C2HMessage *message, char *dest, size_t size);
+
+  // Frees memory space for a parsed message
+  void C2HMessage_free(C2HMessage **);
 
 #endif

@@ -326,24 +326,19 @@ bool Client_connect(C2HatClient *this, const char *host, const char *port) {
         return false;
       }
       // At this point the server will only send /ok or /err messages
-      char *response = Message_get(&(this->buffer));
+      C2HMessage *response = C2HMessage_get(&(this->buffer));
       if (response == NULL) return false;
 
-      int messageType = Message_getType(response);
-      if (messageType != kMessageTypeOk) {
-        char *serverErrorMessage = Message_getContent(response, kMessageTypeErr, kBufferSize);
-        fprintf(this->err, "❌ Error: Connection refused: %s\n", serverErrorMessage);
-        Message_free(&serverErrorMessage);
-        Message_free(&response);
+      if (response->type != kMessageTypeOk) {
+        fprintf(this->err, "❌ Error: Connection refused: %s\n", response->content);
+        C2HMessage_free(&response);
         return false;
       }
       // Display the server welcome message
-      char *messageContent = Message_getContent(response, kMessageTypeOk, kBufferSize);
-      if (strlen(messageContent) > 0) {
-        fprintf(this->out, "\n💬 %s\n", messageContent);
+      if (strlen(response->content) > 0) {
+        fprintf(this->out, "\n💬 %s\n", response->content);
       }
-      Message_free(&response);
-      Message_free(&messageContent);
+      C2HMessage_free(&response);
 
       if (!vLogInit(this->logLevel, this->logFilePath)) {
         fprintf(this->err, "Unable to initialise the logger (%s): %s\n", this->logFilePath, strerror(errno));
@@ -448,12 +443,23 @@ int Client_receive(C2HatClient *this) {
  * to ensure all the given data is sent
  *
  * @param[in] this C2HatClient structure holding the connection information
- * @param[in] buffer The bytes ot data to send
- * @param[in] length Size of the data to send
- * @param[out] Number of bytes sent
+ * @param[in] message The C2HMessage object to send
+ * @param[out] Number of bytes sent, -1 on error
  */
-int Client_send(const C2HatClient *this, const char *buffer, size_t length) {
+int Client_send(const C2HatClient *this, const C2HMessage *message) {
+  if (this == NULL) {
+    Error("Invalid client instance");
+    return -1;
+  }
+  if (message == NULL) {
+    Error("Invalid message");
+    return -1;
+  }
+
   size_t total = 0;
+
+  char buffer[kBufferSize] = {};
+  size_t length = C2HMessage_format(message, buffer, sizeof(buffer));
 
   // Cursor pointing to the beginning of the message
   char *data = (char*)buffer;
@@ -509,12 +515,11 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     Client_disconnect(this);
     return false;
   }
-  char *response = Message_get(&(this->buffer));
+  C2HMessage *response = C2HMessage_get(&(this->buffer));
   if (response == NULL) return false;
 
-  int messageType = Message_getType(response);
-  Message_free(&response);
-  if (messageType != kMessageTypeNick) {
+  if (response->type != kMessageTypeNick) {
+    C2HMessage_free(&response);
     fprintf(
       this->out,
       "❌ Error: Unable to authenticate\nUnknown server response\n"
@@ -522,11 +527,20 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     Client_disconnect(this);
     return false;
   }
+  C2HMessage_free(&response);
 
   // Send credentials
-  char message[kBufferSize] = {};
-  Message_format(kMessageTypeNick, message, sizeof(message), "%s", username);
-  int sent = Client_send(this, message, strlen(message) + 1);
+  C2HMessage *message = C2HMessage_create(kMessageTypeNick, "%s", username);
+  if (message == NULL) {
+    fprintf(
+      this->out,
+      "❌ Error: Unable to authenticate\nCannot create credentials payload, please retry later\n"
+    );
+    Client_disconnect(this);
+    return false;
+  }
+  int sent = Client_send(this, message);
+  C2HMessage_free(&message);
   if (sent < 0) {
     fprintf(
       this->out,
@@ -547,29 +561,26 @@ bool Client_authenticate(C2HatClient *this, const char *username) {
     return false;
   }
 
-  response = Message_get(&(this->buffer));
+  response = C2HMessage_get(&(this->buffer));
   if (response == NULL) return false;
 
-  messageType = Message_getType(response);
-  if (messageType != kMessageTypeOk) {
-    if (messageType == kMessageTypeErr) {
-      char *errorMessage = Message_getContent(response, kMessageTypeErr, kBufferSize);
+  if (response->type != kMessageTypeOk) {
+    if (response->type == kMessageTypeErr) {
       fprintf(
         this->out, "❌ [Server Error] Authentication failed\n%s\n",
-        errorMessage
+        response->content
       );
-      Message_free(&errorMessage);
     } else {
       fprintf(
         this->out,
         "❌ Error: Authentication failed\nInvalid response from the server\n"
       );
     }
-    Message_free(&response);
+    C2HMessage_free(&response);
     Client_disconnect(this);
     return false;
   }
-  Message_free(&response);
+  C2HMessage_free(&response);
   return true;
 }
 

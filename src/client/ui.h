@@ -23,6 +23,7 @@
 #define UI_H
 
   #include <ncurses.h>
+  #include "message/message.h"
 
   enum UIInputLoopStatus {
     kUITerminate = 0
@@ -65,7 +66,7 @@
   void UIUpdateChatLog();
 
   // Adds a message to the chat log display buffer
-  void UILogMessage(char *buffer, size_t length);
+  void UILogMessage(const C2HMessage *buffer);
 
   /**
    * Updates the status bar message

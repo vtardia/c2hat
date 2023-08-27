@@ -1,20 +1,19 @@
 #!/bin/sh
 #
-# PROVIDE: <app-name>
+# PROVIDE: @APPNAME@
 # REQUIRE: NETWORKING SERVERS
 
 # Example service file for a FreeBSD service
-#  - Change '<app-name>' to the name of the binary (default: c2hat)
-#  - Edit and copy to /usr/local/etc/rc.d/<app-name> and make it executable
-#  - Then add '<app-name>_enable="YES"' to /etc/.rc.conf
-#  - Then run '[sudo] service <app-name> [start|stop|status]'
+#  - Copy this file as /usr/local/etc/rc.d/@APPNAME@ and make it executable
+#  - Then add '@APPNAME@_enable="YES"' to /etc/.rc.conf
+#  - Then run '[sudo] service @APPNAME@ [start|stop|status]'
 # See also https://docs.freebsd.org/en/books/handbook/config/#configtuning-starting-services
 
 . /etc/rc.subr
 
-name=<app-name>
+name=@APPNAME@
 desc="A simple chat server written in C"
-rcvar=<app-name>_enable
+rcvar=@APPNAME@_enable
 
 start_cmd="app_start"
 stop_cmd="app_stop"
@@ -22,9 +21,9 @@ status_cmd="app_status"
 
 command="/usr/local/bin/${name}-server"
 
-<app-name>_enable=${<app-name>_enable-"NO"}
+@APPNAME@_enable=${@APPNAME@_enable-"NO"}
 
-pidfile=${<app-name>_pidfile-"/var/run/${name}.pid"}
+pidfile=${@APPNAME@_pidfile-"/var/run/${name}.pid"}
 
 app_start() {
     ${command} start

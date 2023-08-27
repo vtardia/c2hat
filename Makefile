@@ -155,6 +155,18 @@ $(CLIENT_OBJECTS):
 $(CLIENT_LIBRARIES):
 	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/client/$@.o
 
+# Exports a config service file for Systemd Linux
+service/systemd:
+	sed -e "s/@APPNAME@/$(APPNAME)/g" -e "s/@APPUSER@/$(APPNAME)/" service/examples/systemd.service
+
+# Exports a config service file for FreeBSD
+service/freebsd:
+	sed -e "s/@APPNAME@/$(APPNAME)/g" -e "s/@APPUSER@/$(APPNAME)/" service/examples/freebsd
+
+# Exports a config service file for macOS
+service/macos:
+	sed -e "s/@APPNAME@/$(APPNAME)/g" -e "s/@APPID@/org.$(APPNAME).server/" service/examples/macos.plist
+
 # Test Bot
 # logger, socket, message are the only one we need
 bot: prereq $(COMMON_LIBRARIES)

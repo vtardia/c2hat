@@ -50,7 +50,7 @@ sysadminctl -addUser _c2hat -roleAccount --UID <300>
 
 ### Linux
 
-Customise the `systemd.service` example and save it as `/etc/systemd/system/<your-app-name>.service`, then run
+Run `make service/systemd > /path/to/destfile.service` or customise the `systemd.service` example. Save the result as `/etc/systemd/system/<your-app-name>.service`, then run
 
 ```console
 [sudo] systemctl start <your-app-name>
@@ -60,6 +60,7 @@ Customise the `systemd.service` example and save it as `/etc/systemd/system/<you
 ### FreeBSD
 
  - Customise the `freebsd` example
+ - or run `make service/freebsd > /path/to/destfile`
  - save it as `/usr/local/etc/rc.d/<app-name>`
  - and make it executable
  - add `<app-name>_enable="YES"` to `/etc/.rc.conf`
@@ -69,6 +70,7 @@ Customise the `systemd.service` example and save it as `/etc/systemd/system/<you
 ### macOS
 
  - Customise the `macos.plist` example
+ - or run `make service/macos > /path/to/destfile.plist`
  - save it as `/Library/LaunchDaemons/<app-ID>.plist`
  - run `[sudo] launchctl load /Library/LaunchDaemons/<app-ID>.plist` to load the service
  - run `[sudo] launchctl unload /Library/LaunchDaemons/<app-ID>.plist` to stop the service

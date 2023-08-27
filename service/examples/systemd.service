@@ -1,7 +1,7 @@
 # Example service file for a systemd service
-# Edit and copy to /etc/systemd/system/<app-name>.service
-# Then run '[sudo] systemctl start <app-name>'
-# and '[sudo] systemctl enable <app-name>'
+# Edit and copy to /etc/systemd/system/@APPNAME@.service
+# Then run '[sudo] systemctl start @APPNAME@'
+# and '[sudo] systemctl enable @APPNAME@'
 # See https://www.freedesktop.org/software/systemd/man/systemd.service.html
 
 [Unit]
@@ -19,13 +19,13 @@ RestartSec=3
 
 # Not a good idea to use root,
 # ideally create a user/group with access permissions to the resources needed
-User=<app-user>
+User=@APPUSER@
 
-PIDFile=/home/<app-user>/.local/run/c2hat.pid
+PIDFile=/usr/local/@APPNAME@/@APPNAME@.pid
 
 # Place a configuration file in one of the default locations before starting
-ExecStart=/usr/local/bin/<app-name>-server start
-ExecStop=/usr/local/bin/<app-name>-server stop
+ExecStart=/usr/local/bin/@APPNAME@-server start
+ExecStop=/usr/local/bin/@APPNAME@-server stop
 
 [Install]
 WantedBy=multi-user.target

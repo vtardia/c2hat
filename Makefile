@@ -11,7 +11,7 @@ CFLAGS = -Wall -Wextra -Werror -std=c17 -O3 -I src/lib `pkg-config --cflags open
 LDFLAGS = -L lib
 LDLIBS = `pkg-config --libs openssl` -lpthread
 SERVERLIBS =
-CLIENTLIBS = -ldl -lm `pkg-config --cflags --libs ncurses`
+CLIENTLIBS = -ldl -lm `pkg-config --cflags --libs ncursesw`
 TESTCONFIGLIBS =
 
 # Installation prefix

@@ -1,6 +1,6 @@
 # Compiler base command and options
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c17 -O3 -I src/lib
+CFLAGS = -Wall -Wextra -Werror -std=c17 -O3 -I src/lib `pkg-config --cflags openssl`
 
 # Linker options
 # Notes:
@@ -9,9 +9,9 @@ CFLAGS = -Wall -Wextra -Werror -std=c17 -O3 -I src/lib
 #    then you can use $(ncursesw6-config --cflags --libs)
 #    to get the correct parameters
 LDFLAGS = -L lib
-LDLIBS = -lpthread -lssl -lcrypto
+LDLIBS = `pkg-config --libs openssl` -lpthread
 SERVERLIBS =
-CLIENTLIBS = -ldl -lncursesw -lm
+CLIENTLIBS = -ldl -lm `pkg-config --cflags --libs ncursesw`
 TESTCONFIGLIBS =
 
 # Installation prefix
@@ -53,14 +53,10 @@ else
 	    endif
 	endif
 	ifeq ($(UNAME_S),Darwin)
+		# brew --prefix includes the current version installed
+		PKG_CONFIG_PATH = $(brew --prefix ncurses)/lib/pkgconfig
 		OSFLAG += -D MACOS -D_XOPEN_CURSES -D_DARWIN_C_SOURCE
 		VALGRIND =
-		CFLAGS += -I$(HOMEBREW_CELLAR)/ncurses/6.3/include/ncursesw \
-			-I$(HOMEBREW_CELLAR)/ncurses/6.3/include \
-			-I$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/include
-		LDFLAGS += -L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/lib
-		CLIENTLIBS += -L$(HOMEBREW_CELLAR)/ncurses/6.3/lib -Wl,-search_paths_first \
-			-L$(HOMEBREW_CELLAR)/openssl@1.1/1.1.1s/lib
 	endif
 	ifeq ($(UNAME_S),FreeBSD)
 		CC = cc

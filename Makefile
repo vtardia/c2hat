@@ -12,6 +12,7 @@ LDFLAGS = -L lib
 LDLIBS = `pkg-config --libs openssl` -lpthread
 SERVERLIBS =
 CLIENTLIBS = -ldl -lm `pkg-config --cflags --libs ncursesw`
+AUTHLIBS = -lsqlite3
 TESTCONFIGLIBS =
 
 # Installation prefix
@@ -68,19 +69,21 @@ endif
 # for each element whose relative path matches 'src/server/*.c' 😎
 SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
+AUTH_OBJECTS   = $(patsubst src/auth/%.c,auth/%,$(wildcard src/auth/*.c))
 
 COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim
 SERVER_LIBRARIES = config validate ini encrypt
 CLIENT_LIBRARIES = hash wtrim nccolor
+AUTH_LIBRARIES   = sl3auth
 
 # Targets
 
-all: prereq client server
+all: prereq client server auth
 
 debug: clean prereq/debug all
 
 prereq:
-	mkdir -p obj/server obj/client obj/lib obj/lib/server obj/lib/client lib bin
+	mkdir -p obj/server obj/client obj/auth obj/lib obj/lib/server obj/lib/client obj/lib/auth lib bin
 
 prereq/debug:
 	$(eval CFLAGS += -g)
@@ -108,6 +111,11 @@ docker/client: Dockerfile
 	docker build --target client \
 		-t $(APPNAME)/client:$(shell date +%Y%m%d%H%M%S) \
 		-t $(APPNAME)/client:latest .
+
+# Auth (user management) final binary
+auth: prereq $(AUTH_LIBRARIES) $(AUTH_OBJECTS)
+	$(CC) $(CFLAGS) obj/auth/*.o obj/lib/*.o obj/lib/auth/*.o \
+		$(LDFLAGS) $(LDLIBS) $(AUTHLIBS) -o bin/$(BINPREFIX)user
 
 docker: docker/client docker/server
 
@@ -150,6 +158,13 @@ $(CLIENT_OBJECTS):
 
 $(CLIENT_LIBRARIES):
 	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/client/$@.o
+
+# Auth dependencies
+$(AUTH_OBJECTS):
+	$(CC) $(CFLAGS) -c src/$@.c $(OSFLAG) -o obj/$@.o
+
+$(AUTH_LIBRARIES):
+	$(CC) $(CFLAGS) -c src/lib/$@/$@.c $(OSFLAG) -o obj/lib/auth/$@.o
 
 # Exports a config service file for Systemd Linux
 service/systemd:

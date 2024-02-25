@@ -117,6 +117,27 @@ char *GetWorkingDirectory(char *dirPath, size_t length) {
 }
 
 /**
+ * Returns the path for the users database
+ *
+ * TODO write Win/Mac/Linux versions and switch using a macro
+ *
+ * @param[in] filePath Pointer to a char buffer
+ * @param[in] length   The length of the buffer
+ * @param[out]         The pointer to filePath
+ */
+char *GetDefaultUsersFilePath(char *filePath, size_t length) {
+  memset(filePath, 0, length); // Reset first
+  if (getuid() == 0) {
+    // Running as root, use system directories
+    snprintf(filePath, length, "/usr/local/%s/users.db", APPNAME);
+  } else {
+    // Running as local user, use local directory
+    snprintf(filePath, length, "%s/.local/state/%s/users.db", getenv("HOME"), APPNAME);
+  }
+  return filePath;
+}
+
+/**
  * Returns the path for the Log file
  *
  * TODO write Win/Mac/Linux versions and switch using a macro
@@ -243,6 +264,8 @@ int handler(
     memcpy(settings->sslCertFilePath, value, sizeof(settings->sslCertFilePath) -1);
   } else if (MATCH("tls", "key_file")) {
     memcpy(settings->sslKeyFilePath, value, sizeof(settings->sslKeyFilePath));
+  // } else if (MATCH("auth", "users_file")) {
+  //   memcpy(settings->usersDbFilePath, value, sizeof(settings->usersDbFilePath));
   } else {
     return 0; // unknown section/name or error
   }
@@ -265,6 +288,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *settings) {
     settings->sslKeyFilePath, sizeof(settings->sslKeyFilePath)
   );
   GetWorkingDirectory(settings->workingDirPath, sizeof(settings->workingDirPath));
+  // GetDefaultUsersFilePath(settings->usersDbFilePath, sizeof(settings->usersDbFilePath));
   char configFilePath[kMaxPath] = {};
   char sslCertFilePath[kMaxPath] = {};
   char sslKeyFilePath[kMaxPath] = {};

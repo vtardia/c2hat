@@ -43,6 +43,7 @@
     unsigned int maxConnections; ///< Max connections
     bool foreground; ///< Foreground or background service flag
     char workingDirPath[kMaxPath]; ///< Server work directory
+    // char usersDbFilePath[kMaxPath]; ///< Users database file path
   } ServerConfigInfo;
 
   // Create a server for the given host/port combination

@@ -57,6 +57,8 @@
     char *keyPath, size_t keyLength
   );
 
+  char *GetDefaultUsersFilePath(char *filePath, size_t length);
+
   char *GetWorkingDirectory(char *dirPath, size_t length);
 
   /// ARGV wrapper for options parsing

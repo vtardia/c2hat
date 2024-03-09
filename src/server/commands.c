@@ -384,9 +384,9 @@ int CMD_runStop() {
     (byte *)&settings
   );
   // ...and cleanup
-  free(encryptedSettingsSize);
   if ((int)decryptedSettingsSize < 0) {
     Error("Unable to decrypt settings");
+    free(encryptedSettingsSize);
     return EXIT_FAILURE;
   }
 
@@ -425,8 +425,9 @@ int CMD_runStop() {
 
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
-  memset(encryptedSettings, 0, EncryptedServerConfigInfoSize);
+  memset(encryptedSettings, 0,  *encryptedSettingsSize + EncryptedSizeOffset);
   free(encryptedSettings);
+  free(encryptedSettingsSize);
   encryptedSettings = NULL;
 
   return result;
@@ -477,9 +478,9 @@ int CMD_runStatus() {
     keyInfo.iv,
     (byte *)&settings
   );
-  free(encryptedSettingsSize);
   if ((int)decryptedSettingsSize < 0) {
     Error("Unable to decrypt settings");
+    free(encryptedSettingsSize);
     return EXIT_FAILURE;
   }
 
@@ -527,8 +528,9 @@ int CMD_runStatus() {
   // Cleanup configuration data
   if (currentPIDFilePath != NULL) free(currentPIDFilePath);
   // TODO: wrap into a macro and use memset_s/explicit_bzero
-  memset(encryptedSettings, 0, EncryptedServerConfigInfoSize);
+  memset(encryptedSettings, 0,  *encryptedSettingsSize + EncryptedSizeOffset);
   free(encryptedSettings);
+  free(encryptedSettingsSize);
   encryptedSettings = NULL;
 
   return result;

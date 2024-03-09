@@ -264,8 +264,8 @@ int handler(
     memcpy(settings->sslCertFilePath, value, sizeof(settings->sslCertFilePath) -1);
   } else if (MATCH("tls", "key_file")) {
     memcpy(settings->sslKeyFilePath, value, sizeof(settings->sslKeyFilePath));
-  // } else if (MATCH("auth", "users_file")) {
-  //   memcpy(settings->usersDbFilePath, value, sizeof(settings->usersDbFilePath));
+  } else if (MATCH("auth", "users_file")) {
+    memcpy(settings->usersDbFilePath, value, sizeof(settings->usersDbFilePath));
   } else {
     return 0; // unknown section/name or error
   }
@@ -288,7 +288,7 @@ int parseOptions(int argc, ARGV argv, ServerConfigInfo *settings) {
     settings->sslKeyFilePath, sizeof(settings->sslKeyFilePath)
   );
   GetWorkingDirectory(settings->workingDirPath, sizeof(settings->workingDirPath));
-  // GetDefaultUsersFilePath(settings->usersDbFilePath, sizeof(settings->usersDbFilePath));
+  GetDefaultUsersFilePath(settings->usersDbFilePath, sizeof(settings->usersDbFilePath));
   char configFilePath[kMaxPath] = {};
   char sslCertFilePath[kMaxPath] = {};
   char sslKeyFilePath[kMaxPath] = {};

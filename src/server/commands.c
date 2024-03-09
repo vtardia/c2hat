@@ -452,7 +452,6 @@ int CMD_runStatus() {
     }
     return EXIT_FAILURE;
   }
-  printf("[DEBUG] Settings size: %zu bytes\n", *encryptedSettingsSize);
 
   byte *encryptedSettings = (byte *)Config_load(
     sharedMemPath, *encryptedSettingsSize + EncryptedSizeOffset
@@ -505,7 +504,7 @@ int CMD_runStatus() {
       printf("      Locale: %s\n", settings.locale);
       printf(" Max Clients: %d\n", settings.maxConnections);
       printf(" Working Dir: %s\n", settings.workingDirPath);
-      // printf("  Users file: %s\n", settings.usersDbFilePath);
+      printf("  Users file: %s\n", settings.usersDbFilePath);
       printf("\n");
       result = EXIT_SUCCESS;
     break;

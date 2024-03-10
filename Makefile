@@ -71,8 +71,8 @@ SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 AUTH_OBJECTS   = $(patsubst src/auth/%.c,auth/%,$(wildcard src/auth/*.c))
 
-COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim ini
-SERVER_LIBRARIES = config validate encrypt
+COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim ini validate
+SERVER_LIBRARIES = config encrypt
 CLIENT_LIBRARIES = hash wtrim nccolor
 AUTH_LIBRARIES   = sl3auth
 

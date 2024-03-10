@@ -1,9 +1,11 @@
 /**
  * Copyright (C) 2023 Vito Tardia <https://vito.tardia.me>
  *
- * This file is part of SQLite3Passwd
+ * This file is an adaptation of SQLite3Passwd for C2Hat
  *
  * SQLite3Passwd is a "clone" of Apache's htpasswd with a SQLite 3 backend.
+ *
+ * C2Hat is a simple client/server TCP chat written in C
  *
  * SQLite3Passwd is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -16,23 +18,46 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
+ * License along with SQLite3Passwd; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
  * USA
+ *
+ * C2Hat is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * C2Hat is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with C2Hat. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <libgen.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <errno.h>
 #include "ini/ini.h"
+#include "validate/validate.h"
 #include "../c2hat.h"
 #include "sl3auth/sl3auth.h"
 
 static const char * kProgramVersion = "1.0.0";
+
+/// Regex pattern used to validate the user nickname
+static const char *kRegexNicknamePattern = "^[[:alpha:]][[:alnum:]!@#$%&]\\{1,14\\}$";
+
+/// Validation error message for invalid user names, includes the rules
+static const char *kErrorMessageInvalidUsername = "Usernames must start with a letter and contain 2-15 latin characters and !@#$%&";
+
+// @todo Keep the above definitions in sync with server.c or move them to a common file.
 
 #define OP_LIST    "list"
 #define OP_VIEW    "view"
@@ -159,6 +184,23 @@ char *GetDefaultUsersFilePath(char *filePath, size_t length) {
     snprintf(filePath, length, "%s/.local/state/%s/users.db", getenv("HOME"), APPNAME);
   }
   return filePath;
+}
+
+/**
+ * Validates a username with a pre-defined regex
+ * @param[in]  username
+ * @param[out] success/failure
+ */
+bool UsernameIsValid(const char *username) {
+  char error[512] = {};
+  int valid = Regex_match(username, kRegexNicknamePattern, error, sizeof(error));
+  if (valid) return true;
+  if (valid < 0) {
+    // There has been an error in either compiling
+    // or executing the regex above, we log it for investigation
+    fprintf(stderr, "Unable to validate username '%s': %s\n", username, error);
+  }
+  return false;
 }
 
 /// Displays program usage
@@ -297,29 +339,8 @@ int main(int argc, char const *argv[]) {
   ) {
     CheckUsername();
 
-    // Minimal validation for username:
-    // Max 50 chars
-    if (strlen(username) > 50) {
-      fprintf(stderr, "Username is too long, max 50 characters allowed\n");
-      goto fail;
-    }
-
-    // No spaces or equivalents
-    if (
-      strchr(username, ' ') != NULL
-      || strchr(username, '\r') != NULL
-      || strchr(username, '\f') != NULL
-      || strchr(username, '\v') != NULL
-      || strchr(username, '\n') != NULL
-      || strchr(username, '\t') != NULL
-    ) {
-      fprintf(stderr, "Username cannot contain spaces\n");
-      goto fail;
-    }
-
-    // Must start with a letter
-    if (!isalpha(username[0])) {
-      fprintf(stderr, "Username must start with a letter\n");
+    if (!UsernameIsValid(username)) {
+      fprintf(stderr, "%s\n", kErrorMessageInvalidUsername);
       goto fail;
     }
 

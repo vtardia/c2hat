@@ -99,7 +99,7 @@ static bool db_init(sqlite3 *db) {
   strcat(sql, "create table users (\n");
   strcat(sql, "  id integer not null primary key autoincrement,\n");
   strcat(sql, "  username varchar(50) not null check(length(username) <= 50),\n");
-  strcat(sql, "  password varchar(128) not null check(length(password) <= 128),\n");
+  strcat(sql, "  password varchar(131) not null check(length(password) <= 131),\n");
   strcat(sql, "  created_at datetime not null default CURRENT_TIMESTAMP,\n");
   strcat(sql, "  updated_at datetime not null default CURRENT_TIMESTAMP\n");
   strcat(sql, ");\n");

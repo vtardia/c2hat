@@ -71,8 +71,8 @@ SERVER_OBJECTS = $(patsubst src/server/%.c,server/%,$(wildcard src/server/*.c))
 CLIENT_OBJECTS = $(patsubst src/client/%.c,client/%,$(wildcard src/client/*.c))
 AUTH_OBJECTS   = $(patsubst src/auth/%.c,auth/%,$(wildcard src/auth/*.c))
 
-COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim
-SERVER_LIBRARIES = config validate ini encrypt
+COMMON_LIBRARIES = logger socket list queue cqueue message fsutil trim ini
+SERVER_LIBRARIES = config validate encrypt
 CLIENT_LIBRARIES = hash wtrim nccolor
 AUTH_LIBRARIES   = sl3auth
 
@@ -113,7 +113,7 @@ docker/client: Dockerfile
 		-t $(APPNAME)/client:latest .
 
 # Auth (user management) final binary
-auth: prereq $(AUTH_LIBRARIES) $(AUTH_OBJECTS)
+auth: prereq $(COMMON_LIBRARIES) $(AUTH_LIBRARIES) $(AUTH_OBJECTS)
 	$(CC) $(CFLAGS) obj/auth/*.o obj/lib/*.o obj/lib/auth/*.o \
 		$(LDFLAGS) $(LDLIBS) $(AUTHLIBS) -o bin/$(BINPREFIX)user
 

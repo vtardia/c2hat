@@ -159,9 +159,10 @@ static int handler(
   #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
   if (MATCH("auth", "users_file")) {
     memcpy(usersDbFilePath, value, kMaxPath);
-    return 1; // success
-  } 
-  return 0; // unknown section/name or error
+  }
+  // We don't care about other sections and if users file doesn't match
+  // we use the default value
+  return 1;
 }
 
 /**
